@@ -17,22 +17,39 @@ export const SOUNDS = {
     footstep: 'https://freesound.org/data/previews/336/336598_5121236-lq.mp3'
 };
 
+// mixkit/freesound don't reliably allow hotlinking (403/CORS depending on
+// referrer + token expiry) — wrap creation so a dead track just stays
+// silent instead of spamming console errors / throwing mid-play(). Host
+// these yourself when you can; until then this is a soft-fail shim.
+function safeHowl(src, opts) {
+    const howl = new Howl({ src: [src], ...opts, onloaderror: (id, err) => {
+        console.warn(`[ambience] failed to load ${src}:`, err);
+    }, onplayerror: (id, err) => {
+        console.warn(`[ambience] failed to play ${src}:`, err);
+    } });
+    return howl;
+}
+
 export function createAmbientAudio(state) {
-    state.dayAmbientAudio = new Howl({ src: [SOUNDS.dayAmbient], loop: true, volume: 0 });
-    state.nightAmbientAudio = new Howl({ src: [SOUNDS.nightAmbient], loop: true, volume: 0 });
-    state.windAudio = new Howl({ src: [SOUNDS.wind], loop: true, volume: 0 });
-    state.waterAudio = new Howl({ src: [SOUNDS.water], loop: true, volume: 0 });
-    state.rainAudio = new Howl({ src: [SOUNDS.rain], loop: true, volume: 0 });
-    state.stepAudio = new Howl({ src: [SOUNDS.footstep], volume: 0.25, rate: 1.1, pool: 5 });
+    state.dayAmbientAudio = safeHowl(SOUNDS.dayAmbient, { loop: true, volume: 0 });
+    state.nightAmbientAudio = safeHowl(SOUNDS.nightAmbient, { loop: true, volume: 0 });
+    state.windAudio = safeHowl(SOUNDS.wind, { loop: true, volume: 0 });
+    state.waterAudio = safeHowl(SOUNDS.water, { loop: true, volume: 0 });
+    state.rainAudio = safeHowl(SOUNDS.rain, { loop: true, volume: 0 });
+    state.stepAudio = safeHowl(SOUNDS.footstep, { volume: 0.25, rate: 1.1, pool: 5 });
+}
+
+function safePlay(howl) {
+    try { if (!howl.playing()) howl.play(); } catch (e) { /* dead track, already logged on load */ }
 }
 
 export function resumeAmbientAudio(state) {
     if (Howler.ctx && Howler.ctx.state === 'suspended') Howler.ctx.resume();
-    if (!state.dayAmbientAudio.playing()) state.dayAmbientAudio.play();
-    if (!state.nightAmbientAudio.playing()) state.nightAmbientAudio.play();
-    if (!state.windAudio.playing()) state.windAudio.play();
-    if (!state.waterAudio.playing()) state.waterAudio.play();
-    if (!state.rainAudio.playing()) state.rainAudio.play();
+    safePlay(state.dayAmbientAudio);
+    safePlay(state.nightAmbientAudio);
+    safePlay(state.windAudio);
+    safePlay(state.waterAudio);
+    safePlay(state.rainAudio);
 }
 
 export function pauseAmbientAudio(state) {

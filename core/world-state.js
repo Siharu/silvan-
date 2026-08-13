@@ -110,12 +110,17 @@ export function createWorldState() {
         keys: { w: false, a: false, s: false, d: false, r: false, shift: false },
         colliders: [],
 
+        // Nearest recruitable/following animal companion within interact
+        // range, and interact-key edge-trigger state — see environment/animals.js.
+        currentInteractableAnimal: undefined,
+
         // Cached reference to the underwater screen-tint overlay element
         // (see index.html #water-overlay). Populated lazily on first read
         // in core/player-controller.js.
         waterOverlayEl: undefined,
 
-        // Demo animal rigs (Kat/Shuu/Bimo/Primo), see environment/animals.js.
+        // Demo animal rigs (Kat/Shuu/Bimo/Primo) — wander when unmet, follow
+        // in a trailing arc once recruited. See environment/animals.js.
         demoAnimals: undefined,
 
         // World-boundary mountain backdrop rings, see environment/mountain-boundary.js.

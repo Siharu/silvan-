@@ -28,6 +28,7 @@ export function createPuddles(state) {
             '#include <common>',
             `#include <common>
             uniform float uTime;
+            uniform float uRainIntensity;
             varying vec2 vPuddleUv;`
         );
 

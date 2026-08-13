@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { DAY_LENGTH_MS } from '../core/world-state.js';
 import { getElevation } from '../environment/terrain.js';
 import { updateWindLeaves } from '../fx/wind-leaves.js';
+import { updateRadioTower } from '../environment/radio-tower.js';
 
 export function updateAtmosphere(state, delta) {
     state.timeMultiplier = state.keys.r ? 50 : 1;
@@ -64,8 +65,13 @@ export function updateAtmosphere(state, delta) {
     if(state.sunSprite) { state.sunSprite.position.set(sx*550, sy*550, -200); state.sunSprite.material.opacity = Math.max(0, sy) * (1.0 - cloudCover); }
 
     const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
-    state.sunLight.intensity = Math.max(0, sy) * 1.5;
-    state.moonLight.intensity = Math.max(0, -sy) * 0.5;
+    // Sun peak trimmed from 1.5 -> 1.1 (was clipping white against the
+    // 0.85 exposure above); moon peak raised 0.5 -> 0.85 and hemi light
+    // now floors at 0.55 at night instead of sitting flat at 1.15 all the
+    // time, so night reads dim-but-visible instead of crushed-black.
+    state.sunLight.intensity = Math.max(0, sy) * 1.1;
+    state.moonLight.intensity = Math.max(0, -sy) * 0.85;
+    if (state.hemiLight) state.hemiLight.intensity = 0.55 + dayBlend * 0.7;
 
     const skyDay = new THREE.Color(0x5a6a7a); const skyNight = new THREE.Color(0x0a0f1c);
     const horDay = new THREE.Color(0x8a9aa8); const horSunset = new THREE.Color(0xa86c42); const horNight = new THREE.Color(0x040810);
@@ -107,6 +113,7 @@ export function updateAtmosphere(state, delta) {
 
     const ts = performance.now() * 0.001;
     updateWindLeaves(state, ts);
+    updateRadioTower(state, ts, sy < 0);
     state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader) c.material.userData.shader.uniforms.uTime.value = ts; });
     if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
         state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);

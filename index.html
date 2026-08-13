@@ -163,6 +163,30 @@
         .boundary-message.visible {
             opacity: 1;
         }
+        .interact-prompt {
+            position: fixed;
+            bottom: 22%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 6;
+            pointer-events: none;
+            color: #e5e7eb;
+            font-weight: 400;
+            letter-spacing: 0.15em;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            text-align: center;
+            white-space: nowrap;
+            padding: 0.7rem 1.5rem;
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 2px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .interact-prompt.visible {
+            opacity: 1;
+        }
     </style>
     <script type="importmap">
         {
@@ -213,6 +237,7 @@
     <div id="water-overlay" class="water-overlay"></div>
 
     <div id="boundary-message" class="boundary-message">The forest grows stranger past this point — no need to go there yet</div>
+    <div id="interact-prompt" class="interact-prompt"></div>
 
     <script type="module" src="main.js"></script>
 </body>

@@ -3,6 +3,7 @@
 // only owns raw event listeners and state.keys/state.isPlaying/state.isLocked.
 
 import { resumeAmbientAudio, pauseAmbientAudio } from '../audio/ambience.js';
+import { attemptRecruitInteraction } from '../environment/animals.js';
 
 export function setupInput(state) {
     const ui = document.getElementById('ui-layer');
@@ -29,6 +30,13 @@ export function setupInput(state) {
     // Shift doesn't follow the KeyX code pattern above, so it gets its own pair.
     window.addEventListener('keydown', (e) => { if (e.key === 'Shift') state.keys.shift = true; });
     window.addEventListener('keyup', (e) => { if (e.key === 'Shift') state.keys.shift = false; });
+    // Interact — edge-triggered (not tracked in state.keys) so holding E
+    // doesn't spam recruit attempts every frame; ported from Bloodwoods'
+    // handleInteraction, see environment/animals.js.
+    window.addEventListener('keydown', (e) => {
+        if (e.code !== 'KeyE' || !state.isLocked) return;
+        attemptRecruitInteraction(state);
+    });
     document.addEventListener('mousemove', (e) => {
         if (!state.isLocked) return;
         state.player.rotation.y -= e.movementX * 0.0018;

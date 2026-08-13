@@ -30,8 +30,9 @@ import { createFireflies } from './fx/fireflies.js';
 import { createDustParticles } from './fx/dust.js';
 import { createProceduralTextures } from './fx/textures.js';
 import { createWindLeaves } from './fx/wind-leaves.js';
-import { spawnDemoAnimals, updateDemoAnimals } from './environment/animals.js';
+import { spawnDemoAnimals, updateDemoAnimals, findDryAnchor } from './environment/animals.js';
 import { createMountainBoundary } from './environment/mountain-boundary.js';
+import { createRadioTower } from './environment/radio-tower.js';
 
 import { createAmbientAudio } from './audio/ambience.js';
 import { updateAtmosphere } from './atmosphere/day-night-cycle.js';
@@ -52,7 +53,12 @@ function init() {
     state.renderer.shadowMap.enabled = true;
     state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    state.renderer.toneMappingExposure = 1.08;
+    // Was 1.08 with sunLight peaking at 1.5 + hemi at 1.15 constant — the two
+    // stacked pushed midday well past ACES's shoulder into a blown-white sky
+    // (see day screenshot). Dropped exposure and the sun/hemi peaks below
+    // instead of just crushing exposure alone, which would've flattened
+    // contrast everywhere including night.
+    state.renderer.toneMappingExposure = 0.85;
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
 
     const renderScene = new RenderPass(state.scene, state.camera);
@@ -66,9 +72,11 @@ function init() {
     state.composer.addPass(renderScene);
     state.composer.addPass(state.bloomPass);
 
-    // Boosted ambient light to fix pitch-black grass/shadows
-    const hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 1.15);
-    state.scene.add(hemiLight);
+    // Ambient fill light — intensity now modulated per-frame in
+    // atmosphere/day-night-cycle.js (day/night instead of a flat 1.15) so
+    // it can add a proper night floor without also blowing out midday.
+    state.hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 1.15);
+    state.scene.add(state.hemiLight);
 
     state.sunLight = new THREE.DirectionalLight(0xffedc9, 1.25);
     state.sunLight.castShadow = true;
@@ -104,8 +112,16 @@ function init() {
     createDustParticles(state);
     createWindLeaves(state);
     spawnDemoAnimals(state);
+    createRadioTower(state);
 
-    state.player.position.set(0, getElevation(0, 0) + state.player.height, 0);
+    // Was (0, getElevation(0,0)+height, 0) — origin is the lake basin
+    // center (see environment/terrain.js), so the player spawned ~29
+    // units underwater and only looked fine because player-controller.js
+    // floats the camera to the water surface once isInWater kicks in on
+    // frame 1. Spawning on the same dry anchor the animals use instead,
+    // so you actually start standing on ground.
+    const spawnAnchor = findDryAnchor();
+    state.player.position.set(spawnAnchor.x, getElevation(spawnAnchor.x, spawnAnchor.z) + state.player.height, spawnAnchor.z);
 
     createAmbientAudio(state);
 

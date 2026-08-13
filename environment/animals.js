@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { getElevation } from './terrain.js';
+import { WORLD_SIZE } from '../core/world-state.js';
 
 export const ANIMAL_CONFIGS = {
     Kat: {
@@ -190,7 +191,7 @@ function buildAnimalRig(name, config) {
     }
 
     return {
-        root, body, head, jaw, lEar, rEar, flLeg, frLeg, blLeg, brLeg, tail, mouth,
+        name, root, body, head, jaw, lEar, rEar, flLeg, frLeg, blLeg, brLeg, tail, mouth,
         config, baseY: baseY * scale, lEye, rEye, lPupil, rPupil,
         animTime: 0, blinkTimer: undefined
     };
@@ -291,32 +292,196 @@ function animateAnimalRig(rig, dt, animState) {
     }
 }
 
-// --- Silvan-side spawning/demo harness ---------------------------------
-// Places all four named animals near the player's spawn point in the
-// Hearth so we can see how the rig/materials read in this game's lighting.
-// Not tied to any AI/mechanic yet — just standing, idling, ready to look at.
+// Wander/recruit/follow AI — ported from the Bloodwoods reference build's
+// createNPC/recruitChance/attemptRecruit/gameLoop wander+follow blocks
+// (same rig code this whole file already comes from). Kat is deliberately
+// left out of WANDER_NAMES: in Bloodwoods, Kat is the player character and
+// Shuu/Bimo/Primo are the recruitable companions — same framing here, Kat
+// just doesn't have her own first-person body/camera yet (separate future
+// work), so for now she stays the plain idle-only rig spawnDemoAnimals
+// already had.
+const WANDER_NAMES = ['Shuu', 'Bimo', 'Primo'];
+const RECRUIT_RANGE = 3.2;
+
+function getInteractPromptEl(state) {
+    if (state.interactPromptEl === undefined) state.interactPromptEl = document.getElementById('interact-prompt');
+    return state.interactPromptEl;
+}
+
+function setInteractPrompt(state, text, visible) {
+    const el = getInteractPromptEl(state);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('visible', visible);
+}
+
+// Silvan-side spawning/demo harness ---------------------------------
+// Places all four named animals near a dry patch of shore so we can see
+// how the rig/materials read in this game's lighting.
+//
+// BUG FIX: this used to anchor the spawn ring at world origin (0,0) with
+// radius 6. Origin is the center of the lake basin carved in
+// environment/terrain.js (a deliberate ~29-unit-deep bowl under the
+// water plane at WATER_LEVEL=1.6) — so all four rigs were landing on the
+// literal lake floor, ~27-30 units underwater. The player never notices
+// the same basin because player-controller.js floats the camera at the
+// water surface whenever isInWater is true; that correction only
+// applies to the player, never to these rigs, which just take raw
+// getElevation() at face value. Walking the anchor outward along +X
+// until it clears the same y > ~2 dry-land threshold grass/flowers/
+// forest already use (see grass.js/flowers.js/forest.js) puts them
+// somewhere actually visible instead.
+export function findDryAnchor() {
+    for (let d = 20; d <= WORLD_SIZE * 0.5; d += 5) {
+        const y = getElevation(d, 0);
+        if (y > 3.0) return { x: d, z: 0 };
+    }
+    return { x: 180, z: 0 }; // fallback, shouldn't be hit
+}
+
 export function spawnDemoAnimals(state) {
     state.demoAnimals = [];
     const names = Object.keys(ANIMAL_CONFIGS);
     const radius = 6;
+    const anchor = findDryAnchor();
     names.forEach((name, i) => {
         const angle = (i / names.length) * Math.PI * 2;
-        const x = Math.cos(angle) * radius;
-        const z = Math.sin(angle) * radius;
+        const x = anchor.x + Math.cos(angle) * radius;
+        const z = anchor.z + Math.sin(angle) * radius;
         const y = getElevation(x, z);
 
         const rig = buildAnimalRig(name, ANIMAL_CONFIGS[name]);
         rig.root.position.set(x, y, z);
-        rig.root.rotation.y = -angle + Math.PI / 2; // face roughly toward center/player
+        rig.root.rotation.y = -angle + Math.PI / 2; // face roughly toward the anchor center
         state.scene.add(rig.root);
+
+        rig.hasAI = WANDER_NAMES.includes(name);
+        if (rig.hasAI) {
+            rig.homeX = x; rig.homeZ = z;
+            rig.wanderTargetX = x; rig.wanderTargetZ = z;
+            rig.wanderTimer = Math.random() * 3; // stagger so they don't all pick a new spot on the same frame
+            rig.wanderRadius = 8;
+            rig.speed = 1.1 * rig.config.scale;
+            rig.followSpeed = rig.speed * 2.2;
+            rig.following = false;
+            rig.met = false;
+            rig.visits = 0;
+        }
+
         state.demoAnimals.push(rig);
     });
+}
+
+// E-to-recruit — ported from Bloodwoods' handleInteraction/attemptRecruit,
+// minus the dialogue tree and coin-flip modal (Silvan doesn't have either
+// yet); keeps the same odds and outcome text. Called from core/input.js on
+// a raw KeyE edge-trigger, not per-frame, so holding E can't spam rolls.
+export function attemptRecruitInteraction(state) {
+    if (!state.demoAnimals || !state.currentInteractableAnimal) return;
+    const rig = state.demoAnimals.find(r => r.name === state.currentInteractableAnimal);
+    if (!rig || rig.following) return;
+
+    // Dogs join at a flat 30% chance every time you ask. Shuu is warier of
+    // the pack — if a dog is already following, her trust drops to 15%
+    // until you either come back without one or she's already decided to
+    // travel with you. Nothing here locks you out; you can keep asking.
+    const dogFollowing = state.demoAnimals.some(r => r.config.type === 'dog' && r.following);
+    const chance = (rig.config.type === 'cat') ? (dogFollowing ? 0.15 : 0.3) : 0.3;
+    const success = Math.random() < chance;
+
+    rig.visits++;
+    rig.met = true;
+    if (success) {
+        rig.following = true;
+        setInteractPrompt(state, `${rig.name.toUpperCase()} JOINS YOU`, true);
+    } else {
+        setInteractPrompt(state, 'NOT THIS TIME', true);
+    }
+
+    if (state.interactPromptTimer) clearTimeout(state.interactPromptTimer);
+    state.interactPromptTimer = setTimeout(() => {
+        state.interactPromptTimer = null;
+        setInteractPrompt(state, '', false);
+    }, 1200);
 }
 
 // Called every frame from main.js while the demo animals are present.
 export function updateDemoAnimals(state, dt) {
     if (!state.demoAnimals) return;
+    const player = state.player;
+    let nearestDist = RECRUIT_RANGE;
+    let nearestName = null;
+    let followerIdx = 0;
+
+    // Player forward vector, flattened — same source player-controller.js
+    // uses for movement, so followers trail directly behind wherever the
+    // camera is actually looking rather than off raw player.rotation.y.
+    const forward = new THREE.Vector3();
+    if (state.camera) { state.camera.getWorldDirection(forward); forward.y = 0; forward.normalize(); }
+
     for (const rig of state.demoAnimals) {
-        animateAnimalRig(rig, dt, 'idle');
+        if (!rig.hasAI) { animateAnimalRig(rig, dt, 'idle'); continue; }
+
+        if (rig.following) {
+            // Trail the player in a loose arc behind them rather than
+            // stacking on top of one another — each follower gets a slot
+            // angle spread behind the camera's facing direction.
+            followerIdx++;
+            const slotAngle = (followerIdx - 1) * 0.9 - 0.45;
+            const behindX = -forward.x, behindZ = -forward.z;
+            const sidewaysX = -behindZ, sidewaysZ = behindX;
+            const targetX = player.position.x + behindX * 2.4 + sidewaysX * slotAngle * 1.4;
+            const targetZ = player.position.z + behindZ * 2.4 + sidewaysZ * slotAngle * 1.4;
+
+            const toX = targetX - rig.root.position.x;
+            const toZ = targetZ - rig.root.position.z;
+            const distToTarget = Math.hypot(toX, toZ);
+            const moving = distToTarget > 0.4;
+            if (moving) {
+                const nx = toX / distToTarget, nz = toZ / distToTarget;
+                const catchUp = distToTarget > 6 ? rig.followSpeed * 2 : rig.followSpeed;
+                rig.root.position.x += nx * catchUp * dt;
+                rig.root.position.z += nz * catchUp * dt;
+                rig.root.rotation.y = Math.atan2(nx, nz);
+            }
+            rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z);
+            animateAnimalRig(rig, dt, moving ? (distToTarget > 6 ? 'run' : 'walk') : 'idle');
+            continue;
+        }
+
+        // Not recruited: wanders in loose loops around its own spawn point
+        // — picks a new nearby spot every few seconds and ambles toward
+        // it, no urgency, no destination that actually matters.
+        rig.wanderTimer -= dt;
+        if (rig.wanderTimer <= 0) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 2 + Math.random() * rig.wanderRadius;
+            rig.wanderTargetX = rig.homeX + Math.cos(angle) * dist;
+            rig.wanderTargetZ = rig.homeZ + Math.sin(angle) * dist;
+            rig.wanderTimer = 2.5 + Math.random() * 3;
+        }
+        const toX = rig.wanderTargetX - rig.root.position.x;
+        const toZ = rig.wanderTargetZ - rig.root.position.z;
+        const distToTarget = Math.hypot(toX, toZ);
+        const moving = distToTarget > 0.3;
+        if (moving) {
+            const nx = toX / distToTarget, nz = toZ / distToTarget;
+            rig.root.position.x += nx * rig.speed * dt;
+            rig.root.position.z += nz * rig.speed * dt;
+            rig.root.rotation.y = Math.atan2(nx, nz);
+        }
+        rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z);
+        animateAnimalRig(rig, dt, moving ? 'walk' : 'idle');
+
+        const dPlayer = Math.hypot(player.position.x - rig.root.position.x, player.position.z - rig.root.position.z);
+        if (dPlayer < nearestDist) { nearestDist = dPlayer; nearestName = rig.name; }
+    }
+
+    state.currentInteractableAnimal = nearestName;
+    // Don't stomp the "X JOINS YOU"/"NOT THIS TIME" result message while
+    // its timeout is still pending.
+    if (!state.interactPromptTimer) {
+        if (nearestName) setInteractPrompt(state, `[E] APPROACH ${nearestName.toUpperCase()}`, true);
+        else setInteractPrompt(state, '', false);
     }
 }
