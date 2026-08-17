@@ -19,7 +19,7 @@ const SPREAD = 60.0;
 const HEAVY_RAIN_THRESHOLD = 0.6;
 
 export function createWindLeaves(state) {
-    const count = 220;
+    const count = state.quality.windLeafCount;
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(count * 3);
     const phases = new Float32Array(count);

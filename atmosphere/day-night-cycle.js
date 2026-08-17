@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { DAY_LENGTH_MS } from '../core/world-state.js';
 import { getElevation } from '../environment/terrain.js';
 import { updateWindLeaves } from '../fx/wind-leaves.js';
-import { updateRadioTower } from '../environment/radio-tower.js';
+import { updateRadioTower, updateTowerCutscene } from '../environment/radio-tower.js';
 
 export function updateAtmosphere(state, delta) {
     state.timeMultiplier = state.keys.r ? 50 : 1;
@@ -114,6 +114,7 @@ export function updateAtmosphere(state, delta) {
     const ts = performance.now() * 0.001;
     updateWindLeaves(state, ts);
     updateRadioTower(state, ts, sy < 0);
+    updateTowerCutscene(state, delta / 1000);
     state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader) c.material.userData.shader.uniforms.uTime.value = ts; });
     if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
         state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
@@ -170,6 +171,7 @@ export function updateAtmosphere(state, delta) {
         const dustWeatherVisibility = Math.max(0, 1.0 - state.currentRainIntensity * 1.5);
         const lightVisibility = Math.max(0.3, sy); // More visible in day
         state.dustMat.uniforms.uVisibility.value = dustWeatherVisibility * lightVisibility;
+        state.dustMat.uniforms.uDayBlend.value = dayBlend;
     }
 
     if (state.isPlaying) { 

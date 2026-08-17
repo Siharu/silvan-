@@ -11,6 +11,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 import { createWorldState } from './core/world-state.js';
+import { resolveQualityPreset } from './core/quality.js';
 import { setupInput, onWindowResize } from './core/input.js';
 import { updatePlayer } from './core/player-controller.js';
 
@@ -30,7 +31,7 @@ import { createFireflies } from './fx/fireflies.js';
 import { createDustParticles } from './fx/dust.js';
 import { createProceduralTextures } from './fx/textures.js';
 import { createWindLeaves } from './fx/wind-leaves.js';
-import { spawnDemoAnimals, updateDemoAnimals, findDryAnchor } from './environment/animals.js';
+import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, findDryAnchor } from './environment/animals.js';
 import { createMountainBoundary } from './environment/mountain-boundary.js';
 import { createRadioTower } from './environment/radio-tower.js';
 
@@ -38,6 +39,7 @@ import { createAmbientAudio } from './audio/ambience.js';
 import { updateAtmosphere } from './atmosphere/day-night-cycle.js';
 
 const state = createWorldState();
+state.quality = resolveQualityPreset();
 
 function init() {
     state.scene = new THREE.Scene();
@@ -49,7 +51,7 @@ function init() {
 
     state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
     state.renderer.setSize(window.innerWidth, window.innerHeight);
-    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); // Optimized pixel ratio
+    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.quality.pixelRatioCap));
     state.renderer.shadowMap.enabled = true;
     state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -62,15 +64,16 @@ function init() {
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
 
     const renderScene = new RenderPass(state.scene, state.camera);
-    // Optimized: Half-resolution bloom pass for better performance
-    state.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 1.0, 0.5, 0.8);
-    state.bloomPass.threshold = 0.3;
-    state.bloomPass.strength = 0.5;
-    state.bloomPass.radius = 0.4;
-
     state.composer = new EffectComposer(state.renderer);
     state.composer.addPass(renderScene);
-    state.composer.addPass(state.bloomPass);
+    if (state.quality.bloomEnabled) {
+        // Optimized: Half-resolution bloom pass for better performance
+        state.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 1.0, 0.5, 0.8);
+        state.bloomPass.threshold = 0.3;
+        state.bloomPass.strength = 0.5;
+        state.bloomPass.radius = 0.4;
+        state.composer.addPass(state.bloomPass);
+    }
 
     // Ambient fill light — intensity now modulated per-frame in
     // atmosphere/day-night-cycle.js (day/night instead of a flat 1.15) so
@@ -81,8 +84,8 @@ function init() {
     state.sunLight = new THREE.DirectionalLight(0xffedc9, 1.25);
     state.sunLight.castShadow = true;
     // Optimized: Reduced shadow map resolution
-    state.sunLight.shadow.mapSize.width = 1024;
-    state.sunLight.shadow.mapSize.height = 1024;
+    state.sunLight.shadow.mapSize.width = state.quality.shadowMapSize;
+    state.sunLight.shadow.mapSize.height = state.quality.shadowMapSize;
     state.sunLight.shadow.camera.near = 10;
     state.sunLight.shadow.camera.far = 1000;
     const d = 620;
@@ -105,7 +108,7 @@ function init() {
     createRocks(state);
     createPuddles(state);
     generateFractalForest(state);
-    createDetailedPineTrees(state);
+    createDetailedPineTrees(state, state.quality.pineTreeCount);
     createRainSystem(state);
     createRainSplashes(state);
     createFireflies(state);
@@ -136,6 +139,7 @@ function animate(time) {
     const delta = Math.min(time - state.lastTime, 100); state.lastTime = time;
     updateAtmosphere(state, delta); updatePlayer(state, delta / 1000);
     updateDemoAnimals(state, delta / 1000);
+    updateInteractPrompt(state); // after both updateAtmosphere (tower proximity) and updateDemoAnimals (animal proximity) have set their flags this frame
     state.composer.render();
 }
 

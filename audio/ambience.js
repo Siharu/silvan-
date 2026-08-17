@@ -59,3 +59,17 @@ export function pauseAmbientAudio(state) {
     state.waterAudio.pause();
     state.rainAudio.pause();
 }
+
+// Every per-frame ambient volume() call (atmosphere/day-night-cycle.js,
+// core/player-controller.js's swim water-audio swell) sets its own channel
+// volume independently — rather than threading a multiplier through every
+// individual call site (fragile: easy to add a new sound later and forget
+// it, and stepAudio's volume is only ever set once at creation in
+// createAmbientAudio() above, never touched per-frame, so a per-call
+// multiplier would silently miss it entirely), the pause menu's volume
+// slider uses Howler's own global gain node instead. One call reaches
+// every channel — present and future — automatically.
+export function setMasterVolume(state, value) {
+    state.masterVolume = value;
+    Howler.volume(value);
+}

@@ -12,7 +12,7 @@ export function createGrass(state) {
     // both now scale off WORLD_SIZE so grass reaches all the way to where the
     // forest/rock scatter already does.
     const GRASS_RADIUS = WORLD_SIZE * 0.375;
-    const grassCount = 1100000;
+    const grassCount = state.quality.grassCount;
     const grassGeo = new THREE.BufferGeometry();
     
     const grassVertices = new Float32Array([

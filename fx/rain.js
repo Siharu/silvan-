@@ -10,7 +10,7 @@ import { WATER_LEVEL } from '../core/world-state.js';
 import { getElevation } from '../environment/terrain.js';
 
 export function createRainSystem(state) {
-    const count = 45000;
+    const count = state.quality.rainCount;
     // Extremely narrow and long geometry for realistic fast-moving streaks
     const geo = new THREE.PlaneGeometry(0.015, 3.5);
     state.rainMaterial = new THREE.MeshBasicMaterial({ 
@@ -119,7 +119,7 @@ export function createRainSystem(state) {
 
 
 export function createRainSplashes(state) {
-    const count = 400;
+    const count = state.quality.rainSplashCount;
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.rotateX(-Math.PI / 2);
     state.rainSplashMat = new THREE.MeshBasicMaterial({

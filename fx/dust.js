@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 export function createDustParticles(state) {
-    const count = 3500;
+    const count = state.quality.dustCount;
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(count * 3);
     const phases = new Float32Array(count);
@@ -17,7 +17,7 @@ export function createDustParticles(state) {
     geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
     
     state.dustMat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uCameraPos: { value: new THREE.Vector3() }, uVisibility: { value: 1.0 } },
+        uniforms: { uTime: { value: 0 }, uCameraPos: { value: new THREE.Vector3() }, uVisibility: { value: 1.0 }, uDayBlend: { value: 1.0 } },
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
         vertexShader: `
             uniform float uTime;
@@ -51,11 +51,21 @@ export function createDustParticles(state) {
         `,
         fragmentShader: `
             uniform float uVisibility;
+            uniform float uDayBlend; // 1 = full day, 0 = full night — see atmosphere/day-night-cycle.js
             varying float vAlpha;
             void main() {
                 float dist = length(gl_PointCoord - vec2(0.5));
                 if (dist > 0.5) discard;
-                gl_FragColor = vec4(0.9, 0.8, 0.6, (0.5 - dist) * 2.0 * vAlpha * uVisibility * 0.5);
+                // Warm sunlit-dust gold in daylight, dimmed and shifted toward a
+                // faint cool blue glow at night — motes catching ambient
+                // moonlight/night-sky rather than direct warm sun, and dim
+                // enough to read as atmosphere rather than a second set of
+                // fireflies.
+                vec3 dayColor = vec3(0.9, 0.8, 0.6);
+                vec3 nightColor = vec3(0.35, 0.55, 0.95);
+                vec3 col = mix(nightColor, dayColor, uDayBlend);
+                float nightDim = mix(0.55, 1.0, uDayBlend); // a bit dimmer at night than the daytime motes were
+                gl_FragColor = vec4(col, (0.5 - dist) * 2.0 * vAlpha * uVisibility * 0.5 * nightDim);
             }
         `
     });

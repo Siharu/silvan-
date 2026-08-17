@@ -8,7 +8,7 @@
 // environment/pine-trees.js (see PINE_TREE_COUNT there).
 
 import * as THREE from 'three';
-import { TREE_COUNT, WORLD_SIZE } from '../core/world-state.js';
+import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation, noise } from './terrain.js';
 
 export function generateFractalForest(state) {
@@ -48,7 +48,7 @@ export function generateFractalForest(state) {
         }
     }
 
-    for (let i = 0; i < TREE_COUNT; i++) {
+    for (let i = 0; i < state.quality.treeCount; i++) {
         const r = 25 + Math.random() * (WORLD_SIZE/2 - 50);
         const theta = Math.random() * Math.PI * 2;
         const x = Math.cos(theta) * r;

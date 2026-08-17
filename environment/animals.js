@@ -315,6 +315,27 @@ function setInteractPrompt(state, text, visible) {
     el.classList.toggle('visible', visible);
 }
 
+// The single place that decides what #interact-prompt actually shows each
+// frame. Both this module (nearest animal) and environment/radio-tower.js
+// (state.nearRadioTower) want the same DOM element, and originally each
+// wrote to it independently from separate per-frame update functions —
+// whichever ran second that frame would blindly clear or overwrite
+// whatever the other had just set, causing the prompt to flicker or drop
+// entirely depending on call order. Called once per frame, after both
+// systems have updated their flags, with the tower taking priority on the
+// rare frame a player is in range of both at once.
+export function updateInteractPrompt(state) {
+    if (state.cutsceneActive) return; // the cutscene owns #cutscene-caption instead, leave this alone
+    if (state.interactPromptTimer) return; // a JOIN/NOT-THIS-TIME result message is still showing, don't stomp it
+    if (state.nearRadioTower) {
+        setInteractPrompt(state, '[E] LOOK AT THE TOWER', true);
+    } else if (state.currentInteractableAnimal) {
+        setInteractPrompt(state, `[E] APPROACH ${state.currentInteractableAnimal.toUpperCase()}`, true);
+    } else {
+        setInteractPrompt(state, '', false);
+    }
+}
+
 // Silvan-side spawning/demo harness ---------------------------------
 // Places all four named animals near a dry patch of shore so we can see
 // how the rig/materials read in this game's lighting.
@@ -478,10 +499,7 @@ export function updateDemoAnimals(state, dt) {
     }
 
     state.currentInteractableAnimal = nearestName;
-    // Don't stomp the "X JOINS YOU"/"NOT THIS TIME" result message while
-    // its timeout is still pending.
-    if (!state.interactPromptTimer) {
-        if (nearestName) setInteractPrompt(state, `[E] APPROACH ${nearestName.toUpperCase()}`, true);
-        else setInteractPrompt(state, '', false);
-    }
+    // Prompt display itself is decided by updateInteractPrompt() (above),
+    // called once per frame after this and environment/radio-tower.js's
+    // proximity check have both run — see that function for why.
 }

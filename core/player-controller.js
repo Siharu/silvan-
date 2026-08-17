@@ -19,9 +19,14 @@ import { getElevation } from '../environment/terrain.js';
 // the mountain ring, and a Genshin/Wuwa-style "no need to go there" message
 // fades in. A hard radial cap still exists as a failsafe, but under normal
 // play the resistance alone turns the player back before they'd ever hit it.
-const BOUNDARY_RADIUS = WORLD_SIZE / 2;
+//
+// Exported so other placement logic (e.g. environment/radio-tower.js's
+// findTowerAnchor) can site landmarks with guaranteed clearance from the
+// soft zone, instead of guessing a distance and drifting out of sync if
+// WORLD_SIZE is retuned later.
+export const BOUNDARY_RADIUS = WORLD_SIZE / 2;
 const BOUNDARY_SOFT_ZONE = 70;
-const BOUNDARY_START = BOUNDARY_RADIUS - BOUNDARY_SOFT_ZONE;
+export const BOUNDARY_START = BOUNDARY_RADIUS - BOUNDARY_SOFT_ZONE;
 const BOUNDARY_MSG_THRESHOLD = BOUNDARY_START + BOUNDARY_SOFT_ZONE * 0.35;
 const _radialDir = new THREE.Vector3();
 
@@ -67,6 +72,20 @@ function updateBoundaryMessage(state, distFromCenter) {
 
 export function updatePlayer(state, delta) {
     if (!state.isLocked) return;
+
+    // While the tower-awe cutscene is running (see
+    // environment/radio-tower.js), it drives player.rotation directly —
+    // skip normal WASD movement and let the scripted look take over, but
+    // still sync the camera to whatever rotation it just set so the look
+    // actually renders. Ground-height is still tracked so the player
+    // doesn't sink/float if the cutscene runs mid-step.
+    if (state.cutsceneActive) {
+        const gY = getElevation(state.player.position.x, state.player.position.z);
+        state.player.position.y += (gY + state.player.height - state.player.position.y) * (1.0 - Math.exp(-8.0 * delta));
+        state.camera.position.copy(state.player.position);
+        state.camera.quaternion.setFromEuler(state.player.rotation);
+        return;
+    }
 
     const gY = getElevation(state.player.position.x, state.player.position.z);
     state.player.isInWater = gY < WATER_LEVEL;

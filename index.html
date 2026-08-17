@@ -187,7 +187,189 @@
         .interact-prompt.visible {
             opacity: 1;
         }
+        .cutscene-caption {
+            position: fixed;
+            bottom: 12%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 8;
+            pointer-events: none;
+            color: #f1f1ea;
+            font-weight: 300;
+            letter-spacing: 0.08em;
+            font-size: 1.05rem;
+            font-style: italic;
+            text-align: center;
+            max-width: 32rem;
+            padding: 0 1rem;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+            opacity: 0;
+            transition: opacity 1s ease;
+        }
+        .cutscene-caption.visible {
+            opacity: 1;
+        }
+
+        /* Pause menu — a soft, misty, "floaty" panel rather than a flat
+           dialog box. Cloudy = leans on the same fog/mist visual language
+           the rest of Silvan already uses, rather than a hard sci-fi glass
+           pane; the float/drift animation is the Dead-Space-esque part —
+           it never sits perfectly still, like it's a projection gently
+           settling rather than a fixed UI element. */
+        .pause-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(ellipse at center, rgba(10, 14, 20, 0.55) 0%, rgba(4, 6, 10, 0.82) 100%);
+            backdrop-filter: blur(3px);
+        }
+        .pause-layer.visible {
+            display: flex;
+        }
+        .pause-panel {
+            position: relative;
+            width: min(26rem, 88vw);
+            padding: 2.6rem 2.2rem 2.2rem;
+            border-radius: 4px;
+            color: #eef1f6;
+            text-align: center;
+            background:
+                radial-gradient(ellipse at 30% 20%, rgba(200, 220, 255, 0.10) 0%, transparent 55%),
+                radial-gradient(ellipse at 75% 80%, rgba(180, 210, 255, 0.07) 0%, transparent 60%),
+                rgba(16, 20, 28, 0.55);
+            border: 1px solid rgba(210, 225, 255, 0.18);
+            box-shadow: 0 0 40px rgba(140, 180, 255, 0.08), 0 0 90px rgba(0, 0, 0, 0.5), inset 0 0 60px rgba(180, 200, 255, 0.04);
+            animation: pause-float 6s ease-in-out infinite, pause-materialize 0.5s ease-out;
+        }
+        /* A faint drifting mist layer behind the panel content, independent
+           of the panel's own float, so the whole thing reads as vapor
+           rather than a solid pane with a glow filter slapped on. */
+        .pause-panel::before {
+            content: '';
+            position: absolute;
+            inset: -30%;
+            z-index: -1;
+            background:
+                radial-gradient(circle at 20% 30%, rgba(190, 210, 255, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(190, 210, 255, 0.04) 0%, transparent 45%);
+            filter: blur(20px);
+            animation: pause-mist-drift 14s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes pause-float {
+            0%, 100% { transform: translateY(0) rotate(-0.15deg); }
+            50% { transform: translateY(-10px) rotate(0.15deg); }
+        }
+        @keyframes pause-mist-drift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(3%, -4%) scale(1.08); }
+        }
+        @keyframes pause-materialize {
+            0% { opacity: 0; transform: scale(0.96); filter: blur(6px); }
+            60% { opacity: 1; filter: blur(0.5px); }
+            100% { opacity: 1; transform: scale(1); filter: blur(0); }
+        }
+        .pause-panel h2 {
+            font-weight: 300;
+            letter-spacing: 0.3em;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            color: #cdd8ec;
+            margin: 0 0 1.8rem;
+            text-shadow: 0 0 14px rgba(160, 190, 255, 0.35);
+        }
+        .pause-btn {
+            display: block;
+            width: 100%;
+            margin-bottom: 0.7rem;
+            padding: 0.7rem 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(210, 225, 255, 0.15);
+            border-radius: 2px;
+            color: #dde5f2;
+            font-size: 0.75rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+        .pause-btn:hover {
+            background: rgba(180, 210, 255, 0.08);
+            border-color: rgba(210, 225, 255, 0.4);
+            box-shadow: 0 0 20px rgba(160, 190, 255, 0.15);
+        }
+        .pause-settings {
+            margin: 1.4rem 0;
+            padding: 1.2rem 0.2rem;
+            border-top: 1px solid rgba(210, 225, 255, 0.1);
+            border-bottom: 1px solid rgba(210, 225, 255, 0.1);
+            display: none;
+        }
+        .pause-settings.open {
+            display: block;
+        }
+        .pause-settings label {
+            display: block;
+            font-size: 0.65rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: #9fb0c9;
+            margin-bottom: 0.5rem;
+            text-align: left;
+        }
+        .pause-settings input[type="range"] {
+            width: 100%;
+            accent-color: #a9c4ff;
+        }
+        .quality-toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        #title-quality-row {
+            margin-bottom: 1.5rem;
+        }
+        .quality-toggle-label {
+            font-size: 0.65rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: #9fb0c9;
+            margin-right: 0.3rem;
+        }
+        .quality-reload-note {
+            font-size: 0.55rem;
+            letter-spacing: 0.05em;
+            text-transform: none;
+            color: #6f7d92;
+        }
+        .quality-toggle-btn {
+            padding: 0.35rem 0.8rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(210, 225, 255, 0.15);
+            border-radius: 2px;
+            color: #9fb0c9;
+            font-size: 0.65rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+        }
+        .quality-toggle-btn:hover {
+            border-color: rgba(210, 225, 255, 0.4);
+        }
+        .quality-toggle-btn.active {
+            background: rgba(180, 210, 255, 0.12);
+            border-color: rgba(210, 225, 255, 0.5);
+            color: #eef1f6;
+            box-shadow: 0 0 14px rgba(160, 190, 255, 0.15);
+        }
     </style>
+
     <script type="importmap">
         {
             "imports": {
@@ -219,6 +401,12 @@
             </div>
         </div>
 
+        <div class="quality-toggle-row" id="title-quality-row">
+            <span class="quality-toggle-label">Graphics</span>
+            <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
+            <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+        </div>
+
         <button id="start-btn" class="start-btn px-12 py-4 hover:border-white/60 transition-all duration-300 tracking-[0.2em] text-sm uppercase rounded-sm cursor-pointer z-20">
             Enter the Forest
         </button>
@@ -238,6 +426,26 @@
 
     <div id="boundary-message" class="boundary-message">The forest grows stranger past this point — no need to go there yet</div>
     <div id="interact-prompt" class="interact-prompt"></div>
+
+    <div id="cutscene-caption" class="cutscene-caption"></div>
+
+    <div id="pause-layer" class="pause-layer">
+        <div class="pause-panel">
+            <h2>Paused</h2>
+            <button id="pause-resume-btn" class="pause-btn">Resume</button>
+            <button id="pause-settings-btn" class="pause-btn">Settings</button>
+            <div id="pause-settings" class="pause-settings">
+                <label for="pause-volume-slider">Volume</label>
+                <input type="range" id="pause-volume-slider" min="0" max="1" step="0.01" value="1">
+                <label style="margin-top: 1rem;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
+                <div class="quality-toggle-row">
+                    <button id="pause-quality-high-btn" class="quality-toggle-btn">High</button>
+                    <button id="pause-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                </div>
+            </div>
+            <button id="pause-quit-btn" class="pause-btn">Quit to Title</button>
+        </div>
+    </div>
 
     <script type="module" src="main.js"></script>
 </body>

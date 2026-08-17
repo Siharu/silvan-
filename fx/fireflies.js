@@ -6,7 +6,7 @@ import { WATER_LEVEL } from '../core/world-state.js';
 import { getElevation } from '../environment/terrain.js';
 
 export function createFireflies(state) {
-    const count = 1200;
+    const count = state.quality.fireflyCount;
     const geo = new THREE.PlaneGeometry(0.18, 0.18);
     state.fireflyMat = new THREE.MeshBasicMaterial({ color: 0xccff00, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
     state.fireflyMat.onBeforeCompile = (shader) => {
