@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
+import { addDynamicFog } from '../fx/dynamic-fog.js';
 
 const ROCK_VARIANT_COUNT = 5;
 
@@ -81,6 +82,7 @@ export function createRocks(state) {
         roughness: 0.9,
         metalness: 0.1
     });
+    addDynamicFog(rockMat, state.backgroundRenderTarget.texture);
 
     // Instances-per-variant capacity, sized exactly to fit since assignment
     // below is round-robin (not random) — guarantees every rock that gets a

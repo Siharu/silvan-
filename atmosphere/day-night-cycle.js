@@ -174,6 +174,24 @@ export function updateAtmosphere(state, delta) {
         state.dustMat.uniforms.uDayBlend.value = dayBlend;
     }
 
+    // Update mountain-boundary brightness. Even at full daylight, capped
+    // below 1.0 (0.82) rather than the raw unmodified texture — the source
+    // pack's pale sky-tinted highlight pixels were bright enough to trip
+    // the bloom pass's threshold and glow/overexpose regardless of time of
+    // day, which is very likely the actual "too bright" symptom rather
+    // than something that only shows up at night. Dims further at night
+    // and under heavy cloud/rain, same as everything else that responds to
+    // dayBlend/currentRainIntensity elsewhere in this file.
+    const mountainDayLevel = 0.82;
+    const mountainNightLevel = 0.32;
+    let mountainBrightness = mountainNightLevel + (mountainDayLevel - mountainNightLevel) * dayBlend;
+    mountainBrightness *= (1.0 - state.currentRainIntensity * 0.35);
+    for (const mesh of [state.mountainFarMesh, state.mountainNearMesh]) {
+        if (mesh && mesh.material.userData.shader) {
+            mesh.material.userData.shader.uniforms.uBrightness.value = mountainBrightness;
+        }
+    }
+
     if (state.isPlaying) { 
         state.dayAmbientAudio.volume(dayBlend * 0.45);
         state.nightAmbientAudio.volume((1 - dayBlend) * 0.35);

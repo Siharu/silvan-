@@ -66,6 +66,12 @@ export function createWorldState() {
         composer: undefined,
         bloomPass: undefined,
 
+        // Offscreen target the sky/mountain backdrop renders into each
+        // frame, so terrain/forest/pines/rocks can fog toward the actual
+        // sky/mountain color behind them instead of a flat fog color — see
+        // fx/dynamic-fog.js.
+        backgroundRenderTarget: undefined,
+
         // --- lighting / sky ---
         sunLight: undefined,
         moonLight: undefined,

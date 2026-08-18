@@ -11,8 +11,8 @@
 // the flag itself doesn't assume first-person.
 
 import * as THREE from 'three';
-import { WORLD_SIZE, WATER_LEVEL } from './world-state.js';
-import { getElevation } from '../environment/terrain.js';
+import { WATER_LEVEL } from './world-state.js';
+import { getElevation, islandRadiusAt, BASE_BOUNDARY_RADIUS } from '../environment/terrain.js';
 
 // Soft world boundary — instead of a hard clamp that reads as an invisible
 // wall, movement gets increasingly resisted ("wind") as the player nears
@@ -20,14 +20,20 @@ import { getElevation } from '../environment/terrain.js';
 // fades in. A hard radial cap still exists as a failsafe, but under normal
 // play the resistance alone turns the player back before they'd ever hit it.
 //
-// Exported so other placement logic (e.g. environment/radio-tower.js's
-// findTowerAnchor) can site landmarks with guaranteed clearance from the
-// soft zone, instead of guessing a distance and drifting out of sync if
-// WORLD_SIZE is retuned later.
-export const BOUNDARY_RADIUS = WORLD_SIZE / 2;
+// The boundary now follows islandRadiusAt(theta) instead of a fixed circle,
+// matching the irregular coastline terrain.js/mountain-boundary.js draw —
+// coves let you get closer to the visual mountains in some directions,
+// headlands push you back sooner in others, instead of one identical
+// distance in every direction.
 const BOUNDARY_SOFT_ZONE = 70;
-export const BOUNDARY_START = BOUNDARY_RADIUS - BOUNDARY_SOFT_ZONE;
-const BOUNDARY_MSG_THRESHOLD = BOUNDARY_START + BOUNDARY_SOFT_ZONE * 0.35;
+
+// Conservative fixed radius kept for placement logic elsewhere (e.g.
+// environment/radio-tower.js) that just needs a single safe "don't place
+// past here" cap rather than the full per-angle shape — approximates the
+// tightest cove so it never assumes more clearance than actually exists in
+// every direction.
+export const BOUNDARY_START = BASE_BOUNDARY_RADIUS * 0.55 - BOUNDARY_SOFT_ZONE;
+
 const _radialDir = new THREE.Vector3();
 
 const RUN_MULTIPLIER = 1.8;
@@ -62,8 +68,8 @@ function getBoundaryMessageEl(state) {
 // needed — the CSS opacity transition on #boundary-message already smooths
 // the fade, so rapid in/out near the threshold just looks like flicker-free
 // breathing rather than a hard on/off.
-function updateBoundaryMessage(state, distFromCenter) {
-    const shouldShow = distFromCenter > BOUNDARY_MSG_THRESHOLD;
+function updateBoundaryMessage(state, distFromCenter, msgThreshold) {
+    const shouldShow = distFromCenter > msgThreshold;
     if (shouldShow === state.boundaryMsgVisible) return;
     state.boundaryMsgVisible = shouldShow;
     const el = getBoundaryMessageEl(state);
@@ -102,19 +108,26 @@ export function updatePlayer(state, delta) {
     if (state.keys.a) state.player.velocity.add(right); if (state.keys.d) state.player.velocity.sub(right);
 
     const distFromCenter = Math.hypot(state.player.position.x, state.player.position.z);
-    updateBoundaryMessage(state, distFromCenter);
+    // theta of the player's current position picks out the local coastline
+    // radius for this frame — cheap (one atan2 + two noise() calls) and
+    // self-correcting as the player moves around the irregular shape.
+    const theta = Math.atan2(state.player.position.z, state.player.position.x);
+    const localBoundaryRadius = islandRadiusAt(theta);
+    const localBoundaryStart = localBoundaryRadius - BOUNDARY_SOFT_ZONE;
+    updateBoundaryMessage(state, distFromCenter, localBoundaryStart + BOUNDARY_SOFT_ZONE * 0.35);
 
     if (state.player.velocity.lengthSq() > 0) {
         state.player.velocity.normalize().multiplyScalar(state.player.speed * speedMultiplier * delta);
 
-        // Wind resistance: past BOUNDARY_START, cancel out however much of the
-        // velocity points further outward, ramping in (eased, so it's subtle at
-        // the zone's inner edge and firm by the time the mountain ring is close).
-        if (distFromCenter > BOUNDARY_START) {
+        // Wind resistance: past the local boundary start, cancel out however
+        // much of the velocity points further outward, ramping in (eased, so
+        // it's subtle at the zone's inner edge and firm by the time the
+        // mountain ring is close).
+        if (distFromCenter > localBoundaryStart) {
             _radialDir.set(state.player.position.x, 0, state.player.position.z).normalize();
             const outward = state.player.velocity.dot(_radialDir);
             if (outward > 0) {
-                const zoneT = Math.min(1, (distFromCenter - BOUNDARY_START) / BOUNDARY_SOFT_ZONE);
+                const zoneT = Math.min(1, (distFromCenter - localBoundaryStart) / BOUNDARY_SOFT_ZONE);
                 state.player.velocity.addScaledVector(_radialDir, -outward * zoneT * zoneT);
             }
         }
@@ -127,9 +140,14 @@ export function updatePlayer(state, delta) {
         }
         // Failsafe hard cap — resistance alone should always turn the player
         // back first, this just guarantees they can never clip past the ring.
+        // Re-derives theta for the new position rather than reusing this
+        // frame's, since a big diagonal move near a headland could otherwise
+        // let the old angle's (larger) radius approve a point that's
+        // actually past the new angle's (smaller) local coastline.
         const nDist = Math.hypot(nX, nZ);
-        if (nDist > BOUNDARY_RADIUS) {
-            const scale = BOUNDARY_RADIUS / nDist;
+        const nBoundaryRadius = islandRadiusAt(Math.atan2(nZ, nX));
+        if (nDist > nBoundaryRadius) {
+            const scale = nBoundaryRadius / nDist;
             nX *= scale; nZ *= scale;
         }
         if (!colX) state.player.position.x = nX;

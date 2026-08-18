@@ -37,6 +37,7 @@ import { createRadioTower } from './environment/radio-tower.js';
 
 import { createAmbientAudio } from './audio/ambience.js';
 import { updateAtmosphere } from './atmosphere/day-night-cycle.js';
+import { createBackgroundRenderTarget, resizeBackgroundRenderTarget, renderBackgroundPass } from './fx/dynamic-fog.js';
 
 const state = createWorldState();
 state.quality = resolveQualityPreset();
@@ -62,6 +63,12 @@ function init() {
     // contrast everywhere including night.
     state.renderer.toneMappingExposure = 0.85;
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
+
+    // Offscreen target the sky/mountain backdrop renders into each frame —
+    // see fx/dynamic-fog.js. Created before any of the create*() calls
+    // below so terrain/forest/pines/rocks/grass can wire their materials to
+    // state.backgroundRenderTarget.texture as they're built.
+    state.backgroundRenderTarget = createBackgroundRenderTarget();
 
     const renderScene = new RenderPass(state.scene, state.camera);
     state.composer = new EffectComposer(state.renderer);
@@ -128,7 +135,7 @@ function init() {
 
     createAmbientAudio(state);
 
-    window.addEventListener('resize', () => onWindowResize(state));
+    window.addEventListener('resize', () => { onWindowResize(state); resizeBackgroundRenderTarget(state.backgroundRenderTarget); });
     setupInput(state);
 
     requestAnimationFrame(animate);
@@ -140,6 +147,7 @@ function animate(time) {
     updateAtmosphere(state, delta); updatePlayer(state, delta / 1000);
     updateDemoAnimals(state, delta / 1000);
     updateInteractPrompt(state); // after both updateAtmosphere (tower proximity) and updateDemoAnimals (animal proximity) have set their flags this frame
+    renderBackgroundPass(state, state.backgroundRenderTarget); // capture sky/mountain backdrop before the main pass below so this frame's dynamic fog (fx/dynamic-fog.js) reads current colors, not last frame's
     state.composer.render();
 }
 

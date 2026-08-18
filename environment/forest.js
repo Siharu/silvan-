@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation, noise } from './terrain.js';
+import { addDynamicFog } from '../fx/dynamic-fog.js';
 
 export function generateFractalForest(state) {
     const baseTrunkColor = new THREE.Color(0x28201a);
@@ -49,12 +50,23 @@ export function generateFractalForest(state) {
     }
 
     for (let i = 0; i < state.quality.treeCount; i++) {
-        const r = 25 + Math.random() * (WORLD_SIZE/2 - 50);
-        const theta = Math.random() * Math.PI * 2;
-        const x = Math.cos(theta) * r;
-        const z = Math.sin(theta) * r;
-        const y = getElevation(x, z);
-        
+        // Grove/clearing clustering: rejection-sample against a low-frequency
+        // density mask instead of placing every tree at a uniformly random
+        // spot. Pure uniform scatter is exactly why the forest read as
+        // featureless haze in every direction — clustering trees into dense
+        // groves with open clearings between them creates sightline walls
+        // and navigable "rooms", the actual small-island-feels-big trick.
+        let x, z, y, attempts = 0, density = 0;
+        do {
+            const r = 25 + Math.random() * (WORLD_SIZE/2 - 50);
+            const theta = Math.random() * Math.PI * 2;
+            x = Math.cos(theta) * r;
+            z = Math.sin(theta) * r;
+            y = getElevation(x, z);
+            density = noise(x * 0.006 + 300, z * 0.006 - 300);
+            attempts++;
+        } while (Math.random() > density * 1.5 && attempts < 12);
+
         if (y < 1.4) continue; // Keep trees out of the deep lake
 
         const baseMatrix = new THREE.Matrix4().makeTranslation(x, y - 0.3, z);
@@ -158,6 +170,13 @@ export function generateFractalForest(state) {
         );
     };
 
+    // Trees near the boundary are the main thing whose silhouettes read as
+    // a hard edge against the sky — melt them into the actual sky/mountain
+    // color behind them instead of a flat fog tint (fx/dynamic-fog.js).
+    // Called after the bark/moss onBeforeCompile above so it wraps rather
+    // than replaces it.
+    addDynamicFog(trunkMat, state.backgroundRenderTarget.texture);
+
     const branchMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, state.branchMatrices.length);
     branchMesh.castShadow = true; branchMesh.receiveShadow = true;
     branchMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(state.branchColors), 3);
@@ -182,6 +201,8 @@ export function generateFractalForest(state) {
             transformed.xyz += flutter;`
         );
     };
+    addDynamicFog(leafMat, state.backgroundRenderTarget.texture);
+
     const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, state.leafMatrices.length);
     // Optimized: Disabled leaf shadows. Overlapping transparent shadows on millions of instances causes severe overdraw
     leafMesh.castShadow = false; 

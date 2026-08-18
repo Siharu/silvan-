@@ -5,6 +5,7 @@
 // per-frame.
 
 import * as THREE from 'three';
+import { BACKGROUND_LAYER } from '../fx/dynamic-fog.js';
 
 export function createSky(state) {
     const skyGeo = new THREE.SphereGeometry(1200, 32, 32);
@@ -37,7 +38,9 @@ export function createSky(state) {
         side: THREE.BackSide,
         depthWrite: false
     });
-    state.scene.add(new THREE.Mesh(skyGeo, state.skyMat));
+    const skyMesh = new THREE.Mesh(skyGeo, state.skyMat);
+    skyMesh.layers.enable(BACKGROUND_LAYER); // part of the backdrop other materials fog toward, see fx/dynamic-fog.js
+    state.scene.add(skyMesh);
 
     const cloudGeo = new THREE.SphereGeometry(1100, 64, 32);
     state.cloudMat = new THREE.ShaderMaterial({
@@ -111,6 +114,7 @@ export function createSky(state) {
         `
     });
     state.cloudMesh = new THREE.Mesh(cloudGeo, state.cloudMat);
+    state.cloudMesh.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.cloudMesh);
 
     const moonMat = new THREE.SpriteMaterial({
@@ -122,6 +126,7 @@ export function createSky(state) {
     });
     state.moonSprite = new THREE.Sprite(moonMat);
     state.moonSprite.scale.set(160, 160, 1);
+    state.moonSprite.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.moonSprite);
 
     // Sun sprite — same treatment as the moon (billboard following the
@@ -138,6 +143,7 @@ export function createSky(state) {
     });
     state.sunSprite = new THREE.Sprite(sunMat);
     state.sunSprite.scale.set(260, 260, 1);
+    state.sunSprite.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.sunSprite);
 
     // Create Stars
@@ -182,6 +188,7 @@ export function createSky(state) {
         `
     });
     state.starMesh = new THREE.Points(starGeo, state.starMat);
+    state.starMesh.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.starMesh);
 }
 
