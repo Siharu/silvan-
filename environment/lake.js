@@ -59,6 +59,29 @@ export function createLake(state) {
             varying float vDepth;
             varying float vChop;
         `);
+        // Feed the actual wave slope into the geometry normal (not just the
+        // vWaveNormal varying below, which only ever fed the custom fresnel/
+        // glint math) — without this, MeshStandardMaterial's own PBR lighting
+        // treats the surface as a perfectly flat plane no matter how much the
+        // vertices displace, so ambient/hemisphere light (present at night
+        // even with sun/moon glint near zero) never shades the swell at all.
+        shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', `
+            #include <beginnormal_vertex>
+            {
+                float nStormAmp = 1.0 + uStormIntensity * 2.5;
+                float nStormSpeed = 1.0 + uStormIntensity * 1.6;
+                float nAx = 0.05, nAz = 0.04, nASp = 0.6 * nStormSpeed, nBSp = 0.45 * nStormSpeed;
+                float nAmpA = 0.12 * nStormAmp, nAmpB = 0.10 * nStormAmp;
+                float nCx = 0.22, nCz = 0.19, nCSp = 1.3 * nStormSpeed;
+                float nChopAmp = uStormIntensity * 0.16;
+                float nChopPhase = position.x * nCx + position.z * nCz * 0.7 + uTime * nCSp;
+                float nDHdx = nAmpA * nAx * cos(position.x * nAx + uTime * nASp)
+                            + nChopAmp * nCx * cos(nChopPhase);
+                float nDHdz = -nAmpB * nAz * sin(position.z * nAz - uTime * nBSp)
+                            + nChopAmp * nCz * 0.7 * cos(nChopPhase);
+                objectNormal = normalize(vec3(-nDHdx, 1.0, -nDHdz));
+            }
+        `);
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
             #include <begin_vertex>
             vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -165,6 +188,17 @@ export function createLake(state) {
             vec3 baseCol = mix(uShallowColor, uDeepColor, smoothstep(0.0, 0.35, vDepth));
             // Storm-stirred water reads murkier/darker than a calm lake.
             baseCol *= mix(1.0, 0.7, uStormIntensity);
+
+            // Cheap ambient self-shading from the wave slope itself — slopes
+            // facing up/toward the sky read a touch brighter, slopes tipped
+            // away read a touch darker. Deliberately independent of
+            // uSunStrength/uMoonStrength so the swell still has visible
+            // relief on an overcast night when neither glint term
+            // contributes anything, instead of the water going flat black
+            // and only ever showing motion through the moon's speckled
+            // specular term.
+            float waveShade = 0.5 + 0.5 * waterNormal.y;
+            baseCol *= mix(0.8, 1.12, waveShade);
 
             // Fresnel: near-grazing views (far shore, horizon) read as reflective sky,
             // straight-down views read as deep tinted water. This fakes a mirror

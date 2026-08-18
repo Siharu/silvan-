@@ -179,7 +179,14 @@ export function createSky(state) {
         rotation: 0
     });
     state.sunRaySprite = new THREE.Sprite(sunRayMat);
-    state.sunRaySprite.scale.set(1400, 1400, 1);
+    // Smaller and stretched rather than a single giant 1400x1400 circle —
+    // at full symmetric size it read as a flat cardboard disc pasted on the
+    // sky no matter where the sun sat. The squash is fixed on the sprite
+    // itself (sprites always face the camera, so a true rotating stretch
+    // isn't possible without going to a plane) but combined with the now-
+    // irregular beam texture and the slow rotation already driven in
+    // day-night-cycle.js, the asymmetry reads as shafts rather than a disc.
+    state.sunRaySprite.scale.set(1000, 780, 1);
     state.sunRaySprite.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.sunRaySprite);
 

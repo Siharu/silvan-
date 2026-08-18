@@ -78,18 +78,25 @@ export function createProceduralTextures() {
     const rayCanvas = document.createElement('canvas');
     rayCanvas.width = 512; rayCanvas.height = 512;
     const rCtx = rayCanvas.getContext('2d');
-    const rayCount = 16;
     rCtx.translate(256, 256);
-    for (let i = 0; i < rayCount; i++) {
-        const angle = (i / rayCount) * Math.PI * 2;
-        // Irregular wedge widths/lengths so the burst doesn't read as a
-        // mechanically even pinwheel — real light shafts are uneven,
-        // gapped by whatever's partially blocking them.
-        const width = 0.09 + Math.sin(i * 2.7) * 0.05;
-        const reach = 210 + Math.cos(i * 1.9) * 60;
+    // Old version placed evenly-spaced wedges at i/rayCount around the full
+    // circle — varying width/reach didn't stop it reading as a mechanical
+    // pinwheel, because the *positions* were still a perfect rosette every
+    // single frame from every angle. Real light shafts don't wrap all the
+    // way around evenly; they're a handful of uneven beams clustered
+    // roughly toward one side with real gaps, like light breaking through
+    // scattered canopy rather than a stamped sunburst decal.
+    let cursor = 0;
+    let seed = 7;
+    const rand = () => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647); };
+    while (cursor < Math.PI * 2) {
+        const angle = cursor;
+        const width = 0.045 + rand() * 0.05; // narrower average beam than before
+        const reach = 130 + rand() * 190;
+        const coreAlpha = 0.3 + rand() * 0.3; // uneven brightness beam-to-beam
         const grad = rCtx.createRadialGradient(0, 0, 0, 0, 0, reach);
-        grad.addColorStop(0.0, 'rgba(255,244,214,0.55)');
-        grad.addColorStop(0.35, 'rgba(255,230,180,0.22)');
+        grad.addColorStop(0.0, `rgba(255,244,214,${coreAlpha})`);
+        grad.addColorStop(0.4, `rgba(255,230,180,${coreAlpha * 0.35})`);
         grad.addColorStop(1.0, 'rgba(255,220,160,0)');
         rCtx.fillStyle = grad;
         rCtx.beginPath();
@@ -97,6 +104,9 @@ export function createProceduralTextures() {
         rCtx.arc(0, 0, reach, angle - width, angle + width);
         rCtx.closePath();
         rCtx.fill();
+        // Uneven gap before the next beam — sometimes tight, sometimes a
+        // wide stretch of nothing, so the spacing itself looks broken up.
+        cursor += width * 2 + 0.12 + rand() * 0.55;
     }
     const sunRayTex = new THREE.CanvasTexture(rayCanvas);
     sunRayTex.colorSpace = THREE.SRGBColorSpace;

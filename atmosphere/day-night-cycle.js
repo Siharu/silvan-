@@ -93,7 +93,13 @@ export function updateAtmosphere(state, delta) {
         state.camera.getWorldDirection(_camForward);
         _toSun.copy(state.sunRaySprite.position).sub(state.camera.position).normalize();
         const facing = Math.max(0, _camForward.dot(_toSun)); // 1 = looking straight at it, 0 = 90°+ off
-        state.sunRaySprite.material.opacity = Math.max(0, sy) * (1.0 - cloudCover) * Math.pow(facing, 2.2) * 0.85;
+        // Lower base multiplier (0.85 -> 0.55) plus a slow scale breathe —
+        // at constant full-strength opacity and fixed size the burst reads
+        // as a static sticker; the subtle size drift sells it as light
+        // actually moving through something instead.
+        state.sunRaySprite.material.opacity = Math.max(0, sy) * (1.0 - cloudCover) * Math.pow(facing, 2.2) * 0.55;
+        const breathe = 1.0 + Math.sin(performance.now() * 0.00015) * 0.06;
+        state.sunRaySprite.scale.set(1000 * breathe, 780 * breathe, 1);
     }
 
     const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
@@ -228,7 +234,11 @@ export function updateAtmosphere(state, delta) {
         state.dustMat.uniforms.uTime.value = ts;
         state.dustMat.uniforms.uCameraPos.value.copy(state.camera.position);
         const dustWeatherVisibility = Math.max(0, 1.0 - state.currentRainIntensity * 1.5);
-        const lightVisibility = Math.max(0.3, sy); // More visible in day
+        // Was floored at 0.3 so dust stayed nearly as visible at night as in
+        // daylight — reading as a redundant second firefly layer. Floored
+        // much lower now; it's mostly a sunlit/dusk effect, just present
+        // enough at night to catch moonlight faintly rather than glow.
+        const lightVisibility = Math.max(0.08, sy); // More visible in day
         state.dustMat.uniforms.uVisibility.value = dustWeatherVisibility * lightVisibility;
         state.dustMat.uniforms.uDayBlend.value = dayBlend;
     }
