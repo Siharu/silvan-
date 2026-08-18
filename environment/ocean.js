@@ -22,12 +22,17 @@ import { WORLD_SIZE, OCEAN_LEVEL } from '../core/world-state.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 
 export function createOcean(state) {
-    // Comfortably past the mountain-boundary far ring (WORLD_SIZE * 0.62)
-    // so the ocean's own outer edge is always hidden behind the mountains/
-    // fog, never visible as a seam. A CircleGeometry rather than a square
-    // plane so there's no straight edge to catch the eye at any angle.
-    const radius = WORLD_SIZE * 0.72;
-    const geo = new THREE.CircleGeometry(radius, 96, 0);
+    // RingGeometry, not CircleGeometry — CircleGeometry has no radial
+    // subdivision (just one fan of triangles from center to rim), so the
+    // vertex-shader swell below had almost nothing to actually displace on
+    // a mesh this size. innerRadius stays small (well inside the tightest
+    // cove's coastline, see environment/terrain.js's islandRadiusAt) so
+    // it's never visible — it exists purely to avoid wasting the radial
+    // segment budget on the island's own interior, which the ocean is
+    // never seen under.
+    const innerRadius = 120;
+    const outerRadius = WORLD_SIZE * 0.72; // comfortably past the mountain-boundary far ring
+    const geo = new THREE.RingGeometry(innerRadius, outerRadius, 128, 48);
     geo.rotateX(-Math.PI / 2);
 
     state.oceanMaterial = new THREE.MeshStandardMaterial({
@@ -46,6 +51,7 @@ export function createOcean(state) {
         shader.uniforms.uMoonStrength = { value: 0 };
         shader.uniforms.uDeepColor = { value: new THREE.Color(0x061a24) };
         shader.uniforms.uHorizonColor = { value: new THREE.Color(0x4d7a8c) };
+        shader.uniforms.uStormIntensity = { value: 0 };
         state.oceanMaterial.userData.shader = shader;
 
         shader.vertexShader = shader.vertexShader.replace('#include <common>', `
@@ -54,6 +60,7 @@ export function createOcean(state) {
             varying vec3 vWorldPos;
             varying vec3 vViewDirW;
             varying vec3 vWaveNormal;
+            varying float vChop;
         `);
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
             #include <begin_vertex>
@@ -63,12 +70,26 @@ export function createOcean(state) {
             // Slow, big rolling swell — this is meant to be seen from a
             // clifftop at a distance, never walked on, so it's tuned much
             // slower and broader than the lake's chop (environment/lake.js).
-            float a1 = 0.012, a2 = 0.009, sp1 = 0.35, sp2 = 0.27;
-            float amp1 = 0.9, amp2 = 0.6;
+            // Storms still visibly stir it — same weather signal the lake
+            // reacts to, so a rough sea in the distance matches a rough
+            // lake up close instead of the two looking like different days.
+            float stormAmp = 1.0 + uStormIntensity * 2.0;
+            float a1 = 0.012, a2 = 0.009, sp1 = 0.35 * (1.0 + uStormIntensity * 0.8), sp2 = 0.27 * (1.0 + uStormIntensity * 0.8);
+            float amp1 = 0.9 * stormAmp, amp2 = 0.6 * stormAmp;
+
+            float cx = 0.055, cz = 0.048, cSp = 0.9 * (1.0 + uStormIntensity);
+            float chopAmp = uStormIntensity * 0.5;
+            float chopPhase = position.x * cx + position.z * cz * 0.7 + uTime * cSp;
+            float chop = sin(chopPhase) * chopAmp;
+            vChop = abs(sin(chopPhase * 1.6 + uTime * 0.3)) * uStormIntensity;
+
             transformed.y += sin(position.x * a1 + uTime * sp1) * amp1
-                            + cos(position.z * a2 - uTime * sp2) * amp2;
-            float dHdx = amp1 * a1 * cos(position.x * a1 + uTime * sp1);
-            float dHdz = -amp2 * a2 * sin(position.z * a2 - uTime * sp2);
+                            + cos(position.z * a2 - uTime * sp2) * amp2
+                            + chop;
+            float dHdx = amp1 * a1 * cos(position.x * a1 + uTime * sp1)
+                       + chopAmp * cx * cos(chopPhase);
+            float dHdz = -amp2 * a2 * sin(position.z * a2 - uTime * sp2)
+                       + chopAmp * cz * 0.7 * cos(chopPhase);
             vWaveNormal = normalize(vec3(-dHdx, 1.0, -dHdz));
         `);
 
@@ -83,9 +104,11 @@ export function createOcean(state) {
             uniform float uMoonStrength;
             uniform vec3 uDeepColor;
             uniform vec3 uHorizonColor;
+            uniform float uStormIntensity;
             varying vec3 vWorldPos;
             varying vec3 vViewDirW;
             varying vec3 vWaveNormal;
+            varying float vChop;
         `);
         shader.fragmentShader = shader.fragmentShader.replace(
             'vec4 diffuseColor = vec4( diffuse, opacity );',
@@ -99,18 +122,32 @@ export function createOcean(state) {
             // further out. Without this the sea reads as one flat dark color
             // right up to where the fog starts, which looks like a floor with
             // an edge rather than something that recedes into distance.
+            // uHorizonColor itself now tracks the sky's actual horizon color
+            // per frame (see atmosphere/day-night-cycle.js) instead of a
+            // fixed dusk tint, so this gradient and the dynamic-fog blend
+            // beyond it converge on the same color instead of seaming.
             float dist = length(vViewDirW);
             float haze = smoothstep(60.0, 700.0, dist);
             vec3 baseCol = mix(uDeepColor, uHorizonColor, haze);
+            // Storm-stirred water reads murkier/darker, same as the lake.
+            baseCol *= mix(1.0, 0.72, uStormIntensity);
 
             float fresnel = pow(1.0 - clamp(dot(waterNormal, viewDirN), 0.0, 1.0), 3.0);
             baseCol = mix(baseCol, uHorizonColor, fresnel * 0.6);
 
+            // Whitecaps: the chop layer (vChop, see vertex shader) crests
+            // into scattered foam once storm intensity climbs — absent on a
+            // calm sea, matching the lake's whitecap behavior so the two
+            // read as the same weather event rather than independent water.
+            float whitecap = smoothstep(0.45, 0.85, vChop) * uStormIntensity;
+            baseCol = mix(baseCol, vec3(0.82, 0.87, 0.9), whitecap * 0.5);
+
             vec3 reflected = reflect(-viewDirN, waterNormal);
-            float sunGlint = min(pow(max(dot(reflected, uSunDir), 0.0), 90.0), 1.0) * uSunStrength;
-            float moonGlint = min(pow(max(dot(reflected, uMoonDir), 0.0), 110.0), 1.0) * uMoonStrength;
-            baseCol += uSunColor * sunGlint * 1.8;
-            baseCol += uMoonColor * moonGlint * 1.3;
+            float glintSharpness = mix(90.0, 30.0, uStormIntensity);
+            float sunGlint = min(pow(max(dot(reflected, uSunDir), 0.0), glintSharpness), 1.0) * uSunStrength;
+            float moonGlint = min(pow(max(dot(reflected, uMoonDir), 0.0), glintSharpness * 1.2), 1.0) * uMoonStrength;
+            baseCol += uSunColor * sunGlint * mix(1.8, 0.9, uStormIntensity);
+            baseCol += uMoonColor * moonGlint * mix(1.3, 0.6, uStormIntensity);
 
             vec4 diffuseColor = vec4(baseCol, opacity);
             `

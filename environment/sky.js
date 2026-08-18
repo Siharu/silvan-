@@ -129,6 +129,24 @@ export function createSky(state) {
     state.moonSprite.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.moonSprite);
 
+    // Moon glow halo — a separate, larger, softer sprite behind the moon
+    // disc (see fx/textures.js's moonGlow texture for why this needs to be
+    // its own sprite rather than baked into the moon texture itself: the
+    // moon disc stays crisp-edged, only the glow around it blooms outward).
+    // Position/opacity driven per-frame in atmosphere/day-night-cycle.js,
+    // same as the moon sprite it tracks.
+    const moonGlowMat = new THREE.SpriteMaterial({
+        map: state.globalTextures.moonGlow,
+        transparent: true,
+        opacity: 1,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+    state.moonGlowSprite = new THREE.Sprite(moonGlowMat);
+    state.moonGlowSprite.scale.set(520, 520, 1);
+    state.moonGlowSprite.layers.enable(BACKGROUND_LAYER);
+    state.scene.add(state.moonGlowSprite);
+
     // Sun sprite — same treatment as the moon (billboard following the
     // directional light), but its opacity is driven per-frame by cloud
     // cover in atmosphere/day-night-cycle.js so it visibly vanishes behind
@@ -145,6 +163,25 @@ export function createSky(state) {
     state.sunSprite.scale.set(260, 260, 1);
     state.sunSprite.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.sunSprite);
+
+    // Sun-ray burst — cheap sprite-based god rays (see fx/textures.js's
+    // sunRays texture for the actual technique/tradeoffs). Scaled well
+    // past the sun disc itself and rotated slowly in
+    // atmosphere/day-night-cycle.js; opacity there also fades it out
+    // unless the camera's roughly looking toward the sun, so it doesn't
+    // read as a fixed decal stuck to the sky from every angle.
+    const sunRayMat = new THREE.SpriteMaterial({
+        map: state.globalTextures.sunRays,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        rotation: 0
+    });
+    state.sunRaySprite = new THREE.Sprite(sunRayMat);
+    state.sunRaySprite.scale.set(1400, 1400, 1);
+    state.sunRaySprite.layers.enable(BACKGROUND_LAYER);
+    state.scene.add(state.sunRaySprite);
 
     // Create Stars
     const starGeo = new THREE.BufferGeometry();

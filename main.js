@@ -76,9 +76,14 @@ function init() {
     state.composer.addPass(renderScene);
     if (state.quality.bloomEnabled) {
         // Optimized: Half-resolution bloom pass for better performance
+        // threshold was 0.3 — since sky.js's cloud/horizon color is pure
+        // white (0xffffff, already max luminance), almost the entire sky
+        // cleared that bar and bloomed, washing the whole frame out to
+        // white instead of just glowing the sun disc/water glints like
+        // intended. Raised so only genuinely bright highlights bloom.
         state.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 1.0, 0.5, 0.8);
-        state.bloomPass.threshold = 0.3;
-        state.bloomPass.strength = 0.5;
+        state.bloomPass.threshold = 0.88;
+        state.bloomPass.strength = 0.4;
         state.bloomPass.radius = 0.4;
         state.composer.addPass(state.bloomPass);
     }

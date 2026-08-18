@@ -368,6 +368,127 @@
             color: #eef1f6;
             box-shadow: 0 0 14px rgba(160, 190, 255, 0.15);
         }
+
+        /* --- Title screen v2 ---
+           The old version fully obscured the scene (12px blur + 90% flat
+           black) behind the UI, so none of the terrain/mountain/ocean work
+           was ever visible from the title screen — a static dark rectangle
+           regardless of what's actually rendering behind it. This version
+           trades the flat wash for a light blur + a shaped scrim (radial
+           vignette + bottom-heavy gradient) so the live scene reads through
+           clearly in the upper two-thirds while staying legible where the
+           text sits, the way most 3D game title screens actually handle a
+           live background instead of hiding it. */
+        .ui-layer {
+            background: rgba(2, 5, 12, 0.28);
+            backdrop-filter: blur(3px);
+        }
+        .title-vignette {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(ellipse at 50% 42%, rgba(2,6,14,0) 30%, rgba(2,6,14,0.5) 75%, rgba(2,6,14,0.82) 100%);
+        }
+        .title-scrim {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: linear-gradient(to bottom, rgba(3,7,15,0.25) 0%, rgba(3,7,15,0.05) 26%, rgba(3,7,15,0.35) 58%, rgba(3,7,15,0.86) 100%);
+        }
+        .title-content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+            animation: title-rise 1.6s ease both;
+        }
+        @keyframes title-rise {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .title-kicker {
+            font-size: 0.62rem;
+            letter-spacing: 0.6em;
+            color: rgba(180, 200, 230, 0.5);
+            text-transform: uppercase;
+            margin-bottom: 1.2rem;
+        }
+        .title-logo {
+            text-shadow: 0 0 46px rgba(180, 210, 255, 0.22), 0 4px 24px rgba(0,0,0,0.6);
+        }
+        .title-rule {
+            width: 52px;
+            height: 1px;
+            margin: 1.1rem 0 1.15rem;
+            background: linear-gradient(to right, transparent, rgba(205, 220, 240, 0.55), transparent);
+        }
+        .title-desc {
+            max-width: 30rem;
+        }
+        .title-controls {
+            display: flex;
+            gap: 0.85rem;
+            margin-top: 2.25rem;
+            margin-bottom: 2.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .control-chip {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.65rem 1.1rem;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 3px;
+            min-width: 5.75rem;
+            transition: border-color 0.25s ease, background 0.25s ease;
+        }
+        .control-chip:hover {
+            border-color: rgba(210, 225, 255, 0.3);
+            background: rgba(255,255,255,0.05);
+        }
+        .control-key {
+            font-size: 0.7rem;
+            letter-spacing: 0.1em;
+            color: #eef1f6;
+            font-weight: 500;
+        }
+        .control-label {
+            font-size: 0.58rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #7f8ba3;
+        }
+        .title-settings {
+            position: absolute;
+            right: 1.75rem;
+            bottom: 1.75rem;
+            z-index: 2;
+            background: rgba(4, 8, 16, 0.4);
+            padding: 0.5rem 0.75rem;
+            border-radius: 3px;
+            border: 1px solid rgba(255,255,255,0.06);
+            backdrop-filter: blur(4px);
+        }
+        .title-credit {
+            position: absolute;
+            left: 1.75rem;
+            bottom: 1.75rem;
+            z-index: 2;
+            font-size: 0.6rem;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: rgba(150, 165, 190, 0.4);
+        }
+        @media (max-width: 640px) {
+            .title-controls { display: none; }
+            .title-settings { position: static; margin-top: 1.5rem; }
+            .title-credit { display: none; }
+        }
     </style>
 
     <script type="importmap">
@@ -384,32 +505,44 @@
     <div id="canvas-container"></div>
 
     <div id="ui-layer" class="ui-layer">
-        <h1 class="text-7xl font-extralight tracking-[0.3em] mb-2 text-center text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500 drop-shadow-lg">
-            SILVAN
-        </h1>
-        <h2 class="text-xl font-light tracking-[0.5em] mb-12 text-gray-400">LUSH WILDERNESS</h2>
-        
-        <div class="max-w-md text-center mb-12 space-y-4">
-            <p class="text-gray-300 font-light leading-relaxed text-sm">
-                Immersive procedural forest environment with dense vegetation and dynamic atmosphere.
-            </p>
-            <div class="flex justify-center gap-6 text-xs text-gray-400 tracking-widest mt-6 bg-black/30 p-4 rounded-lg border border-white/5">
-                <span>[W A S D] MOVE</span>
-                <span>[MOUSE] LOOK</span>
-                <span>[SHIFT] RUN</span>
-                <span>[R] REST (FAST TIME)</span>
+        <div class="title-vignette"></div>
+        <div class="title-scrim"></div>
+
+        <div class="title-content">
+            <div class="title-kicker">Cygnus Signal Series</div>
+
+            <h1 class="title-logo text-7xl font-extralight tracking-[0.3em] mb-0 text-center text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500 drop-shadow-lg">
+                SILVAN
+            </h1>
+
+            <div class="title-rule"></div>
+            <h2 class="text-xl font-light tracking-[0.5em] mb-10 text-gray-400">LUSH WILDERNESS</h2>
+
+            <div class="title-desc text-center">
+                <p class="text-gray-300 font-light leading-relaxed text-sm">
+                    A quiet afterlife for animals. Wander the Hearth and see how much of this small island there really is to find.
+                </p>
             </div>
+
+            <div class="title-controls">
+                <div class="control-chip"><span class="control-key">W A S D</span><span class="control-label">Move</span></div>
+                <div class="control-chip"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
+                <div class="control-chip"><span class="control-key">Shift</span><span class="control-label">Run</span></div>
+                <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
+            </div>
+
+            <button id="start-btn" class="start-btn px-14 py-4 hover:border-white/60 transition-all duration-300 tracking-[0.25em] text-sm uppercase rounded-sm cursor-pointer z-20">
+                Enter the Forest
+            </button>
         </div>
 
-        <div class="quality-toggle-row" id="title-quality-row">
+        <div class="quality-toggle-row title-settings" id="title-quality-row">
             <span class="quality-toggle-label">Graphics</span>
             <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
             <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
         </div>
 
-        <button id="start-btn" class="start-btn px-12 py-4 hover:border-white/60 transition-all duration-300 tracking-[0.2em] text-sm uppercase rounded-sm cursor-pointer z-20">
-            Enter the Forest
-        </button>
+        <div class="title-credit">Silvan — Map 1: The Hearth</div>
     </div>
 
     <div id="hud-layer" class="hud-layer hidden">

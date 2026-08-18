@@ -12,6 +12,12 @@ import { getElevation } from '../environment/terrain.js';
 import { updateWindLeaves } from '../fx/wind-leaves.js';
 import { updateRadioTower, updateTowerCutscene } from '../environment/radio-tower.js';
 
+// Scratch vectors for the sun-ray facing check below — allocated once
+// rather than per-frame, same pattern as core/player-controller.js's
+// _radialDir.
+const _camForward = new THREE.Vector3();
+const _toSun = new THREE.Vector3();
+
 export function updateAtmosphere(state, delta) {
     state.timeMultiplier = state.keys.r ? 50 : 1;
     
@@ -63,6 +69,32 @@ export function updateAtmosphere(state, delta) {
     // slower ease hasn't fully caught up yet.
     const cloudCover = Math.max(state.currentCloudiness, Math.min(1.0, state.currentRainIntensity * 1.4));
     if(state.sunSprite) { state.sunSprite.position.set(sx*550, sy*550, -200); state.sunSprite.material.opacity = Math.max(0, sy) * (1.0 - cloudCover); }
+
+    // Moon glow halo tracks the moon sprite's own position exactly, but
+    // fades faster with cloud cover than the disc itself — a hazy sky can
+    // still show a dim moon shape through thin cloud, but the soft glow
+    // around it (which is really "moonlight visibly scattering in clear
+    // air") should disappear well before the disc does.
+    if(state.moonGlowSprite) {
+        state.moonGlowSprite.position.copy(state.moonSprite.position);
+        state.moonGlowSprite.material.opacity = Math.max(0, -sy + 0.2) * (1.0 - cloudCover * 0.85);
+    }
+
+    // Sun-ray burst (fx/textures.js's sunRays texture) — pinned to the sun
+    // sprite's position, slowly rotating for a living rather than static
+    // feel. Opacity depends on both cloud cover (same fade as the sun disc
+    // itself) and how directly the camera's actually looking toward the
+    // sun — full strength staring straight at it, gone entirely once it's
+    // more than ~60° off-center, so it doesn't read as a decal glued to a
+    // fixed spot on the sky when glancing around the world.
+    if (state.sunRaySprite && state.sunSprite) {
+        state.sunRaySprite.position.copy(state.sunSprite.position);
+        state.sunRaySprite.material.rotation += delta * 0.00004;
+        state.camera.getWorldDirection(_camForward);
+        _toSun.copy(state.sunRaySprite.position).sub(state.camera.position).normalize();
+        const facing = Math.max(0, _camForward.dot(_toSun)); // 1 = looking straight at it, 0 = 90°+ off
+        state.sunRaySprite.material.opacity = Math.max(0, sy) * (1.0 - cloudCover) * Math.pow(facing, 2.2) * 0.85;
+    }
 
     const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
     // Sun peak trimmed from 1.5 -> 1.1 (was clipping white against the
@@ -154,16 +186,23 @@ export function updateAtmosphere(state, delta) {
 
     // Same sun/moon glint feed as the lake's waterMaterial block above, for
     // the ocean visible past the mountain backdrop (environment/ocean.js).
-    // uSunColor/uMoonColor are left at their onBeforeCompile defaults since
-    // the ocean is a fixed warm-sun/cool-moon look rather than something
-    // that needs to track the sky's own color the way uSkyColor-driven
-    // shaders do.
+    // uHorizonColor now tracks botC (the same horizon color driving the sky
+    // dome and fog) each frame — it used to be a fixed dusk tint set once at
+    // shader-compile time, which meant the ocean's own internal haze
+    // gradient permanently disagreed with the actual sky color that
+    // fx/dynamic-fog.js blends toward further out, seaming right where one
+    // handed off to the other. uDeepColor stays closer to fixed (deep water
+    // reads dark regardless of time of day) but still darkens under storms,
+    // same as the lake.
     if (state.oceanMaterial && state.oceanMaterial.userData && state.oceanMaterial.userData.shader) {
         const oU = state.oceanMaterial.userData.shader.uniforms;
         oU.uSunDir.value.copy(state.sunLight.position).normalize();
         oU.uMoonDir.value.copy(state.moonLight.position).normalize();
         oU.uSunStrength.value = Math.max(0, sy) * (1.0 - cloudCover);
         oU.uMoonStrength.value = Math.max(0, -sy) * (1.0 - cloudCover * 0.7);
+        oU.uHorizonColor.value.copy(botC);
+        oU.uDeepColor.value.set(0x061a24).lerp(new THREE.Color(0x040d13), state.currentRainIntensity * 0.5);
+        oU.uStormIntensity.value = Math.min(1.0, state.currentRainIntensity * 1.6); // same curve as the lake's chop/whitecaps
     }
 
     // Update puddle shader uniforms and opacity based on rain intensity

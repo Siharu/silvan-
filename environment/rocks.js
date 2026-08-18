@@ -12,6 +12,14 @@
 // geometric icosahedrons. One InstancedMesh per variant — instances are
 // still batched for performance, just spread across a handful of shapes
 // instead of one.
+//
+// Base geometry detail was 3 (1,280 faces) — fine at a distance, but the
+// biggest rocks scale up to ~5.5x base radius (see the `s` roll below) and
+// the player can walk right up against one, at which point each of those
+// 1,280 faces covers enough screen space to read as a flat geometric plane
+// rather than stone. Bumped to detail 4 (5,120 faces) so close-range facets
+// stay small enough to disappear into the noise deformation instead of
+// standing out as panels.
 
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
@@ -29,7 +37,7 @@ function buildRockVariant(seed) {
         return s - Math.floor(s);
     }
 
-    const geo = new THREE.IcosahedronGeometry(1, 3);
+    const geo = new THREE.IcosahedronGeometry(1, 4);
     const pos = geo.attributes.position;
 
     // Each variant gets its own randomized frequency/phase/amplitude per

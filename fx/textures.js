@@ -27,6 +27,26 @@ export function createProceduralTextures() {
     const moonTex = new THREE.CanvasTexture(moonCanvas);
     moonTex.colorSpace = THREE.SRGBColorSpace;
 
+    // Moon glow halo: a separate, much larger and softer radial gradient
+    // (cool blue-white) rendered behind/around the moon sprite in sky.js.
+    // The moon disc texture above is deliberately hard-edged (a real moon
+    // has a crisp limb), so this exists purely to give it the same kind of
+    // soft atmospheric bloom the sun's own texture already bakes in —
+    // without it the moon reads as a flat cutout pasted on the sky with
+    // nothing lighting the air around it.
+    const moonGlowCanvas = document.createElement('canvas');
+    moonGlowCanvas.width = 256; moonGlowCanvas.height = 256;
+    const mgCtx = moonGlowCanvas.getContext('2d');
+    const moonGlowGrad = mgCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    moonGlowGrad.addColorStop(0.0, 'rgba(215,225,255,0.9)');
+    moonGlowGrad.addColorStop(0.15, 'rgba(190,205,255,0.55)');
+    moonGlowGrad.addColorStop(0.45, 'rgba(170,190,255,0.18)');
+    moonGlowGrad.addColorStop(1.0, 'rgba(160,180,255,0)');
+    mgCtx.fillStyle = moonGlowGrad;
+    mgCtx.fillRect(0, 0, 256, 256);
+    const moonGlowTex = new THREE.CanvasTexture(moonGlowCanvas);
+    moonGlowTex.colorSpace = THREE.SRGBColorSpace;
+
     // Sun sprite: a bright core disc + soft falling-off glow halo, radial
     // gradient rather than a hard-edged circle like the moon — this is what
     // gives the water's specular glint (environment/lake.js) something
@@ -45,6 +65,41 @@ export function createProceduralTextures() {
     sCtx.fillRect(0, 0, 256, 256);
     const sunTex = new THREE.CanvasTexture(sunCanvas);
     sunTex.colorSpace = THREE.SRGBColorSpace;
+
+    // Sun-ray burst: alternating warm/transparent wedges radiating from
+    // center, gaussian-ish falloff toward the rim — a cheap, sprite-based
+    // stand-in for volumetric god rays. sky.js renders this as a large
+    // camera-facing sprite pinned to the sun's position, additively
+    // blended and faded by how directly the camera's looking toward it
+    // (see atmosphere/day-night-cycle.js) — not true occlusion-aware
+    // volumetric shafts through the canopy, but reads convincingly for a
+    // fraction of the engineering/perf cost, and needs no changes to the
+    // render pipeline.
+    const rayCanvas = document.createElement('canvas');
+    rayCanvas.width = 512; rayCanvas.height = 512;
+    const rCtx = rayCanvas.getContext('2d');
+    const rayCount = 16;
+    rCtx.translate(256, 256);
+    for (let i = 0; i < rayCount; i++) {
+        const angle = (i / rayCount) * Math.PI * 2;
+        // Irregular wedge widths/lengths so the burst doesn't read as a
+        // mechanically even pinwheel — real light shafts are uneven,
+        // gapped by whatever's partially blocking them.
+        const width = 0.09 + Math.sin(i * 2.7) * 0.05;
+        const reach = 210 + Math.cos(i * 1.9) * 60;
+        const grad = rCtx.createRadialGradient(0, 0, 0, 0, 0, reach);
+        grad.addColorStop(0.0, 'rgba(255,244,214,0.55)');
+        grad.addColorStop(0.35, 'rgba(255,230,180,0.22)');
+        grad.addColorStop(1.0, 'rgba(255,220,160,0)');
+        rCtx.fillStyle = grad;
+        rCtx.beginPath();
+        rCtx.moveTo(0, 0);
+        rCtx.arc(0, 0, reach, angle - width, angle + width);
+        rCtx.closePath();
+        rCtx.fill();
+    }
+    const sunRayTex = new THREE.CanvasTexture(rayCanvas);
+    sunRayTex.colorSpace = THREE.SRGBColorSpace;
 
     const fCanvas = document.createElement('canvas');
     fCanvas.width = 128; fCanvas.height = 128;
@@ -68,6 +123,6 @@ export function createProceduralTextures() {
     const flowerTex = new THREE.CanvasTexture(fCanvas);
     flowerTex.colorSpace = THREE.SRGBColorSpace;
 
-    return { leaf: leafTex, moon: moonTex, sun: sunTex, flower: flowerTex };
+    return { leaf: leafTex, moon: moonTex, moonGlow: moonGlowTex, sun: sunTex, sunRays: sunRayTex, flower: flowerTex };
 }
 
