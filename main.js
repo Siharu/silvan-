@@ -19,6 +19,7 @@ import { getElevation } from './environment/terrain.js';
 import { createTerrain } from './environment/terrain.js';
 import { createSky } from './environment/sky.js';
 import { createLake } from './environment/lake.js';
+import { createOcean } from './environment/ocean.js';
 import { createGrass } from './environment/grass.js';
 import { createFlowers } from './environment/flowers.js';
 import { createRocks } from './environment/rocks.js';
@@ -109,6 +110,7 @@ function init() {
     createSky(state);
     createMountainBoundary(state);
     createTerrain(state);
+    createOcean(state);
     createLake(state);
     createGrass(state);
     createFlowers(state);

@@ -115,7 +115,13 @@ export function updateAtmosphere(state, delta) {
     updateWindLeaves(state, ts);
     updateRadioTower(state, ts, sy < 0);
     updateTowerCutscene(state, delta / 1000);
-    state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader) c.material.userData.shader.uniforms.uTime.value = ts; });
+    // Guard uniforms.uTime itself, not just userData.shader — a material's
+    // onBeforeCompile can re-fire mid-session (lighting/fog/quality changes)
+    // and briefly leave userData.shader pointing at a shader object whose
+    // uniforms aren't populated yet. Without this guard that one frame
+    // throws and, since traverse doesn't catch, permanently breaks every
+    // later call to this function too.
+    state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader && c.material.userData.shader.uniforms.uTime) c.material.userData.shader.uniforms.uTime.value = ts; });
     if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
         state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
         state.rainMaterial.color.set(new THREE.Color(0xffffff).lerp(new THREE.Color(0x334466), 1 - dayBlend));
@@ -144,6 +150,20 @@ export function updateAtmosphere(state, delta) {
         wU.uRainIntensity.value = state.currentRainIntensity;
         wU.uStormIntensity.value = Math.min(1.0, state.currentRainIntensity * 1.6); // drives wave chop/whitecaps, separate curve from the rain-ring fade
         wU.uTime.value = performance.now() * 0.001;
+    }
+
+    // Same sun/moon glint feed as the lake's waterMaterial block above, for
+    // the ocean visible past the mountain backdrop (environment/ocean.js).
+    // uSunColor/uMoonColor are left at their onBeforeCompile defaults since
+    // the ocean is a fixed warm-sun/cool-moon look rather than something
+    // that needs to track the sky's own color the way uSkyColor-driven
+    // shaders do.
+    if (state.oceanMaterial && state.oceanMaterial.userData && state.oceanMaterial.userData.shader) {
+        const oU = state.oceanMaterial.userData.shader.uniforms;
+        oU.uSunDir.value.copy(state.sunLight.position).normalize();
+        oU.uMoonDir.value.copy(state.moonLight.position).normalize();
+        oU.uSunStrength.value = Math.max(0, sy) * (1.0 - cloudCover);
+        oU.uMoonStrength.value = Math.max(0, -sy) * (1.0 - cloudCover * 0.7);
     }
 
     // Update puddle shader uniforms and opacity based on rain intensity

@@ -4,7 +4,7 @@
 // place things on/at the ground height.
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from '../core/world-state.js';
+import { WORLD_SIZE, OCEAN_LEVEL } from '../core/world-state.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 
 export function hash(x, y) {
@@ -79,6 +79,21 @@ export function getElevation(x, z) {
     const localRadius = islandRadiusAt(theta);
     const edgeT = Math.min(1, Math.max(0, (centerDist - (localRadius - 260)) / 260));
     if (edgeT > 0) y += edgeT * edgeT * 34;
+
+    // Seafloor drop: once past the island's own irregular coastline
+    // (localRadius), plunge the ground well below OCEAN_LEVEL over a short
+    // distance so environment/ocean.js's flat disc — comfortably larger
+    // than this island's radius — occludes it. Same "flat plane, occluded
+    // by higher terrain" trick as the lake basin above, just inverted: the
+    // ocean is the thing staying flat, and the land is what drops away.
+    // Without this the coastal-rise foothills above would keep climbing
+    // uncapped past the coast and could poke back up through the ocean
+    // surface further out.
+    const pastCoast = centerDist - localRadius;
+    if (pastCoast > 0) {
+        const dropT = Math.min(1, pastCoast / 120);
+        y = y * (1 - dropT) + (OCEAN_LEVEL - 60) * dropT;
+    }
 
     return y;
 }

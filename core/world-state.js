@@ -12,6 +12,7 @@ import * as THREE from 'three';
 // state object since nothing ever reassigns them.
 export const WORLD_SIZE = 1150;
 export const WATER_LEVEL = 1.6; // Must match waterMesh.position.y in environment/lake.js
+export const OCEAN_LEVEL = 1.6; // Sea level for environment/ocean.js — same height as the inland lake's WATER_LEVEL, must match oceanMesh.position.y
 // Tree count now lives in core/quality.js's presets (state.quality.treeCount)
 // rather than as a fixed constant here, since it's one of the values the
 // graphics-quality toggle scales for lower-end devices.
