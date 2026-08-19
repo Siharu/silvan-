@@ -294,8 +294,19 @@ export function createLake(state) {
             uDeepColor: { value: new THREE.Color(0x082238) },
             uShallowColor: { value: new THREE.Color(0x1f7fa8) },
             uRainIntensity: { value: 0 },
-            uOpacity: { value: 0.88 }
-        }
+            uOpacity: { value: 0.88 },
+            // A raw ShaderMaterial (unlike MeshStandardMaterial) doesn't get
+            // fogColor/fogDensity merged into its uniforms automatically —
+            // refreshFogUniforms() writes straight into whatever's already
+            // in material.uniforms, so these have to exist here up front or
+            // it throws reading .value off undefined. THREE.FogExp2 in
+            // main.js means fogDensity, not fogNear/fogFar.
+            fogColor: { value: new THREE.Color(0x111625) },
+            fogDensity: { value: 0.007 }
+        },
+        // FOG_EXP2 selects the exp2 branch in the #include <fog_*> chunks
+        // below — must match main.js's THREE.FogExp2, not the linear THREE.Fog.
+        defines: { FOG_EXP2: '' }
     });
     // day-night-cycle.js reads state.waterMaterial.userData.shader.uniforms —
     // that path was written for the old onBeforeCompile version where the
