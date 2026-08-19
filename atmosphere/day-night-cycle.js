@@ -81,15 +81,21 @@ export function updateAtmosphere(state, delta) {
     }
 
     // Sun-ray burst (fx/textures.js's sunRays texture) — pinned to the sun
-    // sprite's position, slowly rotating for a living rather than static
-    // feel. Opacity depends on both cloud cover (same fade as the sun disc
-    // itself) and how directly the camera's actually looking toward the
-    // sun — full strength staring straight at it, gone entirely once it's
-    // more than ~60° off-center, so it doesn't read as a decal glued to a
-    // fixed spot on the sky when glancing around the world.
+    // sprite's position. Opacity depends on both cloud cover (same fade as
+    // the sun disc itself) and how directly the camera's actually looking
+    // toward the sun — full strength staring straight at it, gone entirely
+    // once it's more than ~60° off-center, so it doesn't read as a decal
+    // glued to a fixed spot on the sky when glancing around the world.
     if (state.sunRaySprite && state.sunSprite) {
         state.sunRaySprite.position.copy(state.sunSprite.position);
-        state.sunRaySprite.material.rotation += delta * 0.00004;
+        // The ray texture is now a directional fan (see fx/textures.js) —
+        // it points a specific way, unlike the old full-circle burst that
+        // could spin freely with nothing looking wrong. A continuous
+        // rotation here would carry it sideways and upside-down over a
+        // single day/night cycle, so this is now a small back-and-forth
+        // sway instead of a one-way spin — still reads as "alive," not
+        // static, without ever pointing the fan away from the viewer.
+        state.sunRaySprite.material.rotation = Math.sin(performance.now() * 0.00007) * 0.06;
         state.camera.getWorldDirection(_camForward);
         _toSun.copy(state.sunRaySprite.position).sub(state.camera.position).normalize();
         const facing = Math.max(0, _camForward.dot(_toSun)); // 1 = looking straight at it, 0 = 90°+ off

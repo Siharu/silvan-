@@ -66,37 +66,50 @@ export function createProceduralTextures() {
     const sunTex = new THREE.CanvasTexture(sunCanvas);
     sunTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Sun-ray burst: alternating warm/transparent wedges radiating from
-    // center, gaussian-ish falloff toward the rim — a cheap, sprite-based
-    // stand-in for volumetric god rays. sky.js renders this as a large
-    // camera-facing sprite pinned to the sun's position, additively
-    // blended and faded by how directly the camera's looking toward it
-    // (see atmosphere/day-night-cycle.js) — not true occlusion-aware
-    // volumetric shafts through the canopy, but reads convincingly for a
-    // fraction of the engineering/perf cost, and needs no changes to the
+    // Sun-ray burst: a handful of long, soft, unevenly-spaced light shafts —
+    // a cheap sprite-based stand-in for volumetric god rays. sky.js renders
+    // this as a large camera-facing sprite pinned to the sun's position,
+    // additively blended and faded by how directly the camera's looking
+    // toward it (see atmosphere/day-night-cycle.js) — not true occlusion-
+    // aware volumetric shafts through the canopy, but reads convincingly for
+    // a fraction of the engineering/perf cost, and needs no changes to the
     // render pipeline.
     const rayCanvas = document.createElement('canvas');
     rayCanvas.width = 512; rayCanvas.height = 512;
     const rCtx = rayCanvas.getContext('2d');
     rCtx.translate(256, 256);
-    // Old version placed evenly-spaced wedges at i/rayCount around the full
-    // circle — varying width/reach didn't stop it reading as a mechanical
-    // pinwheel, because the *positions* were still a perfect rosette every
-    // single frame from every angle. Real light shafts don't wrap all the
-    // way around evenly; they're a handful of uneven beams clustered
-    // roughly toward one side with real gaps, like light breaking through
-    // scattered canopy rather than a stamped sunburst decal.
-    let cursor = 0;
+    // A previous version fixed beam width/reach/gap randomness but still
+    // wrapped a full 2π circle of wedges around the center — which is
+    // exactly the "generic sunburst clipart" silhouette (a rosette of spokes
+    // ringing a point), no matter how uneven the individual spokes are.
+    // Real crepuscular rays don't radiate outward all the way around their
+    // source; they're near-parallel beams fanning in ONE general direction
+    // — down and toward the viewer — that only look like they diverge from
+    // a point because of perspective foreshortening, the same way parallel
+    // train tracks look like they meet at a vanishing point. Restricting
+    // the beams to a narrow downward-biased arc instead of the full circle
+    // is what actually kills the pinwheel-icon look, not the per-beam
+    // randomness alone.
+    const fanCenter = Math.PI / 2; // straight "down" in canvas space (+Y), i.e. toward the viewer/ground
+    const fanSpread = 0.95; // ~109° total arc — a fan, not a ring
+    let cursor = fanCenter - fanSpread;
+    const fanEnd = fanCenter + fanSpread;
     let seed = 7;
     const rand = () => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647); };
-    while (cursor < Math.PI * 2) {
+    while (cursor < fanEnd) {
         const angle = cursor;
-        const width = 0.045 + rand() * 0.05; // narrower average beam than before
-        const reach = 130 + rand() * 190;
-        const coreAlpha = 0.3 + rand() * 0.3; // uneven brightness beam-to-beam
+        const width = 0.03 + rand() * 0.04; // thin, streak-like rather than wedge-like
+        const reach = 190 + rand() * 260; // longer than before — real shafts read as long streaks, not a short halo
+        const coreAlpha = 0.28 + rand() * 0.28; // uneven brightness beam-to-beam
         const grad = rCtx.createRadialGradient(0, 0, 0, 0, 0, reach);
+        // Softer, more gradual falloff (more stops) than the old 3-stop
+        // gradient — a hard-edged wedge cut off by a circular arc is part of
+        // what read as "icon" rather than "light"; this tapers gradually
+        // enough that the far edge of each beam fades to nothing well
+        // before its geometric cutoff, so the cutoff itself is never seen.
         grad.addColorStop(0.0, `rgba(255,244,214,${coreAlpha})`);
-        grad.addColorStop(0.4, `rgba(255,230,180,${coreAlpha * 0.35})`);
+        grad.addColorStop(0.25, `rgba(255,238,200,${coreAlpha * 0.55})`);
+        grad.addColorStop(0.55, `rgba(255,230,180,${coreAlpha * 0.22})`);
         grad.addColorStop(1.0, 'rgba(255,220,160,0)');
         rCtx.fillStyle = grad;
         rCtx.beginPath();
@@ -105,8 +118,9 @@ export function createProceduralTextures() {
         rCtx.closePath();
         rCtx.fill();
         // Uneven gap before the next beam — sometimes tight, sometimes a
-        // wide stretch of nothing, so the spacing itself looks broken up.
-        cursor += width * 2 + 0.12 + rand() * 0.55;
+        // wide stretch of nothing, so the spacing itself looks broken up
+        // rather than evenly combed.
+        cursor += width * 2 + 0.1 + rand() * 0.5;
     }
     const sunRayTex = new THREE.CanvasTexture(rayCanvas);
     sunRayTex.colorSpace = THREE.SRGBColorSpace;

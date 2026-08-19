@@ -30,16 +30,31 @@
 // Geometry's actual face count is 20 * detail^2, not something like
 // 20*4^4: detail 3 is 320 faces, detail 4 is only 500 (verified directly
 // against three.js, not assumed). At the biggest rocks' ~5.5x base-radius
-// scale (see the `s` roll below), with the player able to walk right up
-// against one, 500 faces was nowhere near enough — each face covers enough
-// screen space to read as a flat geometric slab rather than stone,
-// especially on the flatShaded types (basalt/slate) where every one of
-// those faces is a hard-edged panel with no normal blending to hide it.
-// Bumped to detail 8 (1,620 faces, verified) — over 3x the previous count.
-// This is cheap here specifically because it's shared base geometry read
-// by InstancedMesh across ~1,100 instances, not duplicated per instance —
-// the vertex cost is six variants' worth (~9,700 triangles total across
-// all rock types combined), not 1,100x anything.
+// scale, with the player able to walk right up against one, 500 faces —
+// and even the first fix's 1,620 (detail 8) — wasn't enough to disappear
+// into the noise deformation at close range.
+//
+// The temptation is to just crank detail way up (the reference rock-
+// generator demo's own slider goes to 100), but that demo edits ONE live
+// rock — we render ~1,100 instances via InstancedMesh. Instancing shares
+// the geometry *buffer* (so building it at high detail doesn't cost more
+// VRAM per instance), but the GPU still rasterizes every triangle for
+// every instance separately — triangle throughput scales with instance
+// count regardless of instancing. Detail 100 would be 204,020 triangles
+// per rock; at ~1,100 instances that's ~224 million triangles/frame for
+// rocks alone, on top of grass (1.1M blade instances), trees, and
+// everything else — nowhere near an acceptable per-frame budget.
+//
+// Split by shading type instead of one flat number, following the source
+// demo's own noted tradeoff ("if flat shading, lower detail looks better;
+// if smooth, higher detail is needed" — flat-shaded facets stop reading as
+// "crystalline" and start just being expensive once they're small enough
+// to look smooth anyway, so pouring detail into basalt/slate past a point
+// is pure waste). flatShaded types get detail 12 (3,380 tris), smooth types
+// get detail 16 (5,780 tris) — averaged across ~1,100 instances split
+// roughly evenly over 6 types, that's roughly 5.5M triangles/frame total
+// for the whole rock field: a large jump from the previous 1.8M (detail 8
+// flat everywhere) without approaching an unreasonable budget.
 
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
@@ -95,16 +110,16 @@ function fbm3D(x, y, z, freq, roughness, lacunarity, octaves, seed) {
 // non-indexed geometry so normals aren't averaged across faces (a proper
 // low-poly/crystalline look instead of the smoothed default).
 const ROCK_TYPES = [
-    { name: 'granite',   base: 0x5c6061, accent: 0x323536, noiseScale: 1.6, roughness: 0.5, lacunarity: 2.1, octaves: 5, disp: 0.32, flatShaded: false },
-    { name: 'sandstone', base: 0x8b7355, accent: 0x5c4033, noiseScale: 1.1, roughness: 0.6, lacunarity: 1.9, octaves: 4, disp: 0.26, flatShaded: false },
-    { name: 'basalt',    base: 0x4a4a4a, accent: 0x212121, noiseScale: 2.2, roughness: 0.45, lacunarity: 2.4, octaves: 5, disp: 0.38, flatShaded: true  },
-    { name: 'redrock',   base: 0xa86f58, accent: 0x693724, noiseScale: 1.4, roughness: 0.55, lacunarity: 2.0, octaves: 4, disp: 0.3,  flatShaded: false },
-    { name: 'slate',     base: 0x707a75, accent: 0x45504a, noiseScale: 2.6, roughness: 0.4,  lacunarity: 2.5, octaves: 5, disp: 0.4,  flatShaded: true  },
-    { name: 'limestone', base: 0xd1cdc2, accent: 0x8f8c85, noiseScale: 1.0, roughness: 0.65, lacunarity: 1.8, octaves: 4, disp: 0.22, flatShaded: false },
+    { name: 'granite',   base: 0x5c6061, accent: 0x323536, noiseScale: 1.6, roughness: 0.5, lacunarity: 2.1, octaves: 5, disp: 0.32, flatShaded: false, detail: 16 },
+    { name: 'sandstone', base: 0x8b7355, accent: 0x5c4033, noiseScale: 1.1, roughness: 0.6, lacunarity: 1.9, octaves: 4, disp: 0.26, flatShaded: false, detail: 16 },
+    { name: 'basalt',    base: 0x4a4a4a, accent: 0x212121, noiseScale: 2.2, roughness: 0.45, lacunarity: 2.4, octaves: 5, disp: 0.38, flatShaded: true,  detail: 12 },
+    { name: 'redrock',   base: 0xa86f58, accent: 0x693724, noiseScale: 1.4, roughness: 0.55, lacunarity: 2.0, octaves: 4, disp: 0.3,  flatShaded: false, detail: 16 },
+    { name: 'slate',     base: 0x707a75, accent: 0x45504a, noiseScale: 2.6, roughness: 0.4,  lacunarity: 2.5, octaves: 5, disp: 0.4,  flatShaded: true,  detail: 12 },
+    { name: 'limestone', base: 0xd1cdc2, accent: 0x8f8c85, noiseScale: 1.0, roughness: 0.65, lacunarity: 1.8, octaves: 4, disp: 0.22, flatShaded: false, detail: 16 },
 ];
 
 function buildRockVariant(type, seed) {
-    let geo = new THREE.IcosahedronGeometry(1, 8);
+    let geo = new THREE.IcosahedronGeometry(1, type.detail);
     if (type.flatShaded) geo = geo.toNonIndexed(); // no shared vertices -> computeVertexNormals below yields per-face (flat) normals
 
     const pos = geo.attributes.position;

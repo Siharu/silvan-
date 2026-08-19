@@ -15,9 +15,68 @@ export function setupInput(state) {
     const pauseSettings = document.getElementById('pause-settings');
     const volumeSlider = document.getElementById('pause-volume-slider');
 
-    document.getElementById('start-btn').addEventListener('click', () => {
+    const rememberBtn = document.getElementById('title-remember-btn');
+    const regainBtn = document.getElementById('title-regain-btn');
+    const settingsBtn = document.getElementById('title-settings-btn');
+    const creditsBtn = document.getElementById('title-credits-btn');
+    const quitBtn = document.getElementById('title-quit-btn');
+    const settingsPanel = document.getElementById('title-settings-panel');
+    const creditsPanel = document.getElementById('title-credits-panel');
+    const titleVolumeSlider = document.getElementById('title-volume-slider');
+    const farewell = document.getElementById('title-farewell');
+
+    // "Regain" (Continue) only makes sense — and only appears — once there's
+    // an actual in-progress session to continue. Before that, showing it
+    // next to "Remember" would just be a second button that does the exact
+    // same first-entry thing under a false label.
+    function refreshTitleMenuState() {
+        regainBtn.classList.toggle('hidden', !state.hasStartedGame);
+    }
+    refreshTitleMenuState();
+
+    rememberBtn.addEventListener('click', () => {
+        if (state.hasStartedGame) {
+            // A real "New Game": reloads for a genuinely fresh session,
+            // rather than relabeling a button that'd otherwise just resume
+            // exactly where the player left off (same reason "Regain" is
+            // hidden above — a label should match what actually happens).
+            location.reload();
+            return;
+        }
         state.hasStartedGame = true;
         document.body.requestPointerLock();
+    });
+
+    regainBtn.addEventListener('click', () => {
+        document.body.requestPointerLock();
+    });
+
+    settingsBtn.addEventListener('click', () => {
+        creditsPanel.classList.remove('open');
+        settingsPanel.classList.toggle('open');
+    });
+
+    creditsBtn.addEventListener('click', () => {
+        settingsPanel.classList.remove('open');
+        creditsPanel.classList.toggle('open');
+    });
+
+    titleVolumeSlider.addEventListener('input', (e) => {
+        setMasterVolume(state, parseFloat(e.target.value));
+    });
+
+    quitBtn.addEventListener('click', () => {
+        // Non-destructive "farewell" beat — fades out rather than actually
+        // tearing anything down (a browser tab can't reliably close itself
+        // anyway outside a script-opened window), then eases back to the
+        // title after a moment so clicking this out of curiosity doesn't
+        // soft-lock the page.
+        farewell.classList.add('visible');
+        setTimeout(() => {
+            farewell.classList.remove('visible');
+            settingsPanel.classList.remove('open');
+            creditsPanel.classList.remove('open');
+        }, 3200);
     });
 
     document.addEventListener('pointerlockchange', () => {
@@ -26,8 +85,8 @@ export function setupInput(state) {
             state.isPlaying = true;
             ui.classList.add('hidden'); pauseLayer.classList.remove('visible');
             hud.classList.remove('hidden'); cross.classList.remove('hidden');
-            // Resuming audio here (rather than only in the start-btn click
-            // handler, which was the original bug) means it correctly
+            // Resuming audio here (rather than only in the Remember/Regain
+            // click handlers, which was the original bug) means it correctly
             // resumes on every re-lock — first entry AND every subsequent
             // Resume-from-pause — instead of only working the very first
             // time and then staying silent for the rest of the session.
@@ -35,12 +94,13 @@ export function setupInput(state) {
         } else {
             state.isPlaying = false;
             hud.classList.add('hidden'); cross.classList.add('hidden');
-            // First-ever exit (before the player has clicked Enter the
-            // Forest even once — e.g. accidental Escape on the title
-            // screen) still shows the title screen; every exit after the
-            // game has actually started shows the pause menu instead.
+            // First-ever exit (before the player has clicked Remember even
+            // once — e.g. accidental Escape on the title screen) still shows
+            // the title screen; every exit after the game has actually
+            // started shows the pause menu instead.
             if (state.hasStartedGame) pauseLayer.classList.add('visible');
             else ui.classList.remove('hidden');
+            refreshTitleMenuState();
             pauseAmbientAudio(state);
         }
     });
@@ -62,11 +122,13 @@ export function setupInput(state) {
         // (player position, time of day, recruited animals, etc.) is left
         // untouched, same as most games' pause-menu quit option actually
         // just returning to a menu rather than wiping progress. Clicking
-        // "Enter the Forest" again just re-locks the pointer and play
-        // continues from exactly where it was.
+        // "Regain" again just re-locks the pointer and play continues from
+        // exactly where it was; "Remember" now genuinely reloads instead
+        // (see refreshTitleMenuState above).
         pauseLayer.classList.remove('visible');
         pauseSettings.classList.remove('open');
         ui.classList.remove('hidden');
+        refreshTitleMenuState();
     });
 
     // Graphics quality toggle — both the title-screen and pause-menu copies

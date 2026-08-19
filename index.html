@@ -6,6 +6,14 @@
     <title>Silvan Atmosphere - Lush Forest</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+    <!-- Cinzel (menu/title display) + Cormorant Garamond (subtext) — ported
+         from titlescreenn.html's UI/UX pass, same fonts that give its menu
+         list the calm, literary tone the SILVAN wordmark below still uses
+         Inter/Tailwind's default sans for, so the two now read as one
+         consistent voice instead of two different games glued together. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
     <style>
         body, html {
             margin: 0;
@@ -113,15 +121,6 @@
             font-weight: 300;
             line-height: 1.6;
             font-size: 0.875rem;
-        }
-        #ui-layer .start-btn {
-            color: #fff;
-            padding: 1rem 3rem;
-            font-size: 0.875rem;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            border-radius: 2px;
-            cursor: pointer;
         }
         .water-overlay {
             position: fixed;
@@ -489,6 +488,144 @@
             .title-settings { position: static; margin-top: 1.5rem; }
             .title-credit { display: none; }
         }
+
+        /* --- Title menu (ported from titlescreenn.html's UI/UX) ---
+           Same menu-item/menu-subtext language as that file almost verbatim
+           — vertical list, uppercase Cinzel labels, calm scale+glow hover,
+           an italic Cormorant Garamond subtext line underneath naming what
+           the poetic label actually does. Kept the demo's exact palette
+           (#aebfd1 idle / white hover) since it already matches Silvan's
+           existing blue-gray title language closely enough that porting it
+           verbatim reads as one consistent design rather than a graft. */
+        .title-menu {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 0.5rem;
+        }
+        .menu-item {
+            position: relative;
+            margin: 8px 0;
+            padding: 6px 20px;
+            font-family: 'Cinzel', serif;
+            font-size: 1.15rem;
+            font-weight: 500;
+            color: #aebfd1;
+            cursor: pointer;
+            transition: all 0.4s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            background: transparent;
+            border: none;
+            outline: none;
+        }
+        .menu-item:hover, .menu-item:focus-visible {
+            color: #ffffff;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+            transform: scale(1.02);
+        }
+        .menu-item::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.5);
+            transition: all 0.4s ease;
+            transform: translateX(-50%);
+        }
+        .menu-item:hover::after, .menu-item:focus-visible::after {
+            width: 60%;
+        }
+        .menu-subtext {
+            display: block;
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 0.78rem;
+            font-style: italic;
+            color: #6a7b8c;
+            margin-top: 1px;
+            text-transform: none;
+            letter-spacing: normal;
+            transition: color 0.4s ease;
+        }
+        .menu-item:hover .menu-subtext { color: #9cb1c4; }
+        .menu-item.quiet-entry { margin-top: 1.4rem; }
+
+        /* Settings/Credits fold-outs — same panel chrome as the existing
+           pause-menu settings block (border/blur/radius all match) so the
+           title screen and pause menu don't read as two different UI
+           systems, just the same one shown in two places. */
+        .title-panel {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 1rem;
+            padding: 1.1rem 1.6rem;
+            background: rgba(6, 11, 20, 0.55);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 4px;
+            backdrop-filter: blur(6px);
+            min-width: 15rem;
+        }
+        .title-panel.open { display: flex; }
+        .title-panel label {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 0.85rem;
+            color: #9cb1c4;
+            align-self: flex-start;
+        }
+        .title-panel .quality-toggle-row { margin-top: 0.15rem; }
+        .title-credits-body {
+            font-family: 'Cormorant Garamond', serif;
+            font-style: italic;
+            font-size: 0.95rem;
+            color: #b7c4d6;
+            text-align: center;
+            line-height: 1.5;
+        }
+        .title-credits-body .credit-kicker {
+            display: block;
+            font-family: 'Cinzel', serif;
+            font-style: normal;
+            font-size: 0.62rem;
+            letter-spacing: 0.5em;
+            text-transform: uppercase;
+            color: rgba(180, 200, 230, 0.55);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Farewell overlay — "Return to your world" fade, same beat as
+           titlescreenn.html's goodbye screen, but non-destructive: it fades
+           back to the title on its own rather than leaving the tab dead,
+           since a real dead-end here would just be a soft-lock for anyone
+           who clicked it out of curiosity. */
+        .title-farewell {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #05070c;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.6s ease;
+        }
+        .title-farewell.visible { opacity: 1; pointer-events: auto; }
+        .title-farewell p {
+            font-family: 'Cinzel', serif;
+            font-size: 1.4rem;
+            letter-spacing: 0.35em;
+            text-transform: uppercase;
+            color: #8fa3b5;
+            animation: farewell-pulse 3s infinite ease-in-out;
+        }
+        @keyframes farewell-pulse {
+            0%, 100% { opacity: 0.45; }
+            50% { opacity: 1; }
+        }
     </style>
 
     <script type="importmap">
@@ -531,18 +668,56 @@
                 <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
             </div>
 
-            <button id="start-btn" class="start-btn px-14 py-4 hover:border-white/60 transition-all duration-300 tracking-[0.25em] text-sm uppercase rounded-sm cursor-pointer z-20">
-                Enter the Forest
-            </button>
-        </div>
+            <div class="title-menu" id="title-menu">
+                <!-- "Remember" always visible — the genuine first-ever entry.
+                     "Regain" only appears once state.hasStartedGame is true
+                     (see core/input.js), because before that there's nothing
+                     to actually continue from — showing it earlier would be
+                     a button that lies about what it does. Remember reloads
+                     the page for a truly fresh session once Regain exists
+                     alongside it; before that it's just the normal entry. -->
+                <button id="title-remember-btn" class="menu-item group">
+                    Remember
+                    <span class="menu-subtext">(Enter the Forest)</span>
+                </button>
+                <button id="title-regain-btn" class="menu-item group hidden">
+                    Regain
+                    <span class="menu-subtext">(Continue)</span>
+                </button>
+                <button id="title-settings-btn" class="menu-item group">
+                    Settings
+                </button>
+                <button id="title-credits-btn" class="menu-item group">
+                    Credits
+                </button>
+                <button id="title-quit-btn" class="menu-item group quiet-entry">
+                    Return to your world
+                    <span class="menu-subtext">(Quit)</span>
+                </button>
+            </div>
 
-        <div class="quality-toggle-row title-settings" id="title-quality-row">
-            <span class="quality-toggle-label">Graphics</span>
-            <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
-            <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
-        </div>
+            <div class="title-panel" id="title-settings-panel">
+                <label for="title-volume-slider">Volume</label>
+                <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
+                <label style="margin-top: 0.7rem;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
+                <div class="quality-toggle-row" id="title-quality-row">
+                    <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
+                    <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                </div>
+            </div>
 
-        <div class="title-credit">Silvan — Map 1: The Hearth</div>
+            <div class="title-panel" id="title-credits-panel">
+                <div class="title-credits-body">
+                    <span class="credit-kicker">Cygnus Signal Series</span>
+                    Silvan — Map 1: The Hearth<br>
+                    A quiet afterlife for animals, wandered and built one small piece at a time.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="title-farewell" id="title-farewell">
+        <p>Farewell.</p>
     </div>
 
     <div id="hud-layer" class="hud-layer hidden">
