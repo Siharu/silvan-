@@ -25,15 +25,21 @@
 // on the InstancedMesh geometry, since there's no per-instance shader
 // uniform to drive it live without breaking batching).
 //
-// Base geometry detail was 3 (1,280 faces) — fine at a distance, but the
-// biggest rocks scale up to ~5.5x base radius (see the `s` roll below) and
-// the player can walk right up against one, at which point each of those
-// 1,280 faces covers enough screen space to read as a flat geometric plane
-// rather than stone. Bumped to detail 4 (5,120 faces) so close-range facets
-// stay small enough to disappear into the noise deformation instead of
-// standing out as panels — kept at 4 for every type below, including
-// flat-shaded ones, so the "jagged" look reads as many small facets
-// (crystalline) rather than a few large slab panels.
+// Base geometry detail was bumped from 3 to 4 in an earlier pass under the
+// belief that got to ~5,120 faces — that math was wrong. THREE.Icosahedron
+// Geometry's actual face count is 20 * detail^2, not something like
+// 20*4^4: detail 3 is 320 faces, detail 4 is only 500 (verified directly
+// against three.js, not assumed). At the biggest rocks' ~5.5x base-radius
+// scale (see the `s` roll below), with the player able to walk right up
+// against one, 500 faces was nowhere near enough — each face covers enough
+// screen space to read as a flat geometric slab rather than stone,
+// especially on the flatShaded types (basalt/slate) where every one of
+// those faces is a hard-edged panel with no normal blending to hide it.
+// Bumped to detail 8 (1,620 faces, verified) — over 3x the previous count.
+// This is cheap here specifically because it's shared base geometry read
+// by InstancedMesh across ~1,100 instances, not duplicated per instance —
+// the vertex cost is six variants' worth (~9,700 triangles total across
+// all rock types combined), not 1,100x anything.
 
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
@@ -98,7 +104,7 @@ const ROCK_TYPES = [
 ];
 
 function buildRockVariant(type, seed) {
-    let geo = new THREE.IcosahedronGeometry(1, 4);
+    let geo = new THREE.IcosahedronGeometry(1, 8);
     if (type.flatShaded) geo = geo.toNonIndexed(); // no shared vertices -> computeVertexNormals below yields per-face (flat) normals
 
     const pos = geo.attributes.position;
@@ -126,8 +132,14 @@ function buildRockVariant(type, seed) {
         // Small genuine per-vertex jitter on top of the smooth fBm, same
         // purpose as before — kills the "clearly a deformed platonic
         // solid" read at close range that pure smooth noise alone leaves.
+        // Ported from a GLSL fract()-based hash, but JS's % isn't GLSL's
+        // fract() — % returns a negative result for a negative operand
+        // (e.g. -30000.4 % 1 === -0.4), while fract() is always positive.
+        // That skewed this jitter asymmetrically instead of centering on 1.0.
         const jitterSeed = i * 12.9898 + seed * 78.233;
-        const jitter = 1.0 + (((Math.sin(jitterSeed) * 43758.5453) % 1) - 0.5) * 0.06;
+        const rawFrac = (Math.sin(jitterSeed) * 43758.5453) % 1;
+        const frac = rawFrac < 0 ? rawFrac + 1 : rawFrac; // now matches GLSL fract()'s [0, 1) range
+        const jitter = 1.0 + (frac - 0.5) * 0.06;
 
         const disp = 1.0 + n * type.disp;
         v.multiplyScalar(disp * jitter);
