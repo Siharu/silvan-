@@ -4,14 +4,26 @@
 // a single deterministic sin(x)*cos(y) deformation — since every instance
 // reuses the exact same base geometry (just scaled/rotated per instance),
 // every rock had the identical bump pattern, and the underlying icosahedron
-// facets stayed visually obvious at any real size. Now generates several
-// distinct geometry variants, each deformed with its own randomized
-// multi-octave noise (different frequencies/phases/amplitudes per variant,
-// plus genuine per-vertex jitter) and a slight non-uniform stretch, so the
-// rock field actually reads as irregular stone rather than repeated
-// geometric icosahedrons. One InstancedMesh per variant — instances are
-// still batched for performance, just spread across a handful of shapes
-// instead of one.
+// facets stayed visually obvious at any real size. Generated several
+// distinct geometry variants with per-vertex jitter and non-uniform
+// stretch so the field reads as irregular stone rather than repeated
+// icosahedrons.
+//
+// Displacement noise upgraded from hand-rolled sin/cos octaves to real
+// value-noise fBm (ported from a standalone rock-generator demo that did
+// this via a live GLSL onBeforeCompile shader — fine for one rock, but
+// wrong tool here: that approach recomputes noise on the GPU every frame
+// for a single live-editable mesh, whereas we need geometry baked once
+// into a handful of InstancedMesh variants shared across ~1,100 instances,
+// so the noise is computed in JS at build time instead, same place the old
+// sin/cos octaves ran). Also ported that demo's "rock type" concept
+// (ROCK_TYPES below): distinct color-palette/roughness/flat-shading
+// presets so the field actually reads as different kinds of stone —
+// granite, sandstone, basalt, etc — not just the same gray boulder
+// resized, plus its base/accent color-blend trick (there: a fragment
+// shader mixing two colors by noise value; here: baked per-vertex colors
+// on the InstancedMesh geometry, since there's no per-instance shader
+// uniform to drive it live without breaking batching).
 //
 // Base geometry detail was 3 (1,280 faces) — fine at a distance, but the
 // biggest rocks scale up to ~5.5x base radius (see the `s` roll below) and
@@ -19,61 +31,118 @@
 // 1,280 faces covers enough screen space to read as a flat geometric plane
 // rather than stone. Bumped to detail 4 (5,120 faces) so close-range facets
 // stay small enough to disappear into the noise deformation instead of
-// standing out as panels.
+// standing out as panels — kept at 4 for every type below, including
+// flat-shaded ones, so the "jagged" look reads as many small facets
+// (crystalline) rather than a few large slab panels.
 
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 
-const ROCK_VARIANT_COUNT = 5;
+// Deterministic 3D hash -> [0,1). Same sin-based approach the old code used
+// for jitter, extended to 3 inputs + a seed so it can drive real value
+// noise below instead of just per-vertex jitter.
+function hash3(x, y, z, seed) {
+    const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + seed * 269.5) * 43758.5453;
+    return s - Math.floor(s);
+}
 
-function buildRockVariant(seed) {
-    // Simple deterministic hash so each variant is reproducible run-to-run
-    // (matters for consistent colliders/visuals) without needing a shared
-    // PRNG object passed around.
-    function hash(n) {
-        const s = Math.sin(n * 127.1 + seed * 311.7) * 43758.5453;
-        return s - Math.floor(s);
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
+// Trilinear-interpolated value noise — a lighter-weight stand-in for the
+// demo's simplex noise (that ported cleanly to GLSL for live per-frame GPU
+// evaluation; a full simplex implementation in JS is a lot more code for a
+// difference that disappears once it's baked into static geometry and
+// smoothed by multiple fBm octaves anyway).
+function valueNoise3D(x, y, z, seed) {
+    const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+    const xf = x - xi, yf = y - yi, zf = z - zi;
+    const u = fade(xf), v = fade(yf), w = fade(zf);
+    const c000 = hash3(xi, yi, zi, seed), c100 = hash3(xi + 1, yi, zi, seed);
+    const c010 = hash3(xi, yi + 1, zi, seed), c110 = hash3(xi + 1, yi + 1, zi, seed);
+    const c001 = hash3(xi, yi, zi + 1, seed), c101 = hash3(xi + 1, yi, zi + 1, seed);
+    const c011 = hash3(xi, yi + 1, zi + 1, seed), c111 = hash3(xi + 1, yi + 1, zi + 1, seed);
+    const x00 = c000 + (c100 - c000) * u, x10 = c010 + (c110 - c010) * u;
+    const x01 = c001 + (c101 - c001) * u, x11 = c011 + (c111 - c011) * u;
+    const y0 = x00 + (x10 - x00) * v, y1 = x01 + (x11 - x01) * v;
+    return (y0 + (y1 - y0) * w) * 2 - 1; // remap [0,1] -> [-1,1]
+}
+
+// Fractal Brownian Motion: several octaves of the above, each higher-
+// frequency octave contributing less (roughness) as frequency climbs
+// (lacunarity) — same fBm structure as the source demo's GLSL version.
+function fbm3D(x, y, z, freq, roughness, lacunarity, octaves, seed) {
+    let amp = 1, f = freq, sum = 0, norm = 0;
+    for (let o = 0; o < octaves; o++) {
+        sum += amp * valueNoise3D(x * f, y * f, z * f, seed + o * 17.13);
+        norm += amp;
+        amp *= roughness;
+        f *= lacunarity;
     }
+    return norm > 0 ? sum / norm : 0; // ~[-1, 1]
+}
 
-    const geo = new THREE.IcosahedronGeometry(1, 4);
+// Rock "types" — ported from the source demo's randomizeParams() palette
+// list, with per-type noise character (noiseScale/roughness/lacunarity/
+// octaves/displacement) instead of one shared look. flatShaded types get
+// non-indexed geometry so normals aren't averaged across faces (a proper
+// low-poly/crystalline look instead of the smoothed default).
+const ROCK_TYPES = [
+    { name: 'granite',   base: 0x5c6061, accent: 0x323536, noiseScale: 1.6, roughness: 0.5, lacunarity: 2.1, octaves: 5, disp: 0.32, flatShaded: false },
+    { name: 'sandstone', base: 0x8b7355, accent: 0x5c4033, noiseScale: 1.1, roughness: 0.6, lacunarity: 1.9, octaves: 4, disp: 0.26, flatShaded: false },
+    { name: 'basalt',    base: 0x4a4a4a, accent: 0x212121, noiseScale: 2.2, roughness: 0.45, lacunarity: 2.4, octaves: 5, disp: 0.38, flatShaded: true  },
+    { name: 'redrock',   base: 0xa86f58, accent: 0x693724, noiseScale: 1.4, roughness: 0.55, lacunarity: 2.0, octaves: 4, disp: 0.3,  flatShaded: false },
+    { name: 'slate',     base: 0x707a75, accent: 0x45504a, noiseScale: 2.6, roughness: 0.4,  lacunarity: 2.5, octaves: 5, disp: 0.4,  flatShaded: true  },
+    { name: 'limestone', base: 0xd1cdc2, accent: 0x8f8c85, noiseScale: 1.0, roughness: 0.65, lacunarity: 1.8, octaves: 4, disp: 0.22, flatShaded: false },
+];
+
+function buildRockVariant(type, seed) {
+    let geo = new THREE.IcosahedronGeometry(1, 4);
+    if (type.flatShaded) geo = geo.toNonIndexed(); // no shared vertices -> computeVertexNormals below yields per-face (flat) normals
+
     const pos = geo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
 
-    // Each variant gets its own randomized frequency/phase/amplitude per
-    // octave, so variants don't just look like phase-shifted copies of the
-    // same wave.
-    const octaves = [
-        { freq: 1.5 + hash(seed + 1) * 2.0, amp: 0.22 + hash(seed + 2) * 0.1, phase: hash(seed + 3) * 6.28 },
-        { freq: 3.0 + hash(seed + 4) * 3.0, amp: 0.09 + hash(seed + 5) * 0.06, phase: hash(seed + 6) * 6.28 },
-        { freq: 6.0 + hash(seed + 7) * 5.0, amp: 0.04 + hash(seed + 8) * 0.03, phase: hash(seed + 9) * 6.28 },
-    ];
-    // Slight non-uniform axis stretch, baked into the geometry itself
-    // (distinct from the per-instance dummy.scale applied later) — breaks
-    // up the otherwise-perfect icosahedral silhouette further.
+    // Deterministic per-variant hash so stretch/jitter still vary between
+    // variants of the same type without needing a shared PRNG object.
+    const hv = (n) => hash3(n, seed * 1.7, seed * 0.3, seed);
     const stretch = new THREE.Vector3(
-        0.85 + hash(seed + 10) * 0.3,
-        0.75 + hash(seed + 11) * 0.35,
-        0.85 + hash(seed + 12) * 0.3
+        0.85 + hv(10) * 0.3,
+        0.75 + hv(11) * 0.35,
+        0.85 + hv(12) * 0.3
     );
+
+    const baseColor = new THREE.Color(type.base);
+    const accentColor = new THREE.Color(type.accent);
+    const blendColor = new THREE.Color();
 
     const v = new THREE.Vector3();
     for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
-        let disp = 1.0;
-        for (const o of octaves) {
-            disp += o.amp * Math.sin(v.x * o.freq + o.phase) * Math.cos(v.y * o.freq * 0.87 + o.phase * 1.3) * Math.sin(v.z * o.freq * 0.6 + o.phase * 0.7);
-        }
-        // Small genuine per-vertex jitter on top of the smooth noise, so
-        // even neighboring vertices aren't perfectly predictable from the
-        // wave functions alone — this is what actually kills the "clearly
-        // a deformed platonic solid" read at close range.
+
+        const n = fbm3D(v.x, v.y, v.z, type.noiseScale, type.roughness, type.lacunarity, type.octaves, seed);
+
+        // Small genuine per-vertex jitter on top of the smooth fBm, same
+        // purpose as before — kills the "clearly a deformed platonic
+        // solid" read at close range that pure smooth noise alone leaves.
         const jitterSeed = i * 12.9898 + seed * 78.233;
         const jitter = 1.0 + (((Math.sin(jitterSeed) * 43758.5453) % 1) - 0.5) * 0.06;
+
+        const disp = 1.0 + n * type.disp;
         v.multiplyScalar(disp * jitter);
         v.multiply(stretch);
         pos.setXYZ(i, v.x, v.y, v.z);
+
+        // Bake the same noise value into a per-vertex base/accent color
+        // blend the source demo did live in its fragment shader — darker
+        // accent color pools in the noise troughs, base color on the
+        // raised ridges, instead of one flat material color.
+        const blend = THREE.MathUtils.smoothstep((n + 1) * 0.5, 0.3, 0.7);
+        blendColor.copy(accentColor).lerp(baseColor, blend);
+        colors[i * 3] = blendColor.r; colors[i * 3 + 1] = blendColor.g; colors[i * 3 + 2] = blendColor.b;
     }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
     return geo;
 }
@@ -81,26 +150,29 @@ function buildRockVariant(seed) {
 export function createRocks(state) {
     const ROCK_FIELD_RADIUS = WORLD_SIZE * 0.4;
     const rockCount = state.quality.rockCount;
+    const variantCount = ROCK_TYPES.length;
 
-    const variantGeos = [];
-    for (let vi = 0; vi < ROCK_VARIANT_COUNT; vi++) variantGeos.push(buildRockVariant(vi * 97.3 + 13));
+    const variantGeos = ROCK_TYPES.map((type, vi) => buildRockVariant(type, vi * 97.3 + 13));
 
+    // vertexColors on so each type's baked base/accent blend actually
+    // shows — color left white since the per-vertex attribute now carries
+    // the real color.
     const rockMat = new THREE.MeshStandardMaterial({
-        color: 0x4a4f55,
+        vertexColors: true,
         roughness: 0.9,
         metalness: 0.1
     });
     addDynamicFog(rockMat, state.backgroundRenderTarget.texture);
 
-    // Instances-per-variant capacity, sized exactly to fit since assignment
-    // below is round-robin (not random) — guarantees every rock that gets a
-    // collider also gets a visible mesh slot, with no possibility of a
-    // variant overflowing and silently leaving an invisible-but-still-
-    // collidable rock (which random assignment with a "probably enough"
-    // headroom could risk).
-    const capacityPerVariant = Math.ceil(rockCount / ROCK_VARIANT_COUNT);
+    // Instances-per-variant capacity, sized with headroom since assignment
+    // is now per-cluster (a whole outcrop shares one type — see below) not
+    // strict round-robin, so variant counts won't come out perfectly even.
+    // Guarded below with a skip-if-full check rather than trusting the
+    // math exactly, since overflowing an InstancedMesh's fixed instance
+    // buffer via setMatrixAt is a hard crash, not a graceful clamp.
+    const capacityPerVariant = Math.ceil((rockCount / variantCount) * 1.6);
     const rockMeshes = variantGeos.map(g => new THREE.InstancedMesh(g, rockMat, capacityPerVariant));
-    const instanceCounts = new Array(ROCK_VARIANT_COUNT).fill(0);
+    const instanceCounts = new Array(variantCount).fill(0);
 
     const dummy = new THREE.Object3D();
     let idx = 0;
@@ -109,6 +181,10 @@ export function createRocks(state) {
         const th = Math.random() * Math.PI * 2;
         const cx = Math.cos(th) * r; const cz = Math.sin(th) * r;
         const num = 2 + Math.floor(Math.random() * 5);
+        // Each cluster rolls one type for every rock in it — clusters read
+        // as an outcrop of the same stone rather than a grab-bag of random
+        // types piled together.
+        const clusterVariant = Math.floor(Math.random() * variantCount);
         for (let j = 0; j < num && idx < rockCount; j++) {
             const rx = cx + (Math.random() - 0.5) * 12;
             const rz = cz + (Math.random() - 0.5) * 12;
@@ -119,8 +195,8 @@ export function createRocks(state) {
             dummy.scale.set(s * (0.8 + Math.random() * 0.4), s * (0.6 + Math.random() * 0.4), s * (0.8 + Math.random() * 0.4));
             dummy.updateMatrix();
 
-            const variant = idx % ROCK_VARIANT_COUNT; // round-robin, not random — see capacity comment above
-            rockMeshes[variant].setMatrixAt(instanceCounts[variant]++, dummy.matrix);
+            if (instanceCounts[clusterVariant] >= capacityPerVariant) continue; // that type's InstancedMesh is full — skip rather than overflow its fixed instance buffer
+            rockMeshes[clusterVariant].setMatrixAt(instanceCounts[clusterVariant]++, dummy.matrix);
             state.colliders.push({ x: rx, z: rz, r: s * 0.75 });
             idx++;
         }
@@ -131,4 +207,3 @@ export function createRocks(state) {
         state.scene.add(mesh);
     });
 }
-

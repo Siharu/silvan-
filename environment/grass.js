@@ -75,13 +75,24 @@ export function createGrass(state) {
 
         shader.fragmentShader = shader.fragmentShader.replace(
             'vec4 diffuseColor = vec4( diffuse, opacity );',
-            `vec3 rootColor = vec3(0.01, 0.03, 0.005);
+            `vec3 rootColor = vec3(0.03, 0.07, 0.02);
             float grad = clamp(vHeight / 2.2, 0.0, 1.0);
-            float shadow = pow(grad, 0.6);
-            // Fade blades out right in front of the state.camera instead of letting them
-            // collapse into degenerate near-black slivers when nearly edge-on.
-            if (vCamDist < 0.6) discard;
-            float nearFade = smoothstep(0.6, 1.8, vCamDist);
+            // Floor of 0.25 instead of letting shadow hit 0 at the blade base —
+            // pure pow(grad, 0.6) drives all the way to black at grad=0, and
+            // under overcast/low ambient light there's almost no diffuse term
+            // to lift it back up, so blade bases (and anything close enough
+            // to the camera to be mostly base) read as solid black instead of
+            // dark green.
+            float shadow = mix(0.28, 1.0, pow(grad, 0.6));
+            // Was fully faded in by vCamDist 1.8 — a blade at 0.8-1.6 units
+            // (i.e. constantly, since the player walks through waist-high
+            // grass) still rendered near-full-opacity, billboarding up into a
+            // huge close flat shape that reads as a black bar rather than an
+            // out-of-focus blade brushing the lens. Widened and pushed out so
+            // blades the camera is walking through fade away well before they
+            // dominate the frame.
+            if (vCamDist < 0.9) discard;
+            float nearFade = smoothstep(0.9, 3.2, vCamDist);
             vec4 diffuseColor = vec4(mix(rootColor, diffuse, shadow), opacity * nearFade);`
         );
     };

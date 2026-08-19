@@ -2,8 +2,8 @@
 // module calls — order matters because of the getElevation() dependency
 // chain (see MODULARIZATION_PLAN.md): createSky -> createTerrain ->
 // createLake -> createGrass -> createFlowers -> createRocks ->
-// createPuddles -> generateFractalForest -> createRainSystem ->
-// createRainSplashes -> createFireflies -> createDustParticles.
+// createPuddles -> generateFractalForest -> createFerns -> createMossClusters ->
+// createRainSystem -> createRainSplashes -> createFireflies -> createDustParticles.
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -23,6 +23,7 @@ import { createOcean } from './environment/ocean.js';
 import { createGrass } from './environment/grass.js';
 import { createFlowers } from './environment/flowers.js';
 import { createRocks } from './environment/rocks.js';
+import { createFerns, createMossClusters } from './environment/foliage.js';
 import { createPuddles } from './environment/puddles.js';
 import { generateFractalForest } from './environment/forest.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
@@ -123,6 +124,8 @@ function init() {
     createPuddles(state);
     generateFractalForest(state);
     createDetailedPineTrees(state, state.quality.pineTreeCount);
+    createFerns(state);
+    createMossClusters(state);
     createRainSystem(state);
     createRainSplashes(state);
     createFireflies(state);

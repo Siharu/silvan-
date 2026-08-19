@@ -46,78 +46,113 @@ export function createLake(state) {
         shader.uniforms.uShallowColor = { value: new THREE.Color(0x2f7a6e) };
         shader.uniforms.uRainIntensity = { value: 0 };
         shader.uniforms.uStormIntensity = { value: 0 };
+        // Three stacked Gerstner waves (dirX, dirY, steepness, wavelength).
+        // Wavelengths are picked to stay well above our vertex spacing —
+        // WORLD_SIZE/56 segments ≈ 20.5 units apart, so anything under ~41
+        // units aliases into jagged noise instead of a smooth swell. Ported
+        // from ocean-water.html's 200-unit/256-segment demo (~0.78 spacing),
+        // whose original wavelengths of 2–35 would alias badly here —
+        // rescaled up and steepness cut down to suit a 1150-unit lake
+        // instead of a small tight demo pool. Steepness scales with
+        // uStormIntensity per-frame in the vertex shader below, not here.
+        shader.uniforms.uWaves = {
+            value: [
+                new THREE.Vector4(Math.cos(THREE.MathUtils.degToRad(45)), Math.sin(THREE.MathUtils.degToRad(45)), 0.015, 120.0),
+                new THREE.Vector4(Math.cos(THREE.MathUtils.degToRad(130)), Math.sin(THREE.MathUtils.degToRad(130)), 0.012, 70.0),
+                new THREE.Vector4(Math.cos(THREE.MathUtils.degToRad(210)), Math.sin(THREE.MathUtils.degToRad(210)), 0.008, 44.0)
+            ]
+        };
         state.waterMaterial.userData.shader = shader;
 
         shader.vertexShader = shader.vertexShader.replace('#include <common>', `
             #include <common>
             uniform float uTime;
             uniform float uStormIntensity;
+            uniform vec4 uWaves[3];
             attribute float aDepth;
             varying vec3 vWorldPos;
             varying vec3 vViewDirW;
             varying vec3 vWaveNormal;
             varying float vDepth;
             varying float vChop;
-        `);
-        // Feed the actual wave slope into the geometry normal (not just the
-        // vWaveNormal varying below, which only ever fed the custom fresnel/
-        // glint math) — without this, MeshStandardMaterial's own PBR lighting
-        // treats the surface as a perfectly flat plane no matter how much the
-        // vertices displace, so ambient/hemisphere light (present at night
-        // even with sun/moon glint near zero) never shades the swell at all.
-        shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', `
-            #include <beginnormal_vertex>
-            {
-                float nStormAmp = 1.0 + uStormIntensity * 2.5;
-                float nStormSpeed = 1.0 + uStormIntensity * 1.6;
-                float nAx = 0.05, nAz = 0.04, nASp = 0.6 * nStormSpeed, nBSp = 0.45 * nStormSpeed;
-                float nAmpA = 0.12 * nStormAmp, nAmpB = 0.10 * nStormAmp;
-                float nCx = 0.22, nCz = 0.19, nCSp = 1.3 * nStormSpeed;
-                float nChopAmp = uStormIntensity * 0.16;
-                float nChopPhase = position.x * nCx + position.z * nCz * 0.7 + uTime * nCSp;
-                float nDHdx = nAmpA * nAx * cos(position.x * nAx + uTime * nASp)
-                            + nChopAmp * nCx * cos(nChopPhase);
-                float nDHdz = -nAmpB * nAz * sin(position.z * nAz - uTime * nBSp)
-                            + nChopAmp * nCz * 0.7 * cos(nChopPhase);
-                objectNormal = normalize(vec3(-nDHdx, 1.0, -nDHdz));
+
+            // Gerstner wave: displaces a vertex along an elliptical path (not
+            // just up/down like a sine wave) and accumulates its analytic
+            // slope into the running tangent/binormal, so the final surface
+            // normal — built from cross(binormal, tangent) once all waves are
+            // summed — is exact rather than a finite-difference guess. This
+            // is what gives real Gerstner water its sharper, more physical-
+            // looking crests versus a plain sine-displaced plane.
+            vec3 gerstnerWave(vec4 wave, vec3 p, float time, inout vec3 tangent, inout vec3 binormal) {
+                float steepness = wave.z;
+                float wavelength = wave.w;
+                float k = 2.0 * 3.14159265 / wavelength;
+                float c = sqrt(9.8 / k);
+                vec2 d = normalize(wave.xy);
+                float f = k * (dot(d, p.xz) - c * time);
+                float a = steepness / k;
+                float sinf = sin(f);
+                float cosf = cos(f);
+                float wa = k * a;
+                tangent.x -= d.x * d.x * wa * sinf;
+                tangent.y += d.x * wa * cosf;
+                tangent.z -= d.x * d.y * wa * sinf;
+                binormal.x -= d.x * d.y * wa * sinf;
+                binormal.y += d.y * wa * cosf;
+                binormal.z -= d.y * d.y * wa * sinf;
+                return vec3(d.x * a * cosf, a * sinf, d.y * a * cosf);
             }
         `);
+        // NOTE: previously patched objectNormal here to feed the wave slope
+        // into MeshStandardMaterial's real PBR lighting. Reverted — the
+        // lake's swell is one long, slow wave across the whole basin, so
+        // there's a single crest/trough line where the normal tips sharply
+        // away from the sun/moon direction. Under real directional lighting
+        // that flips hard between lit and unlit right along that line,
+        // which read as a solid black bar sweeping across the water as the
+        // swell moved. The waveShade term in the fragment shader below
+        // (independent of the actual directional lights) is what should
+        // carry wave visibility at night instead — no hard cutoff, so no bar.
         shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
             #include <begin_vertex>
             vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
             vViewDirW = cameraPosition - vWorldPos;
             vDepth = aDepth;
 
-            // height(x,z) and its analytic slope, so the surface actually has a
-            // normal that responds to the swell instead of staying flat.
-            // Both the long swell and the short chop layer below scale up with
-            // uStormIntensity (driven from state.currentRainIntensity, the same
-            // value that swells the wind audio and rain — storms and choppy
-            // water are the same weather event, not independent knobs).
-            float stormAmp = 1.0 + uStormIntensity * 2.5;
+            // Steepness (and therefore amplitude, since a = steepness/k) scales
+            // up with uStormIntensity — driven from state.currentRainIntensity,
+            // the same value that swells the wind audio and rain, so storms and
+            // rough water are the same weather event, not independent knobs.
+            // Wave speed (c, from real gravity-wave dispersion) also picks up
+            // under storm so the swell doesn't just get taller, it gets faster.
+            float stormSteep = 1.0 + uStormIntensity * 1.8;
             float stormSpeed = 1.0 + uStormIntensity * 1.6;
-            float ax = 0.05, az = 0.04, aSp = 0.6 * stormSpeed, bSp = 0.45 * stormSpeed;
-            float ampA = 0.12 * stormAmp, ampB = 0.10 * stormAmp;
+
+            vec3 tangent = vec3(1.0, 0.0, 0.0);
+            vec3 binormal = vec3(0.0, 0.0, 1.0);
+            vec3 displacement = vec3(0.0);
+            for (int i = 0; i < 3; i++) {
+                vec4 w = uWaves[i];
+                w.z *= stormSteep;
+                displacement += gerstnerWave(w, position, uTime * stormSpeed, tangent, binormal);
+            }
+            transformed += displacement;
 
             // Short, chaotic chop on top of the long swell — near-invisible on
             // calm/clear water, breaks the surface up into messy wind-slop once
-            // uStormIntensity climbs. This is what actually reads as "wind
-            // hitting the water" rather than just a bigger version of the same
-            // gentle roll.
+            // uStormIntensity climbs. Layered onto the Gerstner tangent/binormal
+            // (not its own separate normal) so it still folds into one coherent
+            // final normal below. This is what actually reads as "wind hitting
+            // the water" rather than just a bigger version of the same swell.
             float cx = 0.22, cz = 0.19, cSp = 1.3 * stormSpeed;
             float chopAmp = uStormIntensity * 0.16;
             float chopPhase = position.x * cx + position.z * cz * 0.7 + uTime * cSp;
-            float chop = sin(chopPhase) * chopAmp;
+            transformed.y += sin(chopPhase) * chopAmp;
+            tangent.y += chopAmp * cx * cos(chopPhase);
+            binormal.y += chopAmp * cz * 0.7 * cos(chopPhase);
             vChop = abs(sin(chopPhase * 1.7 + uTime * 0.4)) * uStormIntensity;
 
-            transformed.y += sin(position.x * ax + uTime * aSp) * ampA
-                            + cos(position.z * az - uTime * bSp) * ampB
-                            + chop;
-            float dHdx = ampA * ax * cos(position.x * ax + uTime * aSp)
-                       + chopAmp * cx * cos(chopPhase);
-            float dHdz = -ampB * az * sin(position.z * az - uTime * bSp)
-                       + chopAmp * cz * 0.7 * cos(chopPhase);
-            vWaveNormal = normalize(vec3(-dHdx, 1.0, -dHdz));
+            vWaveNormal = normalize(cross(binormal, tangent));
         `);
 
         shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
