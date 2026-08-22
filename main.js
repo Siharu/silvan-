@@ -11,7 +11,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 import { createWorldState } from './core/world-state.js';
-import { resolveQualityPreset } from './core/quality.js';
+import { resolveQualityPreset, QUALITY_PRESETS } from './core/quality.js';
+import { getModifiers } from './core/modifiers.js';
+import { getViewMode } from './core/view-mode.js';
 import { setupInput, onWindowResize } from './core/input.js';
 import { updatePlayer } from './core/player-controller.js';
 
@@ -42,7 +44,17 @@ import { updateAtmosphere } from './atmosphere/day-night-cycle.js';
 import { createBackgroundRenderTarget, resizeBackgroundRenderTarget, renderBackgroundPass } from './fx/dynamic-fog.js';
 
 const state = createWorldState();
+state.viewMode = getViewMode(); // 'firstperson' | 'topdown' — see core/view-mode.js
 state.quality = resolveQualityPreset();
+if (state.viewMode === 'topdown') {
+    // Top-down mode exists specifically for low-end devices — force the
+    // cheapest tier regardless of whatever the player separately chose in
+    // the Graphics toggle. Reuses QUALITY_PRESETS.low as-is rather than
+    // defining a new "potato" preset, so there's exactly one place that
+    // defines "cheap" instead of two that could drift out of sync.
+    state.quality = QUALITY_PRESETS.low;
+}
+state.modifiers = getModifiers(); // rock/water tuning — see core/modifiers.js
 
 function init() {
     state.scene = new THREE.Scene();
@@ -50,7 +62,12 @@ function init() {
 
     state.globalTextures = createProceduralTextures();
 
-    state.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
+    // Top-down mode uses a narrower FOV (50° vs 75°) — this is still a
+    // perspective camera at a steep angle, not a true orthographic one (see
+    // core/player-controller.js's TOPDOWN_* constants for why), and a wide
+    // FOV at a steep downward pitch reads as fisheye-distorted/swimmy in a
+    // way that undermines the clean "map-like" look top-down is going for.
+    state.camera = new THREE.PerspectiveCamera(state.viewMode === 'topdown' ? 50 : 75, window.innerWidth / window.innerHeight, 0.1, 1500);
 
     state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
     state.renderer.setSize(window.innerWidth, window.innerHeight);

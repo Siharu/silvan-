@@ -28,6 +28,9 @@ import { addDynamicFog } from '../fx/dynamic-fog.js';
 const oceanVertexShader = `
     uniform float uTime;
     uniform float uStormIntensity;
+    uniform float uWaveHeightMult;
+    uniform float uWaveSpeedMult;
+    uniform float uStormReactivityMult;
 
     varying vec3 vWorldPos;
     varying vec3 vNormalW;
@@ -43,13 +46,18 @@ const oceanVertexShader = `
         // lake's chop (environment/lake.js). Storms still visibly stir it —
         // same weather signal the lake reacts to, so a rough sea in the
         // distance matches a rough lake up close instead of looking like two
-        // different days.
-        float stormAmp = 1.0 + uStormIntensity * 2.0;
-        float a1 = 0.012, a2 = 0.009, sp1 = 0.35 * (1.0 + uStormIntensity * 0.8), sp2 = 0.27 * (1.0 + uStormIntensity * 0.8);
+        // different days. uWaveHeightMult/uWaveSpeedMult/uStormReactivityMult
+        // are Settings-panel sliders (core/modifiers.js), same three knobs
+        // and same meaning as the lake's — reactivity only scales the
+        // "* uStormIntensity * X" storm terms, height/speed scale the whole
+        // swell regardless of weather.
+        float stormAmp = (1.0 + uStormIntensity * 2.0 * uStormReactivityMult) * uWaveHeightMult;
+        float speedMult = (1.0 + uStormIntensity * 0.8 * uStormReactivityMult) * uWaveSpeedMult;
+        float a1 = 0.012, a2 = 0.009, sp1 = 0.35 * speedMult, sp2 = 0.27 * speedMult;
         float amp1 = 0.9 * stormAmp, amp2 = 0.6 * stormAmp;
 
-        float cx = 0.055, cz = 0.048, cSp = 0.9 * (1.0 + uStormIntensity);
-        float chopAmp = uStormIntensity * 0.5;
+        float cx = 0.055, cz = 0.048, cSp = 0.9 * (1.0 + uStormIntensity * uStormReactivityMult) * uWaveSpeedMult;
+        float chopAmp = uStormIntensity * 0.5 * uStormReactivityMult * uWaveHeightMult;
         float chopPhase = position.x * cx + position.z * cz * 0.7 + uTime * cSp;
         float chop = sin(chopPhase) * chopAmp;
         vChop = abs(sin(chopPhase * 1.6 + uTime * 0.3)) * uStormIntensity;
@@ -173,6 +181,12 @@ export function createOcean(state) {
         uniforms: {
             uTime: { value: 0 },
             uStormIntensity: { value: 0 },
+            // Settings-panel water sliders (core/modifiers.js) — same three
+            // knobs and same live-update path as the lake's (see
+            // environment/lake.js), so tuning one visibly matches the other.
+            uWaveHeightMult: { value: state.modifiers.waterWaveHeight },
+            uWaveSpeedMult: { value: state.modifiers.waterWaveSpeed },
+            uStormReactivityMult: { value: state.modifiers.waterStormReactivity },
             uSunDir: { value: new THREE.Vector3(0, 1, 0) },
             uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
             uSunColor: { value: new THREE.Color(0xfff4d6) },

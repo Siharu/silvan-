@@ -46,7 +46,26 @@ const SWIM_ROLL_AMPLITUDE = 0.035;
 const SWIM_ROLL_FREQUENCY = 0.0009;
 const SWIM_FLOAT_HEIGHT = 0.55; // how much of player.height stays above the waterline
 
-// Reused across frames to avoid per-frame allocation for the swim-roll effect.
+// Top-down camera rig — a fixed-angle "chase cam" that follows player.
+// position.x/z, never rotates with input. Positioned back (+Z) and above
+// the player, using camera.lookAt() rather than a hand-built quaternion so
+// camera.getWorldDirection() is always well-defined (points from the rig
+// toward the player, never degenerate). That matters beyond just this
+// file: environment/animals.js's follower-positioning code flattens
+// camera-forward to XZ and normalizes it — a true 90°-straight-down look
+// would flatten to a near-zero-length vector there and risk NaN followers.
+// Staying off dead-vertical avoids that entirely instead of guarding for it.
+const TOPDOWN_HEIGHT = 34;
+const TOPDOWN_BACK_OFFSET = 16;
+
+// WASD in top-down mode maps to fixed world axes (there's no mouse-look to
+// derive "forward" from — see updatePlayer's movement block) rather than
+// camera-relative ones. "North" here is an arbitrary but fixed choice —
+// what actually matters is that it's the same fixed direction the top-down
+// camera rig above is offset along, so the camera consistently sits
+// "behind" whichever way the fixed axes call forward.
+const TOPDOWN_FORWARD = new THREE.Vector3(0, 0, -1);
+
 const _rollQuat = new THREE.Quaternion();
 const _forwardAxis = new THREE.Vector3(0, 0, 1);
 
@@ -88,8 +107,18 @@ export function updatePlayer(state, delta) {
     if (state.cutsceneActive) {
         const gY = getElevation(state.player.position.x, state.player.position.z);
         state.player.position.y += (gY + state.player.height - state.player.position.y) * (1.0 - Math.exp(-8.0 * delta));
-        state.camera.position.copy(state.player.position);
-        state.camera.quaternion.setFromEuler(state.player.rotation);
+        if (state.viewMode === 'topdown') {
+            // The tower cutscene's scripted look (radio-tower.js writing
+            // player.rotation directly) is a first-person narrative beat —
+            // top-down's camera doesn't read player.rotation at all, so it
+            // just keeps following the rig instead of snapping to a
+            // first-person pose that wouldn't mean anything here.
+            state.camera.position.set(state.player.position.x, state.player.position.y + TOPDOWN_HEIGHT, state.player.position.z + TOPDOWN_BACK_OFFSET);
+            state.camera.lookAt(state.player.position.x, state.player.position.y, state.player.position.z);
+        } else {
+            state.camera.position.copy(state.player.position);
+            state.camera.quaternion.setFromEuler(state.player.rotation);
+        }
         return;
     }
 
@@ -102,7 +131,17 @@ export function updatePlayer(state, delta) {
         (state.player.isInWater ? SWIM_SPEED_MULTIPLIER : 1);
 
     state.player.velocity.set(0, 0, 0);
-    const dir = new THREE.Vector3(); state.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+    // Top-down mode: fixed world-space axes, since there's no mouse-look to
+    // derive "forward" from. First-person: unchanged, camera-relative as
+    // before. Both branches feed the same cross-product for `right` so the
+    // a/d sign convention stays identical either way instead of risking a
+    // hand-derived sign flip in a separate code path.
+    const dir = new THREE.Vector3();
+    if (state.viewMode === 'topdown') {
+        dir.copy(TOPDOWN_FORWARD);
+    } else {
+        state.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+    }
     const right = new THREE.Vector3().crossVectors(state.camera.up, dir).normalize();
     if (state.keys.w) state.player.velocity.add(dir); if (state.keys.s) state.player.velocity.sub(dir);
     if (state.keys.a) state.player.velocity.add(right); if (state.keys.d) state.player.velocity.sub(right);
@@ -172,20 +211,31 @@ export function updatePlayer(state, delta) {
         state.player.position.y += (targetY - state.player.position.y) * (1.0 - Math.exp(-8.0 * delta));
     }
 
-    state.camera.position.copy(state.player.position);
+    if (state.viewMode === 'topdown') {
+        // Fixed-angle rig — see the TOPDOWN_* constants' comment above for
+        // why lookAt() rather than a hand-built quaternion, and why no
+        // swim-roll: roll is a first-person immersion touch (the horizon
+        // visibly tilting), which doesn't read as anything meaningful from
+        // a fixed overhead angle — it would just make the rig itself look
+        // like it's glitching rather than the water feeling rougher.
+        state.camera.position.set(state.player.position.x, state.player.position.y + TOPDOWN_HEIGHT, state.player.position.z + TOPDOWN_BACK_OFFSET);
+        state.camera.lookAt(state.player.position.x, state.player.position.y, state.player.position.z);
+    } else {
+        state.camera.position.copy(state.player.position);
 
-    // Re-derive the camera orientation from player.rotation every frame
-    // (cheap, and self-correcting) rather than touching camera.rotation.z
-    // directly — camera.rotation defaults to XYZ Euler order, but
-    // player.rotation is YXZ (see core/world-state.js), and mixing the two
-    // via direct .rotation.z writes causes the quaternion to drift/spin
-    // over time as the player looks around. Applying the swim roll as a
-    // local-space quaternion multiply instead sidesteps that entirely.
-    state.camera.quaternion.setFromEuler(state.player.rotation);
-    if (state.player.isInWater) {
-        const roll = Math.sin(performance.now() * SWIM_ROLL_FREQUENCY) * SWIM_ROLL_AMPLITUDE;
-        _rollQuat.setFromAxisAngle(_forwardAxis, roll);
-        state.camera.quaternion.multiply(_rollQuat);
+        // Re-derive the camera orientation from player.rotation every frame
+        // (cheap, and self-correcting) rather than touching camera.rotation.z
+        // directly — camera.rotation defaults to XYZ Euler order, but
+        // player.rotation is YXZ (see core/world-state.js), and mixing the two
+        // via direct .rotation.z writes causes the quaternion to drift/spin
+        // over time as the player looks around. Applying the swim roll as a
+        // local-space quaternion multiply instead sidesteps that entirely.
+        state.camera.quaternion.setFromEuler(state.player.rotation);
+        if (state.player.isInWater) {
+            const roll = Math.sin(performance.now() * SWIM_ROLL_FREQUENCY) * SWIM_ROLL_AMPLITUDE;
+            _rollQuat.setFromAxisAngle(_forwardAxis, roll);
+            state.camera.quaternion.multiply(_rollQuat);
+        }
     }
 
     // Water ambience swells when actually out over the lake, beyond the

@@ -6,6 +6,8 @@ import { resumeAmbientAudio, pauseAmbientAudio, setMasterVolume } from '../audio
 import { attemptRecruitInteraction } from '../environment/animals.js';
 import { attemptTowerInteraction } from '../environment/radio-tower.js';
 import { getQualityLevel, setQualityLevel } from './quality.js';
+import { getModifiers, setWaterModifier, setRockModifier, resetModifiers } from './modifiers.js';
+import { getViewMode, setViewMode } from './view-mode.js';
 
 export function setupInput(state) {
     const ui = document.getElementById('ui-layer');
@@ -24,6 +26,8 @@ export function setupInput(state) {
     const creditsPanel = document.getElementById('title-credits-panel');
     const titleVolumeSlider = document.getElementById('title-volume-slider');
     const farewell = document.getElementById('title-farewell');
+    const helpToggleBtn = document.getElementById('title-help-toggle-btn');
+    const controlsPanel = document.getElementById('title-controls-panel');
 
     // "Regain" (Continue) only makes sense — and only appears — once there's
     // an actual in-progress session to continue. Before that, showing it
@@ -33,6 +37,47 @@ export function setupInput(state) {
         regainBtn.classList.toggle('hidden', !state.hasStartedGame);
     }
     refreshTitleMenuState();
+
+    // Shared between the real pointerlockchange listener (first-person —
+    // the browser fires this natively on lock/unlock) and top-down mode's
+    // manual entry/pause path below (top-down never actually requests
+    // pointer lock, since there's no mouse-look, so nothing would ever fire
+    // that event for it). Keeping both paths funneled through the same two
+    // functions means "what happens when play starts/pauses" only has one
+    // definition instead of two that could quietly drift apart.
+    function showPlayingUI() {
+        state.isPlaying = true;
+        ui.classList.add('hidden'); pauseLayer.classList.remove('visible');
+        hud.classList.remove('hidden');
+        if (state.viewMode !== 'topdown') cross.classList.remove('hidden'); // no aiming reticle in top-down — interactions are proximity-based (environment/animals.js), not raycast/crosshair-driven
+        resumeAmbientAudio(state);
+    }
+    function showPausedUI() {
+        state.isPlaying = false;
+        hud.classList.add('hidden'); cross.classList.add('hidden');
+        // First-ever exit (before the player has clicked Remember even
+        // once — e.g. accidental Escape on the title screen) still shows
+        // the title screen; every exit after the game has actually
+        // started shows the pause menu instead.
+        if (state.hasStartedGame) pauseLayer.classList.add('visible');
+        else ui.classList.remove('hidden');
+        refreshTitleMenuState();
+        pauseAmbientAudio(state);
+    }
+    // First-person requests real pointer lock (mouse-look needs it);
+    // top-down has no mouse-look, so it skips the browser API entirely and
+    // just flips state.isLocked + the UI directly — see updatePlayer()'s
+    // early-return gate in core/player-controller.js, which only checks
+    // state.isLocked, not document.pointerLockElement, so this is a
+    // legitimate way to "enter play" for a mode that was never locked.
+    function enterPlayMode() {
+        if (state.viewMode === 'topdown') {
+            state.isLocked = true;
+            showPlayingUI();
+        } else {
+            document.body.requestPointerLock();
+        }
+    }
 
     rememberBtn.addEventListener('click', () => {
         if (state.hasStartedGame) {
@@ -44,12 +89,10 @@ export function setupInput(state) {
             return;
         }
         state.hasStartedGame = true;
-        document.body.requestPointerLock();
+        enterPlayMode();
     });
 
-    regainBtn.addEventListener('click', () => {
-        document.body.requestPointerLock();
-    });
+    regainBtn.addEventListener('click', enterPlayMode);
 
     settingsBtn.addEventListener('click', () => {
         creditsPanel.classList.remove('open');
@@ -63,6 +106,15 @@ export function setupInput(state) {
 
     titleVolumeSlider.addEventListener('input', (e) => {
         setMasterVolume(state, parseFloat(e.target.value));
+    });
+
+    // WASD/Mouse/Shift/R control chips moved off the front title screen and
+    // in behind this Help toggle inside Settings — collapsed by default so
+    // returning players aren't shown a tutorial every time, one click away
+    // for anyone who actually wants it.
+    helpToggleBtn.addEventListener('click', () => {
+        const nowOpen = controlsPanel.classList.toggle('open');
+        helpToggleBtn.setAttribute('aria-expanded', String(nowOpen));
     });
 
     quitBtn.addEventListener('click', () => {
@@ -80,34 +132,30 @@ export function setupInput(state) {
     });
 
     document.addEventListener('pointerlockchange', () => {
+        // Only meaningful in first-person — top-down never requests
+        // pointer lock, so document.pointerLockElement never points at
+        // this page for it, and this listener simply won't fire for
+        // top-down's enter/pause actions (those call showPlayingUI/
+        // showPausedUI directly instead, see enterPlayMode above and the
+        // topdown-escape listener below).
+        if (state.viewMode === 'topdown') return;
         state.isLocked = document.pointerLockElement === document.body;
-        if (state.isLocked) {
-            state.isPlaying = true;
-            ui.classList.add('hidden'); pauseLayer.classList.remove('visible');
-            hud.classList.remove('hidden'); cross.classList.remove('hidden');
-            // Resuming audio here (rather than only in the Remember/Regain
-            // click handlers, which was the original bug) means it correctly
-            // resumes on every re-lock — first entry AND every subsequent
-            // Resume-from-pause — instead of only working the very first
-            // time and then staying silent for the rest of the session.
-            resumeAmbientAudio(state);
-        } else {
-            state.isPlaying = false;
-            hud.classList.add('hidden'); cross.classList.add('hidden');
-            // First-ever exit (before the player has clicked Remember even
-            // once — e.g. accidental Escape on the title screen) still shows
-            // the title screen; every exit after the game has actually
-            // started shows the pause menu instead.
-            if (state.hasStartedGame) pauseLayer.classList.add('visible');
-            else ui.classList.remove('hidden');
-            refreshTitleMenuState();
-            pauseAmbientAudio(state);
-        }
+        if (state.isLocked) showPlayingUI();
+        else showPausedUI();
     });
 
-    document.getElementById('pause-resume-btn').addEventListener('click', () => {
-        document.body.requestPointerLock();
+    // Top-down has no pointer lock to exit, so nothing generates a native
+    // pointerlockchange event when the player wants to pause — Escape has
+    // to be handled manually here instead. First-person doesn't need this:
+    // the browser exits pointer lock on Escape by itself, which the
+    // listener above already reacts to.
+    window.addEventListener('keydown', (e) => {
+        if (e.code !== 'Escape' || state.viewMode !== 'topdown' || !state.isLocked) return;
+        state.isLocked = false;
+        showPausedUI();
     });
+
+    document.getElementById('pause-resume-btn').addEventListener('click', enterPlayMode);
 
     document.getElementById('pause-settings-btn').addEventListener('click', () => {
         pauseSettings.classList.toggle('open');
@@ -149,6 +197,102 @@ export function setupInput(state) {
         lowBtn.addEventListener('click', () => setQualityLevel('low'));
     }
 
+    // View mode toggle (core/view-mode.js) — Open World (first-person) vs.
+    // Top-Down (low-end devices). Reload-to-apply, same reasoning as
+    // Graphics: this changes which camera type gets built and forces the
+    // quality preset in main.js's init(), neither of which this codebase
+    // is set up to tear down and rebuild live.
+    const currentViewMode = getViewMode();
+    const viewModeButtonPairs = [
+        [document.getElementById('title-view-firstperson-btn'), document.getElementById('title-view-topdown-btn')],
+        [document.getElementById('pause-view-firstperson-btn'), document.getElementById('pause-view-topdown-btn')],
+    ];
+    for (const [fpBtn, tdBtn] of viewModeButtonPairs) {
+        if (!fpBtn || !tdBtn) continue;
+        fpBtn.classList.toggle('active', currentViewMode === 'firstperson');
+        tdBtn.classList.toggle('active', currentViewMode === 'topdown');
+        fpBtn.addEventListener('click', () => setViewMode('firstperson'));
+        tdBtn.addEventListener('click', () => setViewMode('topdown'));
+    }
+
+    // Rock/water modifiers (core/modifiers.js) — exposes the rock.html /
+    // ocean-water.html-style tuning knobs in Settings instead of leaving
+    // them as hardcoded constants. Water sliders are live (no reload —
+    // just uniform writes, see environment/lake.js + ocean.js); rock detail
+    // and roughness bake into InstancedMesh geometry at creation time, so
+    // those follow the same "reload to apply" pattern as the Graphics
+    // toggle above rather than pretending they're free to preview live.
+    const modifiersToggleBtn = document.getElementById('title-modifiers-toggle-btn');
+    const modifiersPanel = document.getElementById('title-modifiers-panel');
+    if (modifiersToggleBtn && modifiersPanel) {
+        modifiersToggleBtn.addEventListener('click', () => {
+            const nowOpen = modifiersPanel.classList.toggle('open');
+            modifiersToggleBtn.setAttribute('aria-expanded', String(nowOpen));
+        });
+    }
+
+    const waveHeightSlider = document.getElementById('title-wave-height-slider');
+    const waveSpeedSlider = document.getElementById('title-wave-speed-slider');
+    const stormReactivitySlider = document.getElementById('title-storm-reactivity-slider');
+    const currentModifiers = getModifiers();
+    if (waveHeightSlider) waveHeightSlider.value = currentModifiers.waterWaveHeight;
+    if (waveSpeedSlider) waveSpeedSlider.value = currentModifiers.waterWaveSpeed;
+    if (stormReactivitySlider) stormReactivitySlider.value = currentModifiers.waterStormReactivity;
+
+    // Both materials expose the same three uniform names (see lake.js's and
+    // ocean.js's uWaveHeightMult/uWaveSpeedMult/uStormReactivityMult) —
+    // writing to both here keeps the lake and the distant sea tuned
+    // together rather than needing two separate sets of sliders.
+    function applyLiveWaterUniform(uniformName, value) {
+        for (const mat of [state.waterMaterial, state.oceanMaterial]) {
+            if (mat && mat.uniforms && mat.uniforms[uniformName]) {
+                mat.uniforms[uniformName].value = value;
+            }
+        }
+    }
+    if (waveHeightSlider) waveHeightSlider.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        setWaterModifier('waterWaveHeight', v);
+        applyLiveWaterUniform('uWaveHeightMult', v);
+    });
+    if (waveSpeedSlider) waveSpeedSlider.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        setWaterModifier('waterWaveSpeed', v);
+        applyLiveWaterUniform('uWaveSpeedMult', v);
+    });
+    if (stormReactivitySlider) stormReactivitySlider.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        setWaterModifier('waterStormReactivity', v);
+        applyLiveWaterUniform('uStormReactivityMult', v);
+    });
+
+    const rockDetailButtons = [
+        document.getElementById('title-rock-detail-low-btn'),
+        document.getElementById('title-rock-detail-med-btn'),
+        document.getElementById('title-rock-detail-high-btn'),
+    ].filter(Boolean);
+    for (const btn of rockDetailButtons) {
+        btn.classList.toggle('active', currentModifiers.rockDetail === btn.dataset.value);
+        // Reloads immediately on click, same as the Graphics toggle — no
+        // live rock preview is possible (baked geometry), so there's no
+        // benefit to letting the player queue up multiple changes first.
+        btn.addEventListener('click', () => setRockModifier('rockDetail', btn.dataset.value));
+    }
+
+    const rockRoughnessSlider = document.getElementById('title-rock-roughness-slider');
+    if (rockRoughnessSlider) {
+        rockRoughnessSlider.value = currentModifiers.rockRoughness;
+        // 'change' (fires on release/commit), not 'input' (fires every tick
+        // while dragging) — this one reloads the page, so it must only fire
+        // once the player has actually settled on a value.
+        rockRoughnessSlider.addEventListener('change', (e) => {
+            setRockModifier('rockRoughness', parseFloat(e.target.value));
+        });
+    }
+
+    const modifiersResetBtn = document.getElementById('title-modifiers-reset-btn');
+    if (modifiersResetBtn) modifiersResetBtn.addEventListener('click', () => resetModifiers());
+
     window.addEventListener('keydown', (e) => { if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = true; });
     window.addEventListener('keyup', (e) => { if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false; });
     // Shift doesn't follow the KeyX code pattern above, so it gets its own pair.
@@ -166,7 +310,7 @@ export function setupInput(state) {
         else attemptRecruitInteraction(state);
     });
     document.addEventListener('mousemove', (e) => {
-        if (!state.isLocked || state.cutsceneActive) return;
+        if (!state.isLocked || state.cutsceneActive || state.viewMode === 'topdown') return;
         state.player.rotation.y -= e.movementX * 0.0018;
         state.player.rotation.x -= e.movementY * 0.0018;
         state.player.rotation.x = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, state.player.rotation.x));

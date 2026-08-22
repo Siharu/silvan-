@@ -60,6 +60,7 @@ import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
+import { ROCK_DETAIL_PRESETS } from '../core/modifiers.js';
 
 // Deterministic 3D hash -> [0,1). Same sin-based approach the old code used
 // for jitter, extended to 3 inputs + a seed so it can drive real value
@@ -109,17 +110,57 @@ function fbm3D(x, y, z, freq, roughness, lacunarity, octaves, seed) {
 // octaves/displacement) instead of one shared look. flatShaded types get
 // non-indexed geometry so normals aren't averaged across faces (a proper
 // low-poly/crystalline look instead of the smoothed default).
+//
+// noiseScale/roughness/lacunarity/octaves were tuned down hard from an
+// earlier pass after the detail-12/16 fix (see the detail-count history
+// above) revealed a second problem: these values were originally chosen
+// back when the geometry was too coarse to resolve them (detail 4, ~500
+// tris), so the noise's higher octaves were aliasing into essentially
+// random per-vertex jitter rather than a real coherent bump pattern — an
+// accidental "anti-aliasing" that hid how genuinely high-frequency this
+// noise field is. Once vertex density went up, that same noise became
+// fully resolved, and it turned out to be way too high-frequency: rather
+// than smooth rolling bumps, it produced a fine, dense sandpaper/static
+// stipple across the whole surface (visibly "still looks like pixels"
+// close up, even with plenty of polygons to work with — the poly count was
+// never the remaining problem, the noise field's own spatial frequency
+// was). Verified numerically (not just by eye) before landing on these
+// numbers: computed the RMS noise difference between two points one
+// typical vertex-spacing apart at each type's actual detail level, scaled
+// by that type's displacement amount, as a proxy for the slope between
+// adjacent triangles — old params produced slopes around 0.4-0.5 (a sharp
+// ~20-25° normal swing vertex-to-vertex, exactly what reads as stippling
+// under lighting); these produce 0.06-0.24, with the higher end
+// intentionally kept for basalt/slate since those are meant to read
+// craggier than sandstone/limestone, not because the noise is under-tuned.
+//
+// `detail` below is the "med" baseline only — the actual per-instance
+// value used at build time comes from ROCK_DETAIL_PRESETS[state.modifiers.
+// rockDetail] (core/modifiers.js, Settings-panel controlled) via
+// buildRockVariant()'s `detailOverride` param, so this field exists mainly
+// as documentation of what "med" (the default) means for each type.
+// `noiseScale`/`disp` are similarly multiplied by state.modifiers.
+// rockRoughness at build time rather than edited directly here.
 const ROCK_TYPES = [
-    { name: 'granite',   base: 0x5c6061, accent: 0x323536, noiseScale: 1.6, roughness: 0.5, lacunarity: 2.1, octaves: 5, disp: 0.32, flatShaded: false, detail: 16 },
-    { name: 'sandstone', base: 0x8b7355, accent: 0x5c4033, noiseScale: 1.1, roughness: 0.6, lacunarity: 1.9, octaves: 4, disp: 0.26, flatShaded: false, detail: 16 },
-    { name: 'basalt',    base: 0x4a4a4a, accent: 0x212121, noiseScale: 2.2, roughness: 0.45, lacunarity: 2.4, octaves: 5, disp: 0.38, flatShaded: true,  detail: 12 },
-    { name: 'redrock',   base: 0xa86f58, accent: 0x693724, noiseScale: 1.4, roughness: 0.55, lacunarity: 2.0, octaves: 4, disp: 0.3,  flatShaded: false, detail: 16 },
-    { name: 'slate',     base: 0x707a75, accent: 0x45504a, noiseScale: 2.6, roughness: 0.4,  lacunarity: 2.5, octaves: 5, disp: 0.4,  flatShaded: true,  detail: 12 },
-    { name: 'limestone', base: 0xd1cdc2, accent: 0x8f8c85, noiseScale: 1.0, roughness: 0.65, lacunarity: 1.8, octaves: 4, disp: 0.22, flatShaded: false, detail: 16 },
+    { name: 'granite',   base: 0x5c6061, accent: 0x323536, noiseScale: 0.75, roughness: 0.35, lacunarity: 1.7, octaves: 3, disp: 0.32, flatShaded: false, detail: 16 },
+    { name: 'sandstone', base: 0x8b7355, accent: 0x5c4033, noiseScale: 0.55, roughness: 0.3,  lacunarity: 1.6, octaves: 2, disp: 0.26, flatShaded: false, detail: 16 },
+    { name: 'basalt',    base: 0x4a4a4a, accent: 0x212121, noiseScale: 1.0,  roughness: 0.35, lacunarity: 1.8, octaves: 3, disp: 0.38, flatShaded: true,  detail: 12 },
+    { name: 'redrock',   base: 0xa86f58, accent: 0x693724, noiseScale: 0.65, roughness: 0.3,  lacunarity: 1.6, octaves: 2, disp: 0.3,  flatShaded: false, detail: 16 },
+    { name: 'slate',     base: 0x707a75, accent: 0x45504a, noiseScale: 1.1,  roughness: 0.3,  lacunarity: 1.7, octaves: 3, disp: 0.4,  flatShaded: true,  detail: 12 },
+    { name: 'limestone', base: 0xd1cdc2, accent: 0x8f8c85, noiseScale: 0.5,  roughness: 0.35, lacunarity: 1.6, octaves: 2, disp: 0.22, flatShaded: false, detail: 16 },
 ];
 
-function buildRockVariant(type, seed) {
-    let geo = new THREE.IcosahedronGeometry(1, type.detail);
+function buildRockVariant(type, seed, modifiers) {
+    const detailPreset = ROCK_DETAIL_PRESETS[modifiers.rockDetail] || ROCK_DETAIL_PRESETS.med;
+    const detail = type.flatShaded ? detailPreset.flat : detailPreset.smooth;
+    // Named distinctly from the per-vertex `disp` local below (radius scale
+    // factor for one vertex) — same name for two different things here
+    // would silently shadow, and the modifier value would never actually
+    // reach line ~196's calculation.
+    const noiseScale = type.noiseScale * modifiers.rockRoughness;
+    const dispAmount = type.disp * modifiers.rockRoughness;
+
+    let geo = new THREE.IcosahedronGeometry(1, detail);
     if (type.flatShaded) geo = geo.toNonIndexed(); // no shared vertices -> computeVertexNormals below yields per-face (flat) normals
 
     const pos = geo.attributes.position;
@@ -142,7 +183,7 @@ function buildRockVariant(type, seed) {
     for (let i = 0; i < pos.count; i++) {
         v.fromBufferAttribute(pos, i);
 
-        const n = fbm3D(v.x, v.y, v.z, type.noiseScale, type.roughness, type.lacunarity, type.octaves, seed);
+        const n = fbm3D(v.x, v.y, v.z, noiseScale, type.roughness, type.lacunarity, type.octaves, seed);
 
         // Small genuine per-vertex jitter on top of the smooth fBm, same
         // purpose as before — kills the "clearly a deformed platonic
@@ -156,7 +197,7 @@ function buildRockVariant(type, seed) {
         const frac = rawFrac < 0 ? rawFrac + 1 : rawFrac; // now matches GLSL fract()'s [0, 1) range
         const jitter = 1.0 + (frac - 0.5) * 0.06;
 
-        const disp = 1.0 + n * type.disp;
+        const disp = 1.0 + n * dispAmount;
         v.multiplyScalar(disp * jitter);
         v.multiply(stretch);
         pos.setXYZ(i, v.x, v.y, v.z);
@@ -179,7 +220,7 @@ export function createRocks(state) {
     const rockCount = state.quality.rockCount;
     const variantCount = ROCK_TYPES.length;
 
-    const variantGeos = ROCK_TYPES.map((type, vi) => buildRockVariant(type, vi * 97.3 + 13));
+    const variantGeos = ROCK_TYPES.map((type, vi) => buildRockVariant(type, vi * 97.3 + 13, state.modifiers));
 
     // vertexColors on so each type's baked base/accent blend actually
     // shows — color left white since the per-vertex attribute now carries

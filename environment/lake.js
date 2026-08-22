@@ -48,6 +48,9 @@ const gerstnerWaveGLSL = `
 const waterVertexShader = `
     uniform float uTime;
     uniform float uStormIntensity;
+    uniform float uWaveHeightMult;
+    uniform float uWaveSpeedMult;
+    uniform float uStormReactivityMult;
     uniform vec4 uWaves[3];
     attribute float aDepth;
 
@@ -70,8 +73,13 @@ const waterVertexShader = `
         // rough water are the same weather event, not independent knobs.
         // Wave speed (c, from real gravity-wave dispersion in gerstnerWave)
         // also picks up under storm so the swell gets faster, not just taller.
-        float stormSteep = 1.0 + uStormIntensity * 1.8;
-        float stormSpeed = 1.0 + uStormIntensity * 1.6;
+        // uWaveHeightMult/uWaveSpeedMult/uStormReactivityMult are Settings-
+        // panel sliders (core/modifiers.js) layered on top of all that —
+        // reactivity scales how much storms push things around independent
+        // of the base height/speed multipliers, so a player can have big
+        // calm swells or small wild ones instead of only one uniform knob.
+        float stormSteep = (1.0 + uStormIntensity * 1.8 * uStormReactivityMult) * uWaveHeightMult;
+        float stormSpeed = (1.0 + uStormIntensity * 1.6 * uStormReactivityMult) * uWaveSpeedMult;
 
         vec3 tangent = vec3(1.0, 0.0, 0.0);
         vec3 binormal = vec3(0.0, 0.0, 1.0);
@@ -279,6 +287,16 @@ export function createLake(state) {
         uniforms: {
             uTime: { value: 0 },
             uStormIntensity: { value: 0 },
+            // Settings-panel water sliders (core/modifiers.js) — applied
+            // live, no rebuild: core/input.js writes straight into these on
+            // every slider input event, and defaults are seeded from
+            // whatever was last saved so a returning player's tuning
+            // persists across reloads without needing the quality.js-style
+            // "reload to apply" treatment rocks.js needs for its baked
+            // geometry.
+            uWaveHeightMult: { value: state.modifiers.waterWaveHeight },
+            uWaveSpeedMult: { value: state.modifiers.waterWaveSpeed },
+            uStormReactivityMult: { value: state.modifiers.waterStormReactivity },
             uWaves: { value: uWaves },
             uSunDir: { value: new THREE.Vector3(0, 1, 0) },
             uMoonDir: { value: new THREE.Vector3(0, 1, 0) },

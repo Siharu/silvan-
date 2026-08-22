@@ -426,24 +426,50 @@
         .title-desc {
             max-width: 30rem;
         }
+        /* Controls chips now live inside the Settings panel behind a "Help"
+           toggle instead of always-visible on the front screen — this
+           makes it a compact vertical list rather than the old wrapped
+           horizontal row, since it now has to fit the settings panel's
+           ~15rem width instead of the full title screen. */
         .title-controls {
-            display: flex;
-            gap: 0.85rem;
-            margin-top: 2.25rem;
-            margin-bottom: 2.5rem;
-            flex-wrap: wrap;
-            justify-content: center;
+            display: none;
+            flex-direction: column;
+            gap: 0.5rem;
+            width: 100%;
+            margin-top: 0.6rem;
+        }
+        .title-controls.open { display: flex; }
+
+        /* Modifiers fold-out — rock/water tuning sliders (core/modifiers.js).
+           Same collapsed-by-default pattern as .title-controls above, one
+           level deeper in the Settings panel. Sliders get their own compact
+           label+input stack rather than reusing .control-chip, since chips
+           were built to show a static key/label pair, not host an <input>. */
+        .title-modifiers {
+            display: none;
+            flex-direction: column;
+            gap: 0.35rem;
+            width: 100%;
+            margin-top: 0.6rem;
+        }
+        .title-modifiers.open { display: flex; }
+        .title-modifiers label {
+            font-size: 0.68rem;
+            margin-top: 0.35rem;
+        }
+        .title-modifiers input[type="range"] {
+            width: 100%;
+            accent-color: #9cb1c4;
         }
         .control-chip {
             display: flex;
-            flex-direction: column;
             align-items: center;
-            gap: 0.35rem;
-            padding: 0.65rem 1.1rem;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.45rem 0.75rem;
             background: rgba(255,255,255,0.03);
             border: 1px solid rgba(255,255,255,0.08);
             border-radius: 3px;
-            min-width: 5.75rem;
             transition: border-color 0.25s ease, background 0.25s ease;
         }
         .control-chip:hover {
@@ -462,31 +488,32 @@
             text-transform: uppercase;
             color: #7f8ba3;
         }
-        .title-settings {
-            position: absolute;
-            right: 1.75rem;
-            bottom: 1.75rem;
-            z-index: 2;
-            background: rgba(4, 8, 16, 0.4);
-            padding: 0.5rem 0.75rem;
-            border-radius: 3px;
-            border: 1px solid rgba(255,255,255,0.06);
-            backdrop-filter: blur(4px);
+        .settings-help-toggle {
+            width: 100%;
+            margin-top: 0.9rem;
+            padding-top: 0.6rem;
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            background: transparent;
+            color: #9cb1c4;
+            font-family: 'Cormorant Garamond', serif;
+            font-style: italic;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
         }
-        .title-credit {
-            position: absolute;
-            left: 1.75rem;
-            bottom: 1.75rem;
-            z-index: 2;
-            font-size: 0.6rem;
-            letter-spacing: 0.2em;
-            text-transform: uppercase;
-            color: rgba(150, 165, 190, 0.4);
+        .settings-help-toggle:hover { color: #ffffff; }
+        .settings-help-caret {
+            transition: transform 0.25s ease;
+            font-size: 0.7rem;
+        }
+        .settings-help-toggle[aria-expanded="true"] .settings-help-caret {
+            transform: rotate(180deg);
         }
         @media (max-width: 640px) {
-            .title-controls { display: none; }
             .title-settings { position: static; margin-top: 1.5rem; }
-            .title-credit { display: none; }
         }
 
         /* --- Title menu (ported from titlescreenn.html's UI/UX) ---
@@ -661,13 +688,6 @@
                 </p>
             </div>
 
-            <div class="title-controls">
-                <div class="control-chip"><span class="control-key">W A S D</span><span class="control-label">Move</span></div>
-                <div class="control-chip"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
-                <div class="control-chip"><span class="control-key">Shift</span><span class="control-label">Run</span></div>
-                <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
-            </div>
-
             <div class="title-menu" id="title-menu">
                 <!-- "Remember" always visible — the genuine first-ever entry.
                      "Regain" only appears once state.hasStartedGame is true
@@ -703,6 +723,47 @@
                 <div class="quality-toggle-row" id="title-quality-row">
                     <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
                     <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                </div>
+
+                <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
+                <div class="quality-toggle-row" id="title-view-mode-row">
+                    <button id="title-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
+                    <button id="title-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
+                </div>
+
+                <button id="title-help-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false">
+                    Help <span class="settings-help-caret">▾</span>
+                </button>
+                <div class="title-controls" id="title-controls-panel">
+                    <div class="control-chip"><span class="control-key">W A S D</span><span class="control-label">Move</span></div>
+                    <div class="control-chip"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
+                    <div class="control-chip"><span class="control-key">Shift</span><span class="control-label">Run</span></div>
+                    <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
+                </div>
+
+                <button id="title-modifiers-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false">
+                    Modifiers <span class="settings-help-caret">▾</span>
+                </button>
+                <div class="title-modifiers" id="title-modifiers-panel">
+                    <label for="title-wave-height-slider">Wave Height</label>
+                    <input type="range" id="title-wave-height-slider" min="0.5" max="2" step="0.05" value="1">
+                    <label for="title-wave-speed-slider">Wave Speed</label>
+                    <input type="range" id="title-wave-speed-slider" min="0.5" max="2" step="0.05" value="1">
+                    <label for="title-storm-reactivity-slider">Storm Reactivity</label>
+                    <input type="range" id="title-storm-reactivity-slider" min="0.5" max="2" step="0.05" value="1">
+
+                    <label style="margin-top: 0.5rem;">Rock Detail <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row" id="title-rock-detail-row">
+                        <button id="title-rock-detail-low-btn" class="quality-toggle-btn" data-value="low">Low</button>
+                        <button id="title-rock-detail-med-btn" class="quality-toggle-btn" data-value="med">Med</button>
+                        <button id="title-rock-detail-high-btn" class="quality-toggle-btn" data-value="high">High</button>
+                    </div>
+                    <label for="title-rock-roughness-slider">Rock Roughness <span class="quality-reload-note">(applies on reload)</span></label>
+                    <input type="range" id="title-rock-roughness-slider" min="0.5" max="2" step="0.05" value="1">
+
+                    <button id="title-modifiers-reset-btn" class="settings-help-toggle" type="button" style="margin-top: 0.8rem; justify-content: center; border-top: none; padding-top: 0;">
+                        Reset to defaults
+                    </button>
                 </div>
             </div>
 
@@ -749,6 +810,11 @@
                 <div class="quality-toggle-row">
                     <button id="pause-quality-high-btn" class="quality-toggle-btn">High</button>
                     <button id="pause-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                </div>
+                <label style="margin-top: 1rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
+                <div class="quality-toggle-row">
+                    <button id="pause-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
+                    <button id="pause-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
                 </div>
             </div>
             <button id="pause-quit-btn" class="pause-btn">Quit to Title</button>
