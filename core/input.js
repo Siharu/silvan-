@@ -8,6 +8,7 @@ import { attemptTowerInteraction } from '../environment/radio-tower.js';
 import { getQualityLevel, setQualityLevel } from './quality.js';
 import { getModifiers, setWaterModifier, setRockModifier, resetModifiers } from './modifiers.js';
 import { getViewMode, setViewMode } from './view-mode.js';
+import { hasLocalSave, readLocalSave, applySavedState, exportSaveFile, importSaveFile, writeLocalSave } from './save-system.js';
 
 export function setupInput(state) {
     const ui = document.getElementById('ui-layer');
@@ -29,12 +30,15 @@ export function setupInput(state) {
     const helpToggleBtn = document.getElementById('title-help-toggle-btn');
     const controlsPanel = document.getElementById('title-controls-panel');
 
-    // "Regain" (Continue) only makes sense — and only appears — once there's
-    // an actual in-progress session to continue. Before that, showing it
-    // next to "Remember" would just be a second button that does the exact
-    // same first-entry thing under a false label.
+    // "Regain" (Continue) only makes sense — and only appears — once
+    // there's something real to continue: either a live in-memory session
+    // this tab (quit-to-title without a real page reload — state was
+    // never torn down) or a real save on disk (core/save-system.js) from a
+    // previous visit. Before either exists, showing it next to "Remember"
+    // would just be a second button doing the exact same first-entry thing
+    // under a false label.
     function refreshTitleMenuState() {
-        regainBtn.classList.toggle('hidden', !state.hasStartedGame);
+        regainBtn.classList.toggle('hidden', !state.hasStartedGame && !hasLocalSave());
     }
     refreshTitleMenuState();
 
@@ -92,7 +96,20 @@ export function setupInput(state) {
         enterPlayMode();
     });
 
-    regainBtn.addEventListener('click', enterPlayMode);
+    regainBtn.addEventListener('click', () => {
+        // Two different situations both land here: (a) a live in-memory
+        // session already exists this tab (came from quit-to-title, state
+        // was never torn down) — nothing to load, just resume as-is. (b) a
+        // genuinely fresh page load with no live session, but a real save
+        // exists on disk from a previous visit — has to be applied now,
+        // before entering play, or "Regain" would silently just start a
+        // brand-new game at the default spawn instead of the saved one.
+        if (!state.hasStartedGame && hasLocalSave()) {
+            applySavedState(state, readLocalSave());
+        }
+        state.hasStartedGame = true;
+        enterPlayMode();
+    });
 
     settingsBtn.addEventListener('click', () => {
         creditsPanel.classList.remove('open');
@@ -173,6 +190,12 @@ export function setupInput(state) {
         // "Regain" again just re-locks the pointer and play continues from
         // exactly where it was; "Remember" now genuinely reloads instead
         // (see refreshTitleMenuState above).
+        //
+        // Also a real save checkpoint (core/save-system.js) — belt-and-
+        // suspenders alongside the periodic autosave in main.js's animate()
+        // loop, so quitting deliberately never has to wait up to 30s for
+        // the next periodic tick to actually capture where you stopped.
+        writeLocalSave(state);
         pauseLayer.classList.remove('visible');
         pauseSettings.classList.remove('open');
         ui.classList.remove('hidden');
@@ -292,6 +315,51 @@ export function setupInput(state) {
 
     const modifiersResetBtn = document.getElementById('title-modifiers-reset-btn');
     if (modifiersResetBtn) modifiersResetBtn.addEventListener('click', () => resetModifiers());
+
+    // Save Data — Export downloads a real .json file (core/save-system.js);
+    // Import reads one back in. Import only lives on the title screen (not
+    // the pause menu) — loading a save mid-play would silently clobber
+    // whatever the player's currently doing, which isn't a real use case
+    // the way "export whenever, even mid-session" is.
+    function setSaveStatus(el, message, isError) {
+        if (!el) return;
+        el.textContent = message;
+        el.classList.toggle('error', !!isError);
+    }
+
+    const titleExportBtn = document.getElementById('title-export-save-btn');
+    const titleImportBtn = document.getElementById('title-import-save-btn');
+    const titleImportInput = document.getElementById('title-import-save-input');
+    const titleSaveStatus = document.getElementById('title-save-status');
+    if (titleExportBtn) titleExportBtn.addEventListener('click', () => {
+        exportSaveFile(state);
+        setSaveStatus(titleSaveStatus, 'Save file downloaded.', false);
+    });
+    if (titleImportBtn && titleImportInput) {
+        titleImportBtn.addEventListener('click', () => titleImportInput.click());
+        titleImportInput.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            titleImportInput.value = ''; // allow re-selecting the same file later
+            if (!file) return;
+            try {
+                const data = await importSaveFile(file);
+                applySavedState(state, data);
+                writeLocalSave(state); // imported save becomes the new autosave baseline too
+                state.hasStartedGame = true;
+                setSaveStatus(titleSaveStatus, 'Save loaded — entering the forest…', false);
+                enterPlayMode();
+            } catch (err) {
+                setSaveStatus(titleSaveStatus, err.message || 'Could not load that save file.', true);
+            }
+        });
+    }
+
+    const pauseExportBtn = document.getElementById('pause-export-save-btn');
+    const pauseSaveStatus = document.getElementById('pause-save-status');
+    if (pauseExportBtn) pauseExportBtn.addEventListener('click', () => {
+        exportSaveFile(state);
+        setSaveStatus(pauseSaveStatus, 'Save file downloaded.', false);
+    });
 
     window.addEventListener('keydown', (e) => { if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = true; });
     window.addEventListener('keyup', (e) => { if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false; });

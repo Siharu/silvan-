@@ -72,7 +72,7 @@ function getAnimalMaterial(hexColor, isEmissive) {
 }
 
 // --- rig construction -------------------------------------------------
-function buildAnimalRig(name, config) {
+export function buildAnimalRig(name, config) {
     const root = new THREE.Group(); root.name = name + 'Root';
     const scale = config.scale;
 
@@ -199,7 +199,7 @@ function buildAnimalRig(name, config) {
 
 // --- animation: gait, blink cycle, ear physics -------------------------
 // animState: 'idle' | 'walk' | 'run'
-function animateAnimalRig(rig, dt, animState) {
+export function animateAnimalRig(rig, dt, animState) {
     rig.animTime += dt;
     const animTime = rig.animTime;
     let speed = 1, legRot = 0, bodyBob = 0, basePitch = 0;
@@ -294,13 +294,13 @@ function animateAnimalRig(rig, dt, animState) {
 
 // Wander/recruit/follow AI — ported from the Bloodwoods reference build's
 // createNPC/recruitChance/attemptRecruit/gameLoop wander+follow blocks
-// (same rig code this whole file already comes from). Kat is deliberately
-// left out of WANDER_NAMES: in Bloodwoods, Kat is the player character and
-// Shuu/Bimo/Primo are the recruitable companions — same framing here, Kat
-// just doesn't have her own first-person body/camera yet (separate future
-// work), so for now she stays the plain idle-only rig spawnDemoAnimals
-// already had.
-const WANDER_NAMES = ['Shuu', 'Bimo', 'Primo'];
+// (same rig code this whole file already comes from). Kat is the player
+// character, not a companion — she's no longer spawned by
+// spawnDemoAnimals() below at all. Her rig (same buildAnimalRig()/
+// animateAnimalRig() this file exports) is built and driven directly by
+// core/player-controller.js instead, following state.player.position each
+// frame. Shuu/Bimo/Primo remain the recruitable wander/follow companions.
+const WANDER_NAMES = ['Shuu', 'Bimo', 'Primo']; // also spawnDemoAnimals()'s full roster now that Kat's excluded — every companion wanders
 const RECRUIT_RANGE = 3.2;
 
 function getInteractPromptEl(state) {
@@ -362,7 +362,7 @@ export function findDryAnchor() {
 
 export function spawnDemoAnimals(state) {
     state.demoAnimals = [];
-    const names = Object.keys(ANIMAL_CONFIGS);
+    const names = WANDER_NAMES;
     const radius = 6;
     const anchor = findDryAnchor();
     names.forEach((name, i) => {

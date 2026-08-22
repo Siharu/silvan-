@@ -51,6 +51,11 @@ export function createWorldState() {
         gameTime: 0.35,
         daysPassed: 1,
         lastTime: performance.now(),
+        // Timestamp of the last successful autosave write (core/save-
+        // system.js) — undefined until the first one, so main.js's
+        // animate() can tell "never saved yet this session" apart from
+        // "saved recently" without a separate flag.
+        lastAutosaveTime: undefined,
         stepTimer: 0,
 
         // --- weather ---
@@ -136,6 +141,17 @@ export function createWorldState() {
             isInWater: false,
             // Sprint, disabled while isInWater is true.
             isRunning: false,
+            // Eases 0->1 while a movement key is held and 1->0 on release
+            // (core/player-controller.js) — movement used to jump straight
+            // from zero to full speed and back on every keydown/keyup,
+            // which read as janky/twitchy. This scales velocity's magnitude
+            // for a short ramp in/out instead of a hard on/off.
+            speedEase: 0,
+            // Facing angle (radians, world Y-up) Kat's visible rig turns
+            // toward — driven from actual movement direction rather than
+            // camera look direction, so top-down (no mouse-look) still
+            // turns her to face where she's walking. See updatePlayer().
+            facingAngle: 0,
         },
         keys: { w: false, a: false, s: false, d: false, r: false, shift: false },
         colliders: [],
@@ -149,13 +165,17 @@ export function createWorldState() {
         // in core/player-controller.js.
         waterOverlayEl: undefined,
 
-        // Demo animal rigs (Kat/Shuu/Bimo/Primo) — wander when unmet, follow
+        // Demo animal rigs (Shuu/Bimo/Primo) — wander when unmet, follow
         // in a trailing arc once recruited. See environment/animals.js.
         demoAnimals: undefined,
 
-        // World-boundary mountain backdrop rings, see environment/mountain-boundary.js.
-        mountainFarMesh: undefined,
-        mountainNearMesh: undefined,
+        // The player's own visible body — Kat's rig (same buildAnimalRig()
+        // animals.js uses for the companions), positioned/rotated to follow
+        // state.player each frame by core/player-controller.js. Hidden in
+        // first-person (the camera sits at her eye height, so her own body
+        // would just clip the view), visible in top-down so you can
+        // actually see who you're controlling. See updatePlayer().
+        playerRig: undefined,
 
         // WNCORE radio tower — geometry group + its beacon/marker light
         // list, and the mast-tip height offset used by the awe cutscene's

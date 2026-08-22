@@ -111,8 +111,15 @@ export function createTerrain(state) {
     }
     geo.computeVertexNormals();
 
+    // Was 0x141a0f — near-black. This is the base under every grass
+    // blade/tree/rock gap and the whole ocean floor, so a near-black
+    // albedo read as "the world is dark" everywhere, independent of actual
+    // light levels (roughness 1.0 has no specular to compensate — albedo
+    // is all that's driving what you see). Brightened to a proper dark
+    // forest-floor tone that still reads as shadowed dirt/undergrowth but
+    // actually responds to sunLight/hemiLight instead of sitting flat.
     const mat = new THREE.MeshStandardMaterial({ 
-        color: 0x141a0f, 
+        color: 0x2b3a1e, 
         roughness: 1.0, 
         metalness: 0.0
     });

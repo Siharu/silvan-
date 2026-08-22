@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { WATER_LEVEL } from './world-state.js';
 import { getElevation, islandRadiusAt, BASE_BOUNDARY_RADIUS } from '../environment/terrain.js';
+import { animateAnimalRig } from '../environment/animals.js';
 
 // Soft world boundary — instead of a hard clamp that reads as an invisible
 // wall, movement gets increasingly resisted ("wind") as the player nears
@@ -55,8 +56,12 @@ const SWIM_FLOAT_HEIGHT = 0.55; // how much of player.height stays above the wat
 // camera-forward to XZ and normalizes it — a true 90°-straight-down look
 // would flatten to a near-zero-length vector there and risk NaN followers.
 // Staying off dead-vertical avoids that entirely instead of guarding for it.
-const TOPDOWN_HEIGHT = 34;
-const TOPDOWN_BACK_OFFSET = 16;
+// Was 34/16 — framed a small patch right around Kat's feet, reading as a
+// close chase-cam rather than an actual "map" view of the island. Scaled
+// up (keeping roughly the same height:offset ratio, so the look-angle
+// doesn't change) alongside main.js's top-down FOV bump 50->62.
+const TOPDOWN_HEIGHT = 130;
+const TOPDOWN_BACK_OFFSET = 60;
 
 // WASD in top-down mode maps to fixed world axes (there's no mouse-look to
 // derive "forward" from — see updatePlayer's movement block) rather than
@@ -95,6 +100,24 @@ function updateBoundaryMessage(state, distFromCenter, msgThreshold) {
     if (el) el.classList.toggle('visible', shouldShow);
 }
 
+// Keeps Kat's visible rig (see main.js's buildAnimalRig('Kat', ...) call)
+// following state.player each frame: feet on the ground (not the camera's
+// eye-height position), facing the way she's actually moving, animated
+// idle/walk/run to match. Visible in top-down (the whole point — you can
+// now see who you're controlling) and hidden in first-person, since the
+// camera sits at her eye height and her own body would just clip the view.
+function syncPlayerRig(state, delta, moving) {
+    const rig = state.playerRig;
+    if (!rig) return;
+    rig.root.visible = state.viewMode === 'topdown';
+    if (!rig.root.visible) return; // skip the ground sample + animation work when there's nothing to see it
+    const rigY = getElevation(state.player.position.x, state.player.position.z);
+    rig.root.position.set(state.player.position.x, rigY, state.player.position.z);
+    rig.root.rotation.y = state.player.facingAngle;
+    const animState = (moving && !state.cutsceneActive) ? (state.player.isRunning ? 'run' : 'walk') : 'idle';
+    animateAnimalRig(rig, delta, animState);
+}
+
 export function updatePlayer(state, delta) {
     if (!state.isLocked) return;
 
@@ -119,6 +142,7 @@ export function updatePlayer(state, delta) {
             state.camera.position.copy(state.player.position);
             state.camera.quaternion.setFromEuler(state.player.rotation);
         }
+        syncPlayerRig(state, delta, false);
         return;
     }
 
@@ -146,6 +170,21 @@ export function updatePlayer(state, delta) {
     if (state.keys.w) state.player.velocity.add(dir); if (state.keys.s) state.player.velocity.sub(dir);
     if (state.keys.a) state.player.velocity.add(right); if (state.keys.d) state.player.velocity.sub(right);
 
+    // Ease the movement magnitude in/out instead of snapping straight from
+    // zero to full speed on keydown and back on keyup — that hard on/off
+    // is what was reading as "janky" movement. ~100ms ramp either way;
+    // fast enough to still feel responsive, slow enough to smooth the
+    // start/stop pop. Direction itself is still instant (only magnitude is
+    // eased), so turning doesn't feel sluggish, just the speed ramp does.
+    const wantsToMove = state.player.velocity.lengthSq() > 0;
+    state.player.speedEase += ((wantsToMove ? 1 : 0) - state.player.speedEase) * (1.0 - Math.exp(-10.0 * delta));
+    if (wantsToMove) state.player.velocity.normalize();
+    state.player.velocity.multiplyScalar(state.player.speedEase);
+
+    if (wantsToMove) {
+        state.player.facingAngle = Math.atan2(state.player.velocity.x, state.player.velocity.z);
+    }
+
     const distFromCenter = Math.hypot(state.player.position.x, state.player.position.z);
     // theta of the player's current position picks out the local coastline
     // radius for this frame — cheap (one atan2 + two noise() calls) and
@@ -155,8 +194,11 @@ export function updatePlayer(state, delta) {
     const localBoundaryStart = localBoundaryRadius - BOUNDARY_SOFT_ZONE;
     updateBoundaryMessage(state, distFromCenter, localBoundaryStart + BOUNDARY_SOFT_ZONE * 0.35);
 
-    if (state.player.velocity.lengthSq() > 0) {
-        state.player.velocity.normalize().multiplyScalar(state.player.speed * speedMultiplier * delta);
+    if (state.player.velocity.lengthSq() > 1e-6) {
+        // velocity is already a unit-ish vector scaled by speedEase (see
+        // above) — multiply straight by speed rather than re-normalizing,
+        // which would erase the eased ramp-in/out magnitude.
+        state.player.velocity.multiplyScalar(state.player.speed * speedMultiplier * delta);
 
         // Wind resistance: past the local boundary start, cancel out however
         // much of the velocity points further outward, ramping in (eased, so
@@ -248,4 +290,6 @@ export function updatePlayer(state, delta) {
     // Screen-edge tint so the water reads as water, not just a slowdown.
     const overlay = getWaterOverlayEl(state);
     if (overlay) overlay.style.opacity = state.player.isInWater ? '1' : '0';
+
+    syncPlayerRig(state, delta, wantsToMove);
 }

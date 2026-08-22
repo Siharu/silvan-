@@ -14,6 +14,7 @@ import { createWorldState } from './core/world-state.js';
 import { resolveQualityPreset, QUALITY_PRESETS } from './core/quality.js';
 import { getModifiers } from './core/modifiers.js';
 import { getViewMode } from './core/view-mode.js';
+import { writeLocalSave, AUTOSAVE_INTERVAL_MS } from './core/save-system.js';
 import { setupInput, onWindowResize } from './core/input.js';
 import { updatePlayer } from './core/player-controller.js';
 
@@ -35,8 +36,7 @@ import { createFireflies } from './fx/fireflies.js';
 import { createDustParticles } from './fx/dust.js';
 import { createProceduralTextures } from './fx/textures.js';
 import { createWindLeaves } from './fx/wind-leaves.js';
-import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, findDryAnchor } from './environment/animals.js';
-import { createMountainBoundary } from './environment/mountain-boundary.js';
+import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, findDryAnchor, buildAnimalRig, ANIMAL_CONFIGS } from './environment/animals.js';
 import { createRadioTower } from './environment/radio-tower.js';
 
 import { createAmbientAudio } from './audio/ambience.js';
@@ -47,27 +47,40 @@ const state = createWorldState();
 state.viewMode = getViewMode(); // 'firstperson' | 'topdown' — see core/view-mode.js
 state.quality = resolveQualityPreset();
 if (state.viewMode === 'topdown') {
-    // Top-down mode exists specifically for low-end devices — force the
-    // cheapest tier regardless of whatever the player separately chose in
-    // the Graphics toggle. Reuses QUALITY_PRESETS.low as-is rather than
-    // defining a new "potato" preset, so there's exactly one place that
-    // defines "cheap" instead of two that could drift out of sync.
-    state.quality = QUALITY_PRESETS.low;
+    // Top-down mode still forces the cheap instance-count tier regardless
+    // of whatever the player separately chose in the Graphics toggle — the
+    // heavy cost here (grass/tree/rock counts) doesn't get cheaper just
+    // because the camera's further away. Uses its own 'topdown' preset now
+    // rather than reusing 'low' outright — 'low' also killed bloom and cut
+    // fireflies/dust to the floor, for no real perf reason, which is a big
+    // part of why top-down felt dark and lost its ambient atmosphere. See
+    // core/quality.js.
+    state.quality = QUALITY_PRESETS.topdown;
 }
 state.modifiers = getModifiers(); // rock/water tuning — see core/modifiers.js
 
 function init() {
     state.scene = new THREE.Scene();
-    state.scene.fog = new THREE.FogExp2(0x111625, 0.007);
+    // Density nudged down (0.007 -> 0.0052) — stacked with the near-black
+    // old terrain color and the 0.85 exposure, distance was going murky
+    // fast; the color-melt into the real sky/backdrop (fx/dynamic-fog.js)
+    // still does the actual "hide the edge of the world" job, so this only
+    // needed to be thick enough to soften pop-in, not to actively darken
+    // mid-distance terrain.
+    state.scene.fog = new THREE.FogExp2(0x111625, 0.0052);
 
     state.globalTextures = createProceduralTextures();
 
-    // Top-down mode uses a narrower FOV (50° vs 75°) — this is still a
-    // perspective camera at a steep angle, not a true orthographic one (see
-    // core/player-controller.js's TOPDOWN_* constants for why), and a wide
-    // FOV at a steep downward pitch reads as fisheye-distorted/swimmy in a
-    // way that undermines the clean "map-like" look top-down is going for.
-    state.camera = new THREE.PerspectiveCamera(state.viewMode === 'topdown' ? 50 : 75, window.innerWidth / window.innerHeight, 0.1, 1500);
+    // Top-down mode uses a narrower FOV than first-person (still a
+    // perspective camera at a steep angle, not a true orthographic one —
+    // see core/player-controller.js's TOPDOWN_* constants for why). Bumped
+    // 50 -> 62 alongside player-controller.js's TOPDOWN_HEIGHT/
+    // TOPDOWN_BACK_OFFSET increase — the old 34-unit-high rig only ever
+    // framed a small patch of ground around Kat, reading as a close
+    // chase-cam rather than an actual overhead map view. Kept short of
+    // first-person's 75 so it still doesn't fisheye at the steeper
+    // downward pitch.
+    state.camera = new THREE.PerspectiveCamera(state.viewMode === 'topdown' ? 62 : 75, window.innerWidth / window.innerHeight, 0.1, 1500);
 
     state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
     state.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -79,8 +92,12 @@ function init() {
     // stacked pushed midday well past ACES's shoulder into a blown-white sky
     // (see day screenshot). Dropped exposure and the sun/hemi peaks below
     // instead of just crushing exposure alone, which would've flattened
-    // contrast everywhere including night.
-    state.renderer.toneMappingExposure = 0.85;
+    // contrast everywhere including night. Nudged back up from 0.85 — that
+    // fix overcorrected and left the whole world reading dim/muddy even at
+    // midday; 0.95 keeps the sun/hemi peaks (still trimmed below, see
+    // day-night-cycle.js) from re-clipping while giving midday its
+    // brightness back.
+    state.renderer.toneMappingExposure = 0.95;
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
 
     // Offscreen target the sky/mountain backdrop renders into each frame —
@@ -131,7 +148,6 @@ function init() {
     state.scene.add(state.moonLight);
 
     createSky(state);
-    createMountainBoundary(state);
     createTerrain(state);
     createOcean(state);
     createLake(state);
@@ -160,12 +176,47 @@ function init() {
     const spawnAnchor = findDryAnchor();
     state.player.position.set(spawnAnchor.x, getElevation(spawnAnchor.x, spawnAnchor.z) + state.player.height, spawnAnchor.z);
 
+    // Kat's own visible body — was entirely absent before (the "player" was
+    // just a bare camera), most noticeable in top-down where there's
+    // nothing on screen to say what you're actually controlling. Reuses
+    // the exact rig animals.js already builds for the companions.
+    // core/player-controller.js positions/rotates/animates it every frame.
+    state.playerRig = buildAnimalRig('Kat', ANIMAL_CONFIGS.Kat);
+    state.scene.add(state.playerRig.root);
+
     createAmbientAudio(state);
 
     window.addEventListener('resize', () => { onWindowResize(state); resizeBackgroundRenderTarget(state.backgroundRenderTarget); });
     setupInput(state);
 
+    // Last-chance save: if the tab is closing mid-play, this is the only
+    // hook that reliably still gets to run. Not a substitute for the
+    // periodic autosave in animate() below (beforeunload can be skipped
+    // entirely by some mobile browsers on backgrounding), just a net under
+    // the net.
+    window.addEventListener('beforeunload', () => {
+        if (state.isPlaying) writeLocalSave(state);
+    });
+
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) loadingScreen.classList.add('hidden');
+
     requestAnimationFrame(animate);
+}
+
+// Autosave HUD icon — flashes briefly exactly when writeLocalSave() below
+// actually runs, not on a decorative independent timer, so it's an honest
+// signal rather than UI theater (see core/save-system.js's header comment
+// for the broader reasoning). Grabbed lazily/once rather than at module
+// load, matching the getXEl() lazy-cache pattern already used in
+// core/player-controller.js for #water-overlay/#boundary-message.
+let _autosaveIconEl;
+function flashAutosaveIcon() {
+    if (_autosaveIconEl === undefined) _autosaveIconEl = document.getElementById('autosave-indicator');
+    if (!_autosaveIconEl) return;
+    _autosaveIconEl.classList.add('active');
+    clearTimeout(_autosaveIconEl._hideTimer);
+    _autosaveIconEl._hideTimer = setTimeout(() => _autosaveIconEl.classList.remove('active'), 1800);
 }
 
 function animate(time) {
@@ -174,8 +225,31 @@ function animate(time) {
     updateAtmosphere(state, delta); updatePlayer(state, delta / 1000);
     updateDemoAnimals(state, delta / 1000);
     updateInteractPrompt(state); // after both updateAtmosphere (tower proximity) and updateDemoAnimals (animal proximity) have set their flags this frame
+
+    // Periodic autosave while actually playing — skipped during the tower
+    // cutscene so a save can't land mid-scripted-camera-move with
+    // state.cutsceneActive stuck true if the page were closed right then.
+    if (state.isPlaying && !state.cutsceneActive) {
+        if (!state.lastAutosaveTime) state.lastAutosaveTime = time;
+        if (time - state.lastAutosaveTime > AUTOSAVE_INTERVAL_MS) {
+            state.lastAutosaveTime = time;
+            if (writeLocalSave(state)) flashAutosaveIcon();
+        }
+    }
+
     renderBackgroundPass(state, state.backgroundRenderTarget); // capture sky/mountain backdrop before the main pass below so this frame's dynamic fog (fx/dynamic-fog.js) reads current colors, not last frame's
     state.composer.render();
 }
 
-window.onload = init;
+window.onload = () => {
+    // One rAF hop guarantees the loading screen (visible by default — see
+    // index.html/#loading-screen) actually gets painted before init()'s
+    // synchronous scene-construction work blocks the main thread. This
+    // does NOT make that blocking work itself faster or async — init() is
+    // still one long synchronous call, terrain/grass/rocks/forest
+    // generation all still freezes the tab for however long it takes. It
+    // just guarantees that freeze has a visible "loading" label on screen
+    // first, instead of a real risk of the still-default-visible title
+    // screen painting first and the freeze reading as a hung/broken page.
+    requestAnimationFrame(() => requestAnimationFrame(init));
+};

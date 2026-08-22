@@ -357,7 +357,89 @@ title-screen one was built first; both need to exist and both need their
 `active` state reflected in `core/input.js`'s `viewModeButtonPairs` loop,
 same reasoning as why the Graphics toggle already has two copies.
 
+## 8. Loading screen + real save system — `core/save-system.js` (new), `main.js`, `core/input.js`, `index.html`
+
+**Two features, built together since the autosave icon needed something
+real underneath it.** Before this, clicking a save-icon idea without an
+actual save system would've been the same kind of dishonest UI as a fake
+"New Game"/"Continue" split — a pulsing icon tied to nothing. Built the
+real thing first.
+
+### Save system (`core/save-system.js`)
+
+Serializes: player position + yaw rotation, `gameTime`/`daysPassed`, and
+which animals are currently `.following` (by name, matched back against
+`state.demoAnimals` on load — the roster itself is rebuilt fresh by
+`spawnDemoAnimals()` every load, only the recruited flag is restored).
+Deliberately does **not** save any story/quest-completion flag, because
+none currently exist in the codebase (`radio-tower.js`'s cutscene has no
+"already seen" flag, it can replay every time) — not inventing one just to
+have something to persist.
+
+**Two storage paths, same serialized shape:**
+- **localStorage autosave** — convenient, survives quit-to-title, wiped by
+  a cache clear. Written every `AUTOSAVE_INTERVAL_MS` (30s) while
+  `state.isPlaying` in `main.js`'s `animate()` loop, plus as a checkpoint
+  on `pause-quit-btn` and as a `beforeunload` last-chance net.
+- **Export/Import file** — a real downloaded `.json`, survives a cache
+  clear or switching devices/browsers. Built as the primary "portable
+  save" path now, not bolted on later, specifically because it's already
+  the shape a future Electron/APK build would want for real disk writes —
+  swapping what's behind `exportSaveFile()`/`importSaveFile()` for actual
+  filesystem calls later shouldn't require rebuilding the save shape or
+  the calling code in `input.js`.
+
+**"Regain" now sources from two different places** depending on
+situation, both funneled through the same button: a live in-memory
+session this tab (quit-to-title without a real reload — nothing to load,
+just resume) vs. a genuinely fresh page load with a real save on disk from
+a previous visit (`applySavedState()` runs before entering play). `core/
+input.js`'s `refreshTitleMenuState()` now also checks `hasLocalSave()`, not
+just `state.hasStartedGame` — Regain can now correctly appear on a true
+fresh boot, not only after quitting within the same tab.
+
+**Import validates before applying** — `importSaveFile()` rejects (doesn't
+silently apply) anything that isn't valid JSON or is missing a `player`
+field, specifically to avoid importing garbage and teleporting the player
+to `(0,0,0)` with no error. Import only lives on the title screen, not the
+pause menu — loading a save mid-play would silently clobber whatever the
+player's doing right now, which isn't a real use case the way "export
+whenever, even mid-session" is (Export exists on both).
+
+### Loading screen
+
+`#loading-screen` is visible **by default** in the HTML/CSS (not toggled
+on) — it's the very first thing painted, before `main.js`'s `init()` runs
+its long synchronous scene-construction work (terrain/grass/rocks/forest
+generation, etc.), and `init()` hides it once that's done, right before
+the render loop starts.
+
+**Honest framing, not oversold**: `window.onload` now does a double-`
+requestAnimationFrame` hop before calling `init()`. This guarantees the
+loading screen actually gets *painted* before the blocking work starts —
+without it, the browser could end up doing the paint and the freeze in the
+same frame, and the loading screen would never actually be seen before
+things locked up. **This does not make `init()`'s blocking synchronous
+cost go away** — it's still one long call, the tab still freezes for
+however long scene generation takes. The fix only guarantees that freeze
+has a visible "Loading Silvan…" label first instead of risking the
+default-visible title screen painting first and the freeze reading as a
+hung/broken page. A real fix for the freeze itself (chunking `init()`'s
+work across frames, `requestIdleCallback`, etc.) is a bigger refactor,
+not attempted here.
+
+### Autosave HUD icon
+
+Flashes for 1.8s in the bottom-right (`#autosave-indicator`, toggled by
+`main.js`'s `flashAutosaveIcon()`) **exactly when `writeLocalSave()`
+actually succeeds** — not a decorative independent timer. If this is ever
+touched again, keep it wired to a real write's return value, not a fixed
+interval running in parallel to (and potentially out of sync with) the
+actual save calls.
+
 ---
+
+
 
 ## Standing gotchas worth remembering going forward
 

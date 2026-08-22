@@ -109,13 +109,17 @@ export function updateAtmosphere(state, delta) {
     }
 
     const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
-    // Sun peak trimmed from 1.5 -> 1.1 (was clipping white against the
-    // 0.85 exposure above); moon peak raised 0.5 -> 0.85 and hemi light
-    // now floors at 0.55 at night instead of sitting flat at 1.15 all the
-    // time, so night reads dim-but-visible instead of crushed-black.
-    state.sunLight.intensity = Math.max(0, sy) * 1.1;
+    // Sun peak trimmed from 1.5 -> 1.1 (was clipping white against the old
+    // 0.85 exposure); moon peak raised 0.5 -> 0.85 and hemi light floors at
+    // 0.55 at night instead of sitting flat at 1.15 all the time, so night
+    // reads dim-but-visible instead of crushed-black. Sun/hemi day peaks
+    // nudged up again (1.1->1.25, 0.7->0.85 range) alongside main.js's
+    // exposure bump to 0.95 — still comfortably under ACES's clipping
+    // point at this exposure, this time actually giving midday its
+    // brightness back instead of just trimming to fix the clip.
+    state.sunLight.intensity = Math.max(0, sy) * 1.25;
     state.moonLight.intensity = Math.max(0, -sy) * 0.85;
-    if (state.hemiLight) state.hemiLight.intensity = 0.55 + dayBlend * 0.7;
+    if (state.hemiLight) state.hemiLight.intensity = 0.6 + dayBlend * 0.85;
 
     const skyDay = new THREE.Color(0x5a6a7a); const skyNight = new THREE.Color(0x0a0f1c);
     const horDay = new THREE.Color(0x8a9aa8); const horSunset = new THREE.Color(0xa86c42); const horNight = new THREE.Color(0x040810);
@@ -247,24 +251,6 @@ export function updateAtmosphere(state, delta) {
         const lightVisibility = Math.max(0.08, sy); // More visible in day
         state.dustMat.uniforms.uVisibility.value = dustWeatherVisibility * lightVisibility;
         state.dustMat.uniforms.uDayBlend.value = dayBlend;
-    }
-
-    // Update mountain-boundary brightness. Even at full daylight, capped
-    // below 1.0 (0.82) rather than the raw unmodified texture — the source
-    // pack's pale sky-tinted highlight pixels were bright enough to trip
-    // the bloom pass's threshold and glow/overexpose regardless of time of
-    // day, which is very likely the actual "too bright" symptom rather
-    // than something that only shows up at night. Dims further at night
-    // and under heavy cloud/rain, same as everything else that responds to
-    // dayBlend/currentRainIntensity elsewhere in this file.
-    const mountainDayLevel = 0.82;
-    const mountainNightLevel = 0.32;
-    let mountainBrightness = mountainNightLevel + (mountainDayLevel - mountainNightLevel) * dayBlend;
-    mountainBrightness *= (1.0 - state.currentRainIntensity * 0.35);
-    for (const mesh of [state.mountainFarMesh, state.mountainNearMesh]) {
-        if (mesh && mesh.material.userData.shader) {
-            mesh.material.userData.shader.uniforms.uBrightness.value = mountainBrightness;
-        }
     }
 
     if (state.isPlaying) { 

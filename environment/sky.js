@@ -98,7 +98,17 @@ export function createSky(state) {
 
             void main() {
                 vec3 dir = normalize(vWorldPosition);
-                if (dir.y < -0.1) discard; 
+                // Was -0.1 (clouds reaching almost to the horizon) with the
+                // density ramp fully opening back up by dir.y 0.2 — barely
+                // ~11 degrees of sky. fx/dynamic-fog.js samples this same
+                // BACKGROUND_LAYER texture at each ground fragment's own
+                // screen position, so cloud pixels sitting that low ended up
+                // literally painted into the terrain/forest fog blend near
+                // the horizon — reading as clouds bleeding into the ground
+                // instead of sky. Lifted clear of the horizon band so
+                // there's a clean gap of open sky for the fog to sample
+                // there instead.
+                if (dir.y < 0.12) discard;
                 float n = fbm(dir * 5.0 + vec3(uTime * 0.01, 0.0, uTime * 0.008));
                 // uCoverage shifts the threshold band itself, not just a final
                 // opacity multiply — at low coverage only the highest noise
@@ -108,7 +118,7 @@ export function createSky(state) {
                 float lo = mix(0.55, 0.05, uCoverage);
                 float hi = mix(0.88, 0.55, uCoverage);
                 float density = smoothstep(lo, hi, n);
-                density *= smoothstep(-0.1, 0.2, dir.y);
+                density *= smoothstep(0.12, 0.4, dir.y);
                 gl_FragColor = vec4(cloudColor, density * opacity * 0.9);
             }
         `

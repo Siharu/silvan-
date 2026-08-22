@@ -46,6 +46,31 @@ export const QUALITY_PRESETS = {
         pixelRatioCap: 1.0,
         bloomEnabled: false, // UnrealBloomPass runs several extra blur passes every frame — the single most expensive line item after grass
     },
+    // Top-down mode used to just force QUALITY_PRESETS.low outright — same
+    // instance counts as low-end-device mode, but it ALSO turned off bloom
+    // and cut fireflies/dust to low's floor, so top-down lost the ambient
+    // atmospheric layer (glow, drifting motes) on top of feeling dark. The
+    // heavy cost in this scene is grass/tree/rock instance counts (still
+    // rasterized per-instance regardless of camera distance, see
+    // SILVAN_PLAN.md §3) — keep those at low's numbers, but bloom and the
+    // particle atmosphere effects are comparatively cheap and were cut for
+    // no real perf reason, so give them back here.
+    topdown: {
+        grassCount: 140000,
+        treeCount: 260,
+        pineTreeCount: 8,
+        rockCount: 350,
+        fernClusterCount: 12,
+        mossCount: 1800,
+        dustCount: 1600,
+        fireflyCount: 700,
+        rainCount: 10000,
+        rainSplashCount: 100,
+        windLeafCount: 60,
+        shadowMapSize: 512,
+        pixelRatioCap: 1.0,
+        bloomEnabled: true,
+    },
 };
 
 export function getQualityLevel() {
