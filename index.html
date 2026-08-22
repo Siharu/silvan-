@@ -14,6 +14,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+    <!-- VT323 + Silkscreen — title-screen-only reskin (silvan_titlescreen.html's
+         look). Cinzel/Cormorant stay loaded above because the pause menu,
+         loading screen, and boundary message still use them; this pass only
+         touches the front title screen. -->
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen&display=swap" rel="stylesheet">
     <style>
         body, html {
             margin: 0;
@@ -507,14 +512,41 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .title-kicker {
-            font-size: 0.62rem;
+            font-family: 'VT323', monospace;
+            font-size: 0.95rem;
             letter-spacing: 0.6em;
-            color: rgba(180, 200, 230, 0.5);
+            color: rgba(180, 200, 230, 0.55);
             text-transform: uppercase;
             margin-bottom: 1.2rem;
         }
+        /* Title wordmark reskin — Silkscreen pixel font in place of the old
+           Cinzel gradient wordmark, plus the demo's chromatic-split glitch
+           (data-text-driven ::before/::after layers, triggered by
+           #title-glitch-fx below). Idle float ported from the demo's
+           .float-container so the whole title-content block breathes gently
+           even when nothing's glitching. */
+        .title-content { animation: title-rise 1.6s ease both, title-float 6s ease-in-out infinite 1.6s; }
+        @keyframes title-float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-6px); } }
         .title-logo {
-            text-shadow: 0 0 46px rgba(180, 210, 255, 0.22), 0 4px 24px rgba(0,0,0,0.6);
+            font-family: 'Silkscreen', 'Cinzel', serif !important;
+            background: none !important;
+            -webkit-text-fill-color: white !important;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(255,255,255,0.35), 0 4px 24px rgba(0,0,0,0.7);
+            position: relative;
+        }
+        .title-logo.title-glitch::before, .title-logo.title-glitch::after {
+            content: attr(data-text);
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: transparent; pointer-events: none;
+        }
+        .title-logo.title-glitch::before {
+            color: #ff3333; z-index: -1;
+            clip-path: inset(15% 0 65% 0); transform: translate(-6px, 3px);
+        }
+        .title-logo.title-glitch::after {
+            color: #00ffff; z-index: -2;
+            clip-path: inset(55% 0 15% 0); transform: translate(6px, -3px);
         }
         .title-rule {
             width: 52px;
@@ -524,7 +556,9 @@
         }
         .title-desc {
             max-width: 30rem;
+            font-family: 'VT323', monospace;
         }
+        .title-desc p { font-family: 'VT323', monospace; font-size: 1.05rem !important; letter-spacing: 0.02em; }
         /* Controls chips now live inside the Settings panel behind a "Help"
            toggle instead of always-visible on the front screen — this
            makes it a compact vertical list rather than the old wrapped
@@ -631,24 +665,34 @@
         }
         .menu-item {
             position: relative;
-            margin: 8px 0;
+            top: 0;
+            margin: 6px 0;
             padding: 6px 20px;
-            font-family: 'Cinzel', serif;
-            font-size: 1.15rem;
-            font-weight: 500;
+            font-family: 'VT323', monospace;
+            font-size: 1.7rem;
+            font-weight: 400;
             color: #aebfd1;
             cursor: pointer;
-            transition: all 0.4s ease;
+            transition: transform 0.3s ease, color 0.3s ease, text-shadow 0.3s ease, top 0.3s ease;
             text-transform: uppercase;
-            letter-spacing: 0.12em;
+            letter-spacing: 0.1em;
             background: transparent;
             border: none;
             outline: none;
+            animation: btn-float 4s ease-in-out infinite;
         }
+        .title-menu .menu-item:nth-child(1) { animation-delay: 0s; }
+        .title-menu .menu-item:nth-child(2) { animation-delay: 0.6s; }
+        .title-menu .menu-item:nth-child(3) { animation-delay: 1.2s; }
+        .title-menu .menu-item:nth-child(4) { animation-delay: 1.8s; }
+        .title-menu .menu-item:nth-child(5) { animation-delay: 2.4s; }
+        @keyframes btn-float { 0%, 100% { top: 0px; } 50% { top: -5px; } }
         .menu-item:hover, .menu-item:focus-visible {
             color: #ffffff;
-            text-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
-            transform: scale(1.02);
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.6);
+            transform: scale(1.04);
+            animation-play-state: paused;
+            top: -3px;
         }
         .menu-item::after {
             content: '';
@@ -656,71 +700,97 @@
             bottom: 0;
             left: 50%;
             width: 0;
-            height: 1px;
-            background: rgba(255, 255, 255, 0.5);
-            transition: all 0.4s ease;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.7);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             transform: translateX(-50%);
         }
         .menu-item:hover::after, .menu-item:focus-visible::after {
-            width: 60%;
+            width: 65%;
         }
         .menu-subtext {
             display: block;
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 0.78rem;
-            font-style: italic;
+            font-family: 'VT323', monospace;
+            font-size: 0.95rem;
+            font-style: normal;
             color: #6a7b8c;
             margin-top: 1px;
-            text-transform: none;
-            letter-spacing: normal;
+            text-transform: lowercase;
+            letter-spacing: 0.1em;
             transition: color 0.4s ease;
         }
         .menu-item:hover .menu-subtext { color: #9cb1c4; }
-        .menu-item.quiet-entry { margin-top: 1.4rem; }
+        .menu-item.quiet-entry { margin-top: 1.4rem; opacity: 0.7; }
 
         /* Settings/Credits fold-outs — same panel chrome as the existing
            pause-menu settings block (border/blur/radius all match) so the
            title screen and pause menu don't read as two different UI
            systems, just the same one shown in two places. */
+        /* Settings/Credits panel chrome — reskinned as the "glass-panel"
+           block from silvan_titlescreen.html (dark, blurred, hard-edged
+           border) instead of the old soft rounded panel. Every control
+           inside keeps its original id — input.js's wiring (quality,
+           view-mode, modifiers, save export/import, volume) is untouched,
+           this is styling only. */
         .title-panel {
             display: none;
             flex-direction: column;
             align-items: center;
             gap: 0.6rem;
             margin-top: 1rem;
-            padding: 1.1rem 1.6rem;
-            background: rgba(6, 11, 20, 0.55);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 4px;
-            backdrop-filter: blur(6px);
-            min-width: 15rem;
+            padding: 1.2rem 1.7rem;
+            background: rgba(8, 8, 12, 0.88);
+            border: 2px solid rgba(255, 255, 255, 0.18);
+            border-radius: 6px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.85), inset 0 2px 0 rgba(255,255,255,0.08);
+            min-width: 16rem;
+            font-family: 'VT323', monospace;
         }
         .title-panel.open { display: flex; }
         .title-panel label {
-            font-family: 'Cormorant Garamond', serif;
-            font-size: 0.85rem;
+            font-family: 'VT323', monospace;
+            font-size: 1.05rem;
             color: #9cb1c4;
             align-self: flex-start;
         }
         .title-panel .quality-toggle-row { margin-top: 0.15rem; }
+        /* Help / Modifiers fold-out headers now read as the demo's tab
+           strip (uppercase, underline-on-active) rather than a plain
+           text toggle — still the exact same buttons/ids/open-class
+           behavior input.js already wires up. */
+        .settings-help-toggle {
+            font-family: 'VT323', monospace !important;
+            font-style: normal !important;
+            font-size: 1.05rem !important;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
         .title-credits-body {
-            font-family: 'Cormorant Garamond', serif;
-            font-style: italic;
-            font-size: 0.95rem;
+            font-family: 'VT323', monospace;
+            font-style: normal;
+            font-size: 1.1rem;
             color: #b7c4d6;
             text-align: center;
             line-height: 1.5;
         }
         .title-credits-body .credit-kicker {
             display: block;
-            font-family: 'Cinzel', serif;
+            font-family: 'Silkscreen', 'Cinzel', serif;
             font-style: normal;
-            font-size: 0.62rem;
-            letter-spacing: 0.5em;
+            font-size: 0.6rem;
+            letter-spacing: 0.4em;
             text-transform: uppercase;
-            color: rgba(180, 200, 230, 0.55);
-            margin-bottom: 0.5rem;
+            color: rgba(180, 200, 230, 0.6);
+            margin-bottom: 0.6rem;
+            position: relative;
         }
+        .title-credits-body .credit-kicker::before, .title-credits-body .credit-kicker::after {
+            content: attr(data-text);
+            position: absolute; top: 0; left: 0; width: 100%; opacity: 0.7; pointer-events: none;
+        }
+        .title-credits-body .credit-kicker::before { color: #ff3333; transform: translate(-2px, 1px); }
+        .title-credits-body .credit-kicker::after { color: #00ffff; transform: translate(2px, -1px); }
 
         /* Farewell overlay — "Return to your world" fade, same beat as
            titlescreenn.html's goodbye screen, but non-destructive: it fades
@@ -741,8 +811,8 @@
         }
         .title-farewell.visible { opacity: 1; pointer-events: auto; }
         .title-farewell p {
-            font-family: 'Cinzel', serif;
-            font-size: 1.4rem;
+            font-family: 'VT323', monospace;
+            font-size: 2rem;
             letter-spacing: 0.35em;
             text-transform: uppercase;
             color: #8fa3b5;
@@ -786,9 +856,7 @@
         <div class="title-content">
             <div class="title-kicker">Cygnus Signal Series</div>
 
-            <h1 class="title-logo text-7xl font-extralight tracking-[0.3em] mb-0 text-center text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500 drop-shadow-lg">
-                SILVAN
-            </h1>
+            <h1 id="title-logo-text" class="title-logo text-7xl font-extralight tracking-[0.3em] mb-0 text-center drop-shadow-lg" data-text="SILVAN">SILVAN</h1>
 
             <div class="title-rule"></div>
             <h2 class="text-xl font-light tracking-[0.5em] mb-10 text-gray-400">LUSH WILDERNESS</h2>
@@ -888,7 +956,7 @@
 
             <div class="title-panel" id="title-credits-panel">
                 <div class="title-credits-body">
-                    <span class="credit-kicker">Cygnus Signal Series</span>
+                    <span class="credit-kicker" data-text="Cygnus Signal Series">Cygnus Signal Series</span>
                     Silvan — Map 1: The Hearth<br>
                     A quiet afterlife for animals, wandered and built one small piece at a time.
                 </div>
@@ -955,5 +1023,53 @@
     </div>
 
     <script type="module" src="main.js"></script>
+
+    <!-- Title-screen glitch FX, ported from silvan_titlescreen.html.
+         Purely cosmetic and additive: only scrambles title-logo-text's
+         rendered characters, doesn't touch state/ids/listeners core/input.js
+         depends on. Guarded so a missing element just no-ops instead of
+         throwing and blocking main.js's module script above. -->
+    <script>
+    (function () {
+        const titleEl = document.getElementById('title-logo-text');
+        const uiLayer = document.getElementById('ui-layer');
+        if (!titleEl || !uiLayer) return;
+
+        const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*!';
+        const ORIGINAL = titleEl.getAttribute('data-text') || titleEl.innerText;
+        let glitching = false;
+
+        function titleVisible() {
+            return !uiLayer.classList.contains('hidden');
+        }
+
+        function triggerTitleGlitch() {
+            if (glitching || !titleVisible()) return;
+            glitching = true;
+            titleEl.classList.add('title-glitch');
+            let tick = 0;
+            const maxTicks = 12;
+            const interval = setInterval(() => {
+                tick++;
+                if (tick > maxTicks) {
+                    clearInterval(interval);
+                    titleEl.classList.remove('title-glitch');
+                    titleEl.innerText = ORIGINAL;
+                    titleEl.setAttribute('data-text', ORIGINAL);
+                    glitching = false;
+                    return;
+                }
+                const scrambled = ORIGINAL.split('').map(ch =>
+                    Math.random() > 0.4 ? CHARS[Math.floor(Math.random() * CHARS.length)] : ch
+                ).join('');
+                titleEl.innerText = scrambled;
+                titleEl.setAttribute('data-text', scrambled);
+            }, 80);
+        }
+
+        setInterval(triggerTitleGlitch, 30000);
+        titleEl.addEventListener('mouseenter', () => { if (Math.random() > 0.6) triggerTitleGlitch(); });
+    })();
+    </script>
 </body>
 </html>
