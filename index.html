@@ -483,9 +483,22 @@
            text sits, the way most 3D game title screens actually handle a
            live background instead of hiding it. */
         .ui-layer {
-            background: rgba(2, 5, 12, 0.28);
-            backdrop-filter: blur(3px);
+            background: rgba(2, 5, 12, 0.05);
+            backdrop-filter: none;
         }
+        #pixel-sky {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            image-rendering: pixelated;
+        }
+        .title-vignette, .title-scrim { z-index: 1; }
+        .title-content { z-index: 2; }
         .title-vignette {
             position: absolute;
             inset: 0;
@@ -755,6 +768,43 @@
             align-self: flex-start;
         }
         .title-panel .quality-toggle-row { margin-top: 0.15rem; }
+        /* Tabbed Settings panel — structure ported from
+           silvan_titlescreen.html's tabs-header/settings-content, wrapped
+           around the real controls above. */
+        .tabs-panel { padding: 0; overflow: hidden; min-width: 18rem; }
+        .tabs-header {
+            display: flex;
+            width: 100%;
+            overflow-x: auto;
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+            background: rgba(0,0,0,0.4);
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 0.6rem 0.5rem;
+            color: rgba(255,255,255,0.5);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-family: 'VT323', monospace;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+        }
+        .tab-btn.active { color: #fff; border-bottom-color: #fff; background: rgba(255,255,255,0.08); }
+        .tab-btn:hover:not(.active) { color: rgba(255,255,255,0.85); }
+        .tab-panel {
+            display: none;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.4rem;
+            width: 100%;
+            padding: 1rem 1.4rem 1.2rem;
+        }
+        .tab-panel.active { display: flex; }
         /* Help / Modifiers fold-out headers now read as the demo's tab
            strip (uppercase, underline-on-active) rather than a plain
            text toggle — still the exact same buttons/ids/open-class
@@ -850,6 +900,15 @@
     <div id="canvas-container"></div>
 
     <div id="ui-layer" class="ui-layer">
+        <!-- Pixel-sky procedural background, ported wholesale from
+             silvan_titlescreen.html (engine + rendering loop live in the
+             script block at the bottom of </body>). Sits behind the
+             vignette/scrim/content but in front of #canvas-container, so
+             the title screen shows the painted pixel sky instead of the
+             live 3D scene peeking through — only visible while #ui-layer
+             itself is visible (its 'hidden' class still applies to this
+             whole layer, canvas included). -->
+        <canvas id="pixel-sky"></canvas>
         <div class="title-vignette"></div>
         <div class="title-scrim"></div>
 
@@ -895,44 +954,44 @@
                 </button>
             </div>
 
-            <div class="title-panel" id="title-settings-panel">
-                <label for="title-volume-slider">Volume</label>
-                <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
-                <label style="margin-top: 0.7rem;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
-                <div class="quality-toggle-row" id="title-quality-row">
-                    <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
-                    <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+            <!-- Real tabbed Settings panel, structure ported from
+                 silvan_titlescreen.html's tabs-header/settings-content —
+                 but every control inside is the genuine one, same ids
+                 core/input.js already wires up (nothing here is the demo's
+                 fake schema). Tab switching is handled by the small script
+                 at the bottom of </body>; it only ever toggles a
+                 'tab-active' class on these five .tab-panel blocks, it does
+                 not touch state or any control's own listener. -->
+            <div class="title-panel tabs-panel" id="title-settings-panel">
+                <div class="tabs-header" id="title-settings-tabs">
+                    <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
+                    <button class="tab-btn" data-tab="audio" type="button">Audio</button>
+                    <button class="tab-btn" data-tab="modifiers" type="button">Modifiers</button>
+                    <button class="tab-btn" data-tab="controls" type="button">Controls</button>
+                    <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
-                <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
-                <div class="quality-toggle-row" id="title-view-mode-row">
-                    <button id="title-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
-                    <button id="title-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
+                <div class="tab-panel active" data-tab-panel="graphics">
+                    <label style="margin-top: 0;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row" id="title-quality-row">
+                        <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
+                        <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                    </div>
+
+                    <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row" id="title-view-mode-row">
+                        <button id="title-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
+                        <button id="title-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
+                    </div>
                 </div>
 
-                <label style="margin-top: 0.7rem;">Save Data</label>
-                <div class="quality-toggle-row">
-                    <button id="title-export-save-btn" class="quality-toggle-btn">Export</button>
-                    <button id="title-import-save-btn" class="quality-toggle-btn">Import</button>
-                </div>
-                <input type="file" id="title-import-save-input" accept="application/json,.json" class="hidden">
-                <div class="save-status" id="title-save-status"></div>
-
-                <button id="title-help-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false">
-                    Help <span class="settings-help-caret">▾</span>
-                </button>
-                <div class="title-controls" id="title-controls-panel">
-                    <div class="control-chip"><span class="control-key">W A S D</span><span class="control-label">Move</span></div>
-                    <div class="control-chip"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
-                    <div class="control-chip"><span class="control-key">Shift</span><span class="control-label">Run</span></div>
-                    <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
+                <div class="tab-panel" data-tab-panel="audio">
+                    <label style="margin-top: 0;" for="title-volume-slider">Volume</label>
+                    <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
                 </div>
 
-                <button id="title-modifiers-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false">
-                    Modifiers <span class="settings-help-caret">▾</span>
-                </button>
-                <div class="title-modifiers" id="title-modifiers-panel">
-                    <label for="title-wave-height-slider">Wave Height</label>
+                <div class="tab-panel" data-tab-panel="modifiers">
+                    <label style="margin-top: 0;" for="title-wave-height-slider">Wave Height</label>
                     <input type="range" id="title-wave-height-slider" min="0.5" max="2" step="0.05" value="1">
                     <label for="title-wave-speed-slider">Wave Speed</label>
                     <input type="range" id="title-wave-speed-slider" min="0.5" max="2" step="0.05" value="1">
@@ -951,6 +1010,32 @@
                     <button id="title-modifiers-reset-btn" class="settings-help-toggle" type="button" style="margin-top: 0.8rem; justify-content: center; border-top: none; padding-top: 0;">
                         Reset to defaults
                     </button>
+                </div>
+
+                <div class="tab-panel" data-tab-panel="controls">
+                    <!-- Hidden: core/input.js calls helpToggleBtn.addEventListener
+                         unconditionally (not null-guarded like the modifiers
+                         toggle below), so the element has to exist even though
+                         the Controls tab now handles show/hide on its own. -->
+                    <button id="title-help-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false" style="display: none;">
+                        Help <span class="settings-help-caret">▾</span>
+                    </button>
+                    <div class="title-controls open" id="title-controls-panel" style="margin-top: 0;">
+                        <div class="control-chip"><span class="control-key">W A S D</span><span class="control-label">Move</span></div>
+                        <div class="control-chip"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
+                        <div class="control-chip"><span class="control-key">Shift</span><span class="control-label">Run</span></div>
+                        <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
+                    </div>
+                </div>
+
+                <div class="tab-panel" data-tab-panel="save">
+                    <label style="margin-top: 0;">Save Data</label>
+                    <div class="quality-toggle-row">
+                        <button id="title-export-save-btn" class="quality-toggle-btn">Export</button>
+                        <button id="title-import-save-btn" class="quality-toggle-btn">Import</button>
+                    </div>
+                    <input type="file" id="title-import-save-input" accept="application/json,.json" class="hidden">
+                    <div class="save-status" id="title-save-status"></div>
                 </div>
             </div>
 
@@ -1024,6 +1109,578 @@
 
     <script type="module" src="main.js"></script>
 
+    <!-- Pixel-sky background engine, ported wholesale from
+         silvan_titlescreen.html (Cloud/Firefly/Bird/Animal/ForestLayer/
+         BushLayer classes + renderPixelSky loop). Self-contained: only
+         touches #pixel-sky's own canvas context, no shared ids with the
+         real game/UI, so it can't collide with core/input.js or main.js. -->
+    <script>
+        /* ==========================================================================
+           1. FULL PROCEDURAL PIXEL ENGINE (Downward Sloping Mountain Terrain)
+           ========================================================================== */
+        const skyCanvas = document.getElementById('pixel-sky');
+        const ctx = skyCanvas.getContext('2d');
+        
+        const TARGET_HEIGHT = 200; 
+        let PIXEL_WIDTH = 300;
+        let PIXEL_HEIGHT = TARGET_HEIGHT;
+
+        function resizeCanvas() {
+            const aspectRatio = (window.innerWidth && window.innerHeight) ? (window.innerWidth / window.innerHeight) : 1.77;
+            PIXEL_WIDTH = Math.max(100, Math.ceil(TARGET_HEIGHT * aspectRatio));
+            PIXEL_HEIGHT = TARGET_HEIGHT;
+            skyCanvas.width = PIXEL_WIDTH;
+            skyCanvas.height = PIXEL_HEIGHT;
+            ctx.imageSmoothingEnabled = false;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Standard Cycle Palettes
+        const palettes = {
+            night: { 
+                top: [4, 5, 20], bottom: [18, 22, 38], 
+                cloudBase: [22, 28, 42], cloudHigh: [32, 38, 55], cloudShadow: [10, 12, 22], starAlpha: 1, moonAlpha: 1,
+                fBack: [12, 16, 26], fMid: [8, 11, 18], fFront: [2, 4, 8], trunk: [10, 8, 8], 
+                isNight: true
+            },
+            dawn: { 
+                top: [35, 42, 75], bottom: [210, 85, 75], 
+                cloudBase: [180, 88, 98], cloudHigh: [240, 155, 125], cloudShadow: [100, 40, 58], starAlpha: 0.2, moonAlpha: 0.25,
+                fBack: [75, 38, 48], fMid: [45, 22, 32], fFront: [18, 8, 14], trunk: [14, 10, 10], 
+                isNight: false
+            },
+            day: { 
+                top: [30, 110, 175], bottom: [135, 195, 230], 
+                cloudBase: [225, 232, 245], cloudHigh: [255, 255, 255], cloudShadow: [150, 172, 202], starAlpha: 0, moonAlpha: 0,
+                fBack: [48, 95, 72], fMid: [28, 65, 48], fFront: [10, 36, 24], trunk: [18, 12, 10], 
+                isNight: false
+            },
+            dusk: { 
+                top: [25, 32, 58], bottom: [190, 62, 38], 
+                cloudBase: [140, 52, 62], cloudHigh: [210, 108, 72], cloudShadow: [68, 22, 35], starAlpha: 0.1, moonAlpha: 0.25,
+                fBack: [62, 28, 36], fMid: [36, 14, 22], fFront: [14, 6, 10], trunk: [12, 8, 8], 
+                isNight: false
+            }
+        };
+
+        // Blood Moon Ominous Palette
+        const bloodPalette = {
+            top: [40, 0, 0], bottom: [130, 15, 15], 
+            cloudBase: [80, 15, 20], cloudHigh: [140, 25, 35], cloudShadow: [40, 5, 10], starAlpha: 0.5, moonAlpha: 1,
+            fBack: [35, 5, 10], fMid: [20, 2, 5], fFront: [8, 0, 2], trunk: [5, 0, 0], 
+            isNight: true
+        };
+
+        let isBloodMoon = false;
+        let bloodTransition = 0; 
+        let moonGlitchFrames = 0;
+
+        // Ominous Event Timers
+        setInterval(() => {
+            if (Math.random() > 0.4) {
+                isBloodMoon = true;
+                setTimeout(() => { isBloodMoon = false; }, 15000 + Math.random() * 10000); 
+            }
+        }, 45000); 
+
+        setInterval(() => {
+            if (Math.random() > 0.5) {
+                moonGlitchFrames = Math.floor(Math.random() * 15) + 10; 
+            }
+        }, 12000);
+
+        // --- MOUNTAIN SLOPE TERRAIN HEIGHT FUNCTION ---
+        // Slopes downwards across the screen (higher on left, lower on right)
+        function getSlopeHeight(x) {
+            // A gentle downward slope from left to right
+            let normalizedX = x / PIXEL_WIDTH;
+            return Math.floor(65 - (normalizedX * 28) + Math.sin(normalizedX * Math.PI * 2) * 4);
+        }
+
+        // --- CLOUDS ---
+        class Cloud {
+            constructor(startX) {
+                this.x = startX !== undefined ? startX : Math.random() * (PIXEL_WIDTH * 1.5);
+                this.y = Math.random() * (PIXEL_HEIGHT * 0.4);
+                this.speed = Math.random() * 0.04 + 0.01;
+                this.scale = Math.random() * 0.7 + 0.4;
+                this.puffs = [];
+                let puffCount = Math.floor(Math.random() * 6) + 5;
+                for(let i=0; i<puffCount; i++) {
+                    this.puffs.push({
+                        ox: (Math.random() * 60 - 30) * this.scale, oy: (Math.random() * 12 - 6) * this.scale, r: (Math.random() * 10 + 8) * this.scale
+                    });
+                }
+            }
+            draw(context, baseCol, highCol, shadowCol) {
+                context.fillStyle = shadowCol; context.beginPath(); this.puffs.forEach(p => { context.arc(this.x + p.ox, this.y + p.oy + (2*this.scale), p.r, 0, Math.PI*2); }); context.fill();
+                context.fillStyle = baseCol; context.beginPath(); this.puffs.forEach(p => { context.arc(this.x + p.ox, this.y + p.oy, p.r, 0, Math.PI*2); }); context.fill();
+                context.fillStyle = highCol; context.beginPath(); this.puffs.forEach(p => { context.arc(this.x + p.ox, this.y + p.oy - (2*this.scale), p.r * 0.7, 0, Math.PI*2); }); context.fill();
+            }
+        }
+        let clouds = Array.from({length: 10}, () => new Cloud(Math.random() * 800)); 
+
+        // --- FIREFLIES ---
+        class PixelFirefly {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * PIXEL_WIDTH;
+                let groundY = PIXEL_HEIGHT - getSlopeHeight(this.x);
+                this.y = groundY - 5 - (Math.random() * (PIXEL_HEIGHT * 0.45));
+                this.vx = (Math.random() - 0.5) * 0.12;
+                this.vy = (Math.random() - 0.5) * 0.1;
+                this.phase = Math.random() * Math.PI * 2;
+                this.pulseSpeed = 0.02 + Math.random() * 0.03;
+                this.size = Math.random() > 0.65 ? 2 : 1;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.phase += this.pulseSpeed;
+
+                if (Math.random() < 0.04) this.vx += (Math.random() - 0.5) * 0.04;
+                if (Math.random() < 0.04) this.vy += (Math.random() - 0.5) * 0.04;
+
+                let groundY = PIXEL_HEIGHT - getSlopeHeight(this.x);
+                if (this.x < -10 || this.x > PIXEL_WIDTH + 10 || this.y < PIXEL_HEIGHT * 0.4 || this.y > groundY) {
+                    this.reset();
+                }
+            }
+            draw(ctx, nightFactor) {
+                let glow = (Math.sin(this.phase) + 1) / 2;
+                if (glow < 0.05) return;
+                
+                let alpha = glow * nightFactor;
+                ctx.fillStyle = `rgba(210, 255, 110, ${alpha * 0.95})`;
+                ctx.fillRect(Math.floor(this.x), Math.floor(this.y), this.size, this.size);
+
+                if (glow > 0.4 && alpha > 0.25) {
+                    ctx.fillStyle = `rgba(160, 240, 80, ${alpha * 0.3})`;
+                    ctx.fillRect(Math.floor(this.x) - 1, Math.floor(this.y) - 1, this.size + 2, this.size + 2);
+                }
+            }
+        }
+        let fireflies = Array.from({length: 30}, () => new PixelFirefly());
+
+        // --- FLYING PIXEL BIRDS ---
+        class PixelBird {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = -20 - Math.random() * 200;
+                this.y = Math.random() * (PIXEL_HEIGHT * 0.35);
+                this.speed = Math.random() * 0.15 + 0.08;
+                this.flapSpeed = Math.random() * 0.08 + 0.04;
+                this.wingPhase = Math.random() * Math.PI * 2;
+            }
+            update() {
+                this.x += this.speed;
+                this.wingPhase += this.flapSpeed;
+                if (this.x > PIXEL_WIDTH + 20) {
+                    this.reset();
+                }
+            }
+            draw(ctx) {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+                let wingOffset = Math.sin(this.wingPhase) > 0 ? -1 : 1;
+                let px = Math.floor(this.x);
+                let py = Math.floor(this.y);
+                ctx.fillRect(px, py, 1, 1);
+                ctx.fillRect(px - 1, py + wingOffset, 1, 1);
+                ctx.fillRect(px + 1, py + wingOffset, 1, 1);
+            }
+        }
+        let birds = Array.from({length: 5}, () => new PixelBird());
+
+        // --- RUNNING PIXEL ANIMALS (Walking directly on the sloping mountain terrain) ---
+        class PixelAnimal {
+            constructor() {
+                this.active = false;
+                this.timer = Math.random() * 300 + 100; 
+            }
+            spawn() {
+                this.active = true;
+                this.type = Math.random() > 0.5 ? 'cat' : 'dog';
+                this.direction = Math.random() > 0.5 ? 1 : -1;
+                this.x = this.direction === 1 ? -15 : PIXEL_WIDTH + 15;
+                this.speed = (this.type === 'cat' ? 0.32 + Math.random()*0.15 : 0.45 + Math.random()*0.2) * this.direction;
+                this.frame = 0;
+                
+                if (this.type === 'cat') {
+                    const catColors = ['#1a1a1a', '#d88b35', '#e0e0e0', '#6e5a4b'];
+                    this.color = catColors[Math.floor(Math.random() * catColors.length)];
+                } else {
+                    const dogColors = ['#5a3a22', '#cfa972', '#222222', '#a89078'];
+                    this.color = dogColors[Math.floor(Math.random() * dogColors.length)];
+                }
+            }
+            update() {
+                if (!this.active) {
+                    this.timer--;
+                    if (this.timer <= 0) this.spawn();
+                    return;
+                }
+
+                this.x += this.speed;
+                this.frame += 0.22;
+
+                if ((this.direction === 1 && this.x > PIXEL_WIDTH + 25) || (this.direction === -1 && this.x < -25)) {
+                    this.active = false;
+                    this.timer = Math.random() * 1200 + 500;
+                }
+            }
+            draw(ctx, isBloodMoonActive) {
+                if (!this.active || !this.color) return;
+                
+                let currentCol = isBloodMoonActive ? '#111' : this.color; 
+                let px = Math.floor(this.x);
+                let slopeH = getSlopeHeight(px);
+                let py = PIXEL_HEIGHT - slopeH; // Follows the mountain slope perfectly
+                let animStep = Math.floor(this.frame) % 2;
+                ctx.fillStyle = currentCol;
+
+                if (this.type === 'cat') {
+                    ctx.fillRect(px, py - 2, 5, 2);
+                    let headX = this.direction === 1 ? px + 4 : px - 1;
+                    ctx.fillRect(headX, py - 4, 2, 2);
+                    ctx.fillRect(headX, py - 5, 1, 1); 
+                    let tailX = this.direction === 1 ? px - 1 : px + 5;
+                    ctx.fillRect(tailX, py - 3 - (animStep ? 1 : 0), 1, 2);
+                    if (animStep === 0) {
+                        ctx.fillRect(px, py, 1, 1);
+                        ctx.fillRect(px + 3, py, 1, 1);
+                    } else {
+                        ctx.fillRect(px + 1, py, 1, 1);
+                        ctx.fillRect(px + 4, py, 1, 1);
+                    }
+                } else {
+                    ctx.fillRect(px, py - 3, 6, 3);
+                    let headX = this.direction === 1 ? px + 5 : px - 2;
+                    ctx.fillRect(headX, py - 5, 3, 3);
+                    let snoutX = this.direction === 1 ? headX + 2 : headX - 1;
+                    ctx.fillRect(snoutX, py - 3, 1, 1);
+                    ctx.fillRect(headX + (this.direction === 1 ? 0 : 2), py - 6, 1, 1); 
+                    let tailX = this.direction === 1 ? px - 1 : px + 6;
+                    ctx.fillRect(tailX, py - 4, 1, 2);
+                    if (animStep === 0) {
+                        ctx.fillRect(px, py, 1, 1);
+                        ctx.fillRect(px + 4, py, 1, 1);
+                    } else {
+                        ctx.fillRect(px + 1, py, 1, 1);
+                        ctx.fillRect(px + 5, py, 1, 1);
+                    }
+                }
+            }
+        }
+        let runnerAnimal = new PixelAnimal();
+
+        // --- FOREST LAYER GENERATOR ---
+        class ForestLayer {
+            constructor(elevationOffset, minH, maxH, minW, maxW, density) {
+                this.elevationOffset = elevationOffset; 
+                this.minH = minH; this.maxH = maxH;
+                this.minW = minW; this.maxW = maxW; this.density = density;
+                this.trees = [];
+            }
+            generate(maxWidth) {
+                this.trees = [];
+                let x = -20;
+                while (x < maxWidth + 50) {
+                    this.trees.push({ x: x, h: this.minH + Math.random() * (this.maxH - this.minH), w: this.minW + Math.random() * (this.maxW - this.minW) });
+                    x += this.density * (0.8 + Math.random() * 0.5);
+                }
+            }
+            draw(ctx, leafColor, trunkColor) {
+                let windTime = window.windTime || 0;
+                let currentWind = window.currentWind || 0;
+
+                this.trees.forEach(t => {
+                    if (t.x > PIXEL_WIDTH + 30) return;
+                    let groundY = PIXEL_HEIGHT - getSlopeHeight(t.x) + this.elevationOffset;
+                    let trunkH = t.h * 0.28; 
+                    let trunkW = Math.max(2, t.w * 0.16);
+                    
+                    let treeWind = Math.sin(t.x * 0.05 + windTime) * currentWind * (t.h * 0.05);
+
+                    // Trunk
+                    ctx.fillStyle = trunkColor;
+                    ctx.fillRect(Math.floor(t.x - trunkW/2), Math.floor(groundY - trunkH), Math.ceil(trunkW), Math.ceil(trunkH));
+                    
+                    // Leaf Tiers
+                    ctx.fillStyle = leafColor;
+                    for(let i=0; i<3; i++) {
+                        let bottomY = groundY - trunkH - (i * t.h * 0.22);
+                        let tierW = t.w * (1 - i*0.22); let tierH = t.h * 0.35;
+                        let steps = 4;
+                        for(let s=0; s<steps; s++) {
+                            let stepW = tierW * (1 - s/steps);
+                            let stepH = Math.ceil(tierH / steps);
+                            let stepY = bottomY - (s * stepH) - stepH;
+                            
+                            let heightFactor = ((groundY - stepY) / t.h); 
+                            let swayX = treeWind * heightFactor * heightFactor;
+                            
+                            // Micro-rustle for edge dynamics (enhanced)
+                            let rustle = (Math.sin(t.x + stepY + windTime * 15) > 0.3 ? 1 : 0) * (Math.abs(currentWind) > 0.2 ? 1 : -1);
+
+                            ctx.fillRect(Math.floor(t.x - stepW/2 + swayX + rustle), Math.floor(stepY), Math.ceil(stepW), stepH);
+                        }
+                    }
+                });
+            }
+        }
+
+        // --- BUSH & GRASS LAYER GENERATOR ---
+        class BushLayer {
+            constructor(density) {
+                this.density = density;
+                this.bushes = [];
+            }
+            generate(maxWidth) {
+                this.bushes = [];
+                let x = -20;
+                while (x < maxWidth + 50) {
+                    if (Math.random() > 0.25) { // 75% chance to have a bush cluster
+                        let clusterSize = Math.floor(Math.random() * 3) + 1;
+                        for(let i=0; i<clusterSize; i++) {
+                            let bx = x + (Math.random() * 12 - 6);
+                            let bw = Math.random() * 8 + 6; // width 6-14
+                            let bh = Math.random() * 6 + 3; // height 3-9
+                            this.bushes.push({ x: bx, w: bw, h: bh });
+                        }
+                    }
+                    x += this.density * (0.5 + Math.random() * 0.8);
+                }
+            }
+            draw(ctx, color) {
+                let windTime = window.windTime || 0;
+                let currentWind = window.currentWind || 0;
+
+                ctx.fillStyle = color;
+                this.bushes.forEach(b => {
+                    if (b.x > PIXEL_WIDTH + 30 || b.x < -30) return;
+                    let groundY = PIXEL_HEIGHT - getSlopeHeight(b.x);
+                    
+                    let bushWind = Math.sin(b.x * 0.05 + windTime) * currentWind;
+                    let rustle = Math.sin(b.x + windTime * 12) > 0.5 && Math.abs(currentWind) > 0.3 ? 1 : 0;
+                    
+                    // Main bush body (mostly static)
+                    ctx.fillRect(Math.floor(b.x - b.w/2), Math.floor(groundY - b.h), Math.ceil(b.w), Math.ceil(b.h));
+                    
+                    // Leafy top details (swaying & rustling)
+                    let topSway = Math.round(bushWind * 1.2) + rustle;
+                    ctx.fillRect(Math.floor(b.x - b.w/2 + 1) + topSway, Math.floor(groundY - b.h - 1), Math.ceil(b.w - 2), 1);
+                    let tipSway = Math.round(bushWind * 1.8) - rustle;
+                    ctx.fillRect(Math.floor(b.x - b.w/2 + 2) + tipSway, Math.floor(groundY - b.h - 2), Math.ceil(b.w - 4), 1);
+                });
+            }
+        }
+
+        // Trees positioned matching the mountain slope elevation
+        const fBack = new ForestLayer(15, 18, 35, 10, 18, 10);
+        const fMid = new ForestLayer(8, 28, 48, 12, 22, 14);
+        const fFront = new ForestLayer(0, 38, 65, 18, 30, 22);
+        const frontBushes = new BushLayer(25);
+
+        fBack.generate(2000); fMid.generate(2000); fFront.generate(2000); frontBushes.generate(2000);
+        let stars = Array.from({length: 120}, () => ({ x: Math.random(), y: Math.random() }));
+        let timeOffset = 0;
+
+        function lerp(a, b, t) { return a + (b - a) * t; }
+        function lerpColor(c1, c2, t) { return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)]; }
+        function rgbStr(arr, alpha=1) { return `rgba(${Math.floor(arr[0])}, ${Math.floor(arr[1])}, ${Math.floor(arr[2])}, ${alpha})`; }
+
+        // --- MAIN ANIMATION RENDER LOOP ---
+        function renderPixelSky() {
+            if (isBloodMoon) {
+                bloodTransition = Math.min(1, bloodTransition + 0.01);
+            } else {
+                bloodTransition = Math.max(0, bloodTransition - 0.01);
+            }
+
+            timeOffset += 0.0008;
+            const cycle = timeOffset % 4;
+            let p1, p2, t;
+            if(cycle < 1) { p1 = palettes.night; p2 = palettes.dawn; t = cycle; }
+            else if(cycle < 2) { p1 = palettes.dawn; p2 = palettes.day; t = cycle - 1; }
+            else if(cycle < 3) { p1 = palettes.day; p2 = palettes.dusk; t = cycle - 2; }
+            else { p1 = palettes.dusk; p2 = palettes.night; t = cycle - 3; }
+
+            let normTop = lerpColor(p1.top, p2.top, t);
+            let normBot = lerpColor(p1.bottom, p2.bottom, t);
+            let normCBase = lerpColor(p1.cloudBase, p2.cloudBase, t);
+            let normCHigh = lerpColor(p1.cloudHigh, p2.cloudHigh, t);
+            let normCShad = lerpColor(p1.cloudShadow, p2.cloudShadow, t);
+            let normFBack = lerpColor(p1.fBack, p2.fBack, t);
+            let normFMid = lerpColor(p1.fMid, p2.fMid, t);
+            let normFFront = lerpColor(p1.fFront, p2.fFront, t);
+            let normTrunk = lerpColor(p1.trunk, p2.trunk, t);
+            let starAlpha = lerp(p1.starAlpha, p2.starAlpha, t);
+            let baseMoonAlpha = lerp(p1.moonAlpha, p2.moonAlpha, t);
+            let nightFactor = (p1.isNight ? (1 - t) : 0) + (p2.isNight ? t : 0);
+
+            const topC = lerpColor(normTop, bloodPalette.top, bloodTransition);
+            const botC = lerpColor(normBot, bloodPalette.bottom, bloodTransition);
+            const cloudBase = lerpColor(normCBase, bloodPalette.cloudBase, bloodTransition);
+            const cloudHigh = lerpColor(normCHigh, bloodPalette.cloudHigh, bloodTransition);
+            const cloudShadow = lerpColor(normCShad, bloodPalette.cloudShadow, bloodTransition);
+            const backForestCol = lerpColor(normFBack, bloodPalette.fBack, bloodTransition);
+            const midForestCol = lerpColor(normFMid, bloodPalette.fMid, bloodTransition);
+            const frontForestCol = lerpColor(normFFront, bloodPalette.fFront, bloodTransition);
+            const trunkCol = lerpColor(normTrunk, bloodPalette.trunk, bloodTransition);
+            
+            if (bloodTransition > 0) {
+                starAlpha = lerp(starAlpha, bloodPalette.starAlpha, bloodTransition);
+            }
+
+            // 1. Gradient Sky
+            const grad = ctx.createLinearGradient(0, 0, 0, PIXEL_HEIGHT);
+            grad.addColorStop(0, rgbStr(topC)); grad.addColorStop(1, rgbStr(botC));
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, PIXEL_WIDTH, PIXEL_HEIGHT);
+
+            // 2. Stars
+            if (starAlpha > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${starAlpha})`;
+                stars.forEach(s => ctx.fillRect(Math.floor(s.x * PIXEL_WIDTH), Math.floor(s.y * PIXEL_HEIGHT), 1, 1));
+            }
+
+            // 3. Moon (Fades out in daytime, turns red during Blood Moon)
+            let moonVisibility = Math.max(baseMoonAlpha, bloodTransition);
+            if (moonVisibility > 0.01) {
+                let moonX = PIXEL_WIDTH * 0.18;
+                let moonY = PIXEL_HEIGHT * 0.15;
+                let moonBaseCol = lerpColor([220, 230, 240], [255, 30, 30], bloodTransition);
+                
+                if (moonGlitchFrames > 0) {
+                    moonGlitchFrames--;
+                    let ox = Math.random() * 6 - 3;
+                    let oy = Math.random() * 4 - 2;
+                    ctx.fillStyle = `rgba(0, 255, 255, ${0.8 * moonVisibility})`;
+                    ctx.beginPath(); ctx.arc(moonX - 2 + ox, moonY + oy, 8, 0, Math.PI * 2); ctx.fill();
+                    
+                    ctx.fillStyle = `rgba(255, 0, 0, ${0.8 * moonVisibility})`;
+                    ctx.beginPath(); ctx.arc(moonX + 2 - ox, moonY - oy, 8, 0, Math.PI * 2); ctx.fill();
+                } else {
+                    ctx.fillStyle = `rgba(${Math.floor(moonBaseCol[0])}, ${Math.floor(moonBaseCol[1])}, ${Math.floor(moonBaseCol[2])}, ${moonVisibility})`;
+                    ctx.beginPath(); ctx.arc(moonX, moonY, 8, 0, Math.PI * 2); ctx.fill();
+                    
+                    ctx.fillStyle = `rgba(${Math.floor(moonBaseCol[0])}, ${Math.floor(moonBaseCol[1])}, ${Math.floor(moonBaseCol[2])}, ${0.15 * moonVisibility})`;
+                    ctx.beginPath(); ctx.arc(moonX, moonY, 18, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+
+            // 4. Clouds
+            clouds.forEach(c => {
+                c.x -= c.speed;
+                if(c.x < -80) { c.x = PIXEL_WIDTH + 80; c.y = Math.random() * (PIXEL_HEIGHT * 0.4); }
+                c.draw(ctx, rgbStr(cloudBase), rgbStr(cloudHigh), rgbStr(cloudShadow));
+            });
+
+            // 5. Flying Birds
+            if (bloodTransition < 0.1 && nightFactor < 0.8) {
+                birds.forEach(b => {
+                    b.update();
+                    b.draw(ctx);
+                });
+            }
+
+            // GLOBAL WIND SYSTEM (Gentle Breeze)
+            window.windTime = (window.windTime || 0) + 0.0025;
+            let baseWind = Math.sin(window.windTime) * 0.12 + Math.sin(window.windTime * 0.3) * 0.08;
+            let gust = Math.max(0, Math.sin(window.windTime * 0.2) - 0.7) * 0.6; // Gentle Gusts
+            window.currentWind = baseWind + gust;
+
+            // 6. Forest Layers on Slope
+            fBack.draw(ctx, rgbStr(backForestCol), rgbStr(trunkCol));
+            fMid.draw(ctx, rgbStr(midForestCol), rgbStr(trunkCol));
+            fFront.draw(ctx, rgbStr(frontForestCol), rgbStr(trunkCol));
+            
+            // Draw bushes in front of front forest
+            frontBushes.draw(ctx, rgbStr(frontForestCol));
+
+            // 7. DRAW DOWNWARD SLOPING MOUNTAIN TERRAIN (Front Silhouette)
+            let slopeCol = rgbStr(lerpColor(normTrunk, bloodPalette.trunk, bloodTransition));
+            let slopeEdgeCol = rgbStr(frontForestCol);
+            let grassHighlightCol = rgbStr(midForestCol);
+
+            ctx.fillStyle = slopeCol;
+            ctx.beginPath();
+            ctx.moveTo(0, PIXEL_HEIGHT);
+            for (let x = 0; x <= PIXEL_WIDTH; x += 2) {
+                let h = getSlopeHeight(x);
+                ctx.lineTo(x, PIXEL_HEIGHT - h);
+            }
+            ctx.lineTo(PIXEL_WIDTH, PIXEL_HEIGHT);
+            ctx.closePath();
+            ctx.fill();
+
+            // Lush Grassy Texture Fading Downward
+            for (let x = 0; x < PIXEL_WIDTH; x += 1) { // Denser step
+                let h = getSlopeHeight(x);
+                
+                // Textured dirt/roots blending down into the slope
+                if (x % 2 === 0) {
+                    ctx.fillStyle = slopeEdgeCol;
+                    let depthHash = Math.abs(Math.sin(x * 33.33) * 43758.5453) % 1;
+                    let turfDepth = Math.floor(depthHash * 15) + 6; 
+                    for (let y = 0; y < turfDepth; y += 2) {
+                        if (Math.abs(Math.cos((x + y) * 21.1)) > (y / turfDepth) * 0.7) {
+                            ctx.fillRect(x, PIXEL_HEIGHT - h + y, 2, 2);
+                        }
+                    }
+                }
+
+                // Thicker base ground line
+                ctx.fillStyle = slopeEdgeCol;
+                ctx.fillRect(x, PIXEL_HEIGHT - h, 1, 2); // 1px wide step
+                
+                // Local wind calculation for bending
+                let localWind = window.currentWind + Math.sin(x * 0.05 + window.windTime * 2) * 0.5;
+
+                // Deterministic pseudo-random tall grass blades (shorter & denser)
+                let grassHash = Math.abs(Math.sin(x * 12.9898) * 43758.5453) % 1;
+                if (grassHash > 0.005) { // Highly increased density
+                    ctx.fillStyle = slopeEdgeCol;
+                    let grassH = Math.floor((grassHash * 2) % 2) + 1; // Shorter grass (1-2)
+                    for(let dy=1; dy<=grassH; dy++) {
+                        let bend = Math.round((dy / grassH) * localWind * 2.0); // More wind reaction
+                        ctx.fillRect(x + bend, PIXEL_HEIGHT - h - dy, 1, 1);
+                    }
+                }
+
+                // Highlighted secondary grass for 3D volume effect
+                let grassHash2 = Math.abs(Math.cos(x * 45.678) * 12345.678) % 1;
+                if (grassHash2 > 0.1) { // Increased density
+                    ctx.fillStyle = grassHighlightCol;
+                    let grassH2 = 1; // Shorter grass (1)
+                    for(let dy=1; dy<=grassH2; dy++) {
+                        let bend = Math.round((dy / grassH2) * localWind * 2.0);
+                        ctx.fillRect(x + bend, PIXEL_HEIGHT - h - dy + 1, 1, 1);
+                    }
+                }
+            }
+
+            // 8. Fireflies
+            if (nightFactor > 0.05 && bloodTransition < 0.1) {
+                fireflies.forEach(f => {
+                    f.update();
+                    f.draw(ctx, nightFactor);
+                });
+            }
+
+            // 9. Running Pixel Pets (Cats & Dogs walking on slope)
+            runnerAnimal.update();
+            runnerAnimal.draw(ctx, bloodTransition > 0.5);
+
+            requestAnimationFrame(renderPixelSky);
+        }
+        renderPixelSky();
+    </script>
+
     <!-- Title-screen glitch FX, ported from silvan_titlescreen.html.
          Purely cosmetic and additive: only scrambles title-logo-text's
          rendered characters, doesn't touch state/ids/listeners core/input.js
@@ -1069,6 +1726,27 @@
 
         setInterval(triggerTitleGlitch, 30000);
         titleEl.addEventListener('mouseenter', () => { if (Math.random() > 0.6) triggerTitleGlitch(); });
+    })();
+    </script>
+
+    <!-- Settings tab switching — purely a visibility toggle on the
+         .tab-panel wrappers built above. Doesn't touch any control's own
+         id/listener, so core/input.js's quality/view-mode/modifiers/save
+         wiring keeps working completely unmodified underneath it. -->
+    <script>
+    (function () {
+        const tabsHeader = document.getElementById('title-settings-tabs');
+        if (!tabsHeader) return;
+        const tabBtns = Array.from(tabsHeader.querySelectorAll('.tab-btn'));
+        const tabPanels = Array.from(document.querySelectorAll('#title-settings-panel .tab-panel'));
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const target = btn.dataset.tab;
+                tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+                tabPanels.forEach(p => p.classList.toggle('active', p.dataset.tabPanel === target));
+            });
+        });
     })();
     </script>
 </body>
