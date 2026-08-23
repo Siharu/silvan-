@@ -74,6 +74,10 @@ export function setupInput(state) {
     // early-return gate in core/player-controller.js, which only checks
     // state.isLocked, not document.pointerLockElement, so this is a
     // legitimate way to "enter play" for a mode that was never locked.
+    // Used by the pause-resume button, where the click is immediate and
+    // synchronous — nothing to wait on, so request-lock and show-UI can
+    // happen together. The very first entry (Remember/Regain) can't use
+    // this: see requestPlayLock()/enterPlayModeAfterLoad() below.
     function enterPlayMode() {
         if (state.viewMode === 'topdown') {
             state.isLocked = true;
@@ -81,6 +85,30 @@ export function setupInput(state) {
         } else {
             document.body.requestPointerLock();
         }
+    }
+
+    // requestPointerLock() only succeeds inside a live user gesture — call
+    // it any later (e.g. after an async engine load) and browsers refuse
+    // it silently, pointerlockchange never fires "locked", and the game
+    // would appear to just dump the player back on the title screen once
+    // the loading screen hides. So this fires synchronously from inside
+    // the Remember/Regain click itself, before state.startEngine's
+    // multi-second build even starts. Top-down needs no browser API, so
+    // it's a no-op here — it's handled entirely by enterPlayModeAfterLoad.
+    function requestPlayLock() {
+        if (state.viewMode !== 'topdown') document.body.requestPointerLock();
+    }
+
+    // Reveals gameplay UI once state.startEngine's ready-callback fires —
+    // unconditionally, rather than waiting on a pointerlockchange event
+    // from requestPlayLock() above. That lock request may have already
+    // resolved (or been silently denied by the browser/OS) well before
+    // the engine finished loading; either way the player should land in
+    // the actual game, not get stuck staring at a hidden loading screen
+    // with nothing under it.
+    function enterPlayModeAfterLoad() {
+        if (state.viewMode === 'topdown') state.isLocked = true;
+        showPlayingUI();
     }
 
     rememberBtn.addEventListener('click', () => {
@@ -92,17 +120,19 @@ export function setupInput(state) {
             location.reload();
             return;
         }
+        requestPlayLock();
         // The engine (scene/terrain/forest/player etc.) hasn't been built
         // yet — see main.js's state.startEngine. It shows the loading
         // screen and runs init(), then calls us back once state.scene and
         // everything else actually exist and it's safe to enter play.
         state.startEngine(() => {
             state.hasStartedGame = true;
-            enterPlayMode();
+            enterPlayModeAfterLoad();
         });
     });
 
     regainBtn.addEventListener('click', () => {
+        requestPlayLock();
         state.startEngine(() => {
             // Two different situations both land here: (a) a live in-memory
             // session already exists this tab (came from quit-to-title, state
@@ -115,7 +145,7 @@ export function setupInput(state) {
                 applySavedState(state, readLocalSave());
             }
             state.hasStartedGame = true;
-            enterPlayMode();
+            enterPlayModeAfterLoad();
         });
     });
 
@@ -165,6 +195,13 @@ export function setupInput(state) {
         // topdown-escape listener below).
         if (state.viewMode === 'topdown') return;
         state.isLocked = document.pointerLockElement === document.body;
+        // requestPlayLock() (Remember/Regain) can resolve the lock while
+        // the loading screen is still up, well before init() has built a
+        // scene/HUD to reveal — ignore it here; enterPlayModeAfterLoad()
+        // shows the playing UI explicitly once the engine actually is
+        // ready. Once state.engineReady is true this behaves exactly as
+        // before (Escape to pause, click to resume, etc.).
+        if (!state.engineReady) return;
         if (state.isLocked) showPlayingUI();
         else showPausedUI();
     });

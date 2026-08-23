@@ -1232,10 +1232,18 @@
                 this.speed = Math.random() * 0.04 + 0.01;
                 this.scale = Math.random() * 0.7 + 0.4;
                 this.puffs = [];
-                let puffCount = Math.floor(Math.random() * 6) + 5;
+                // Was 5-11 puffs spread over a flat ±30px range regardless of
+                // their own radius — with the low end of that count, puffs
+                // easily landed as two isolated clumps with a gap between
+                // (reads as a dumbbell) instead of one cohesive cloud. More
+                // puffs, plus keeping each puff's offset within its own
+                // radius, means neighboring puffs always overlap enough to
+                // read as one continuous blob.
+                let puffCount = Math.floor(Math.random() * 5) + 9;
                 for(let i=0; i<puffCount; i++) {
+                    const r = (Math.random() * 10 + 8) * this.scale;
                     this.puffs.push({
-                        ox: (Math.random() * 60 - 30) * this.scale, oy: (Math.random() * 12 - 6) * this.scale, r: (Math.random() * 10 + 8) * this.scale
+                        ox: (Math.random() * 44 - 22) * this.scale, oy: (Math.random() * r * 0.6 - r * 0.3), r
                     });
                 }
             }
