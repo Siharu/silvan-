@@ -195,6 +195,15 @@ async function init() {
     state.camera = new THREE.PerspectiveCamera(state.viewMode === 'topdown' ? 62 : 75, window.innerWidth / window.innerHeight, 0.1, 1500);
 
     state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
+    // three.js r155+ defaults useLegacyLights to false (physically-correct
+    // light units), which reads roughly 3x dimmer than the same intensity
+    // number under the old default. Every light value in this file
+    // (sunLight/hemiLight/moonLight below, tuned via the exposure/peak
+    // comments throughout) was authored against the old legacy model, so
+    // without this the sky dome (a self-lit shader material, untouched by
+    // scene lighting) looks normal while every MeshStandardMaterial surface
+    // — terrain, forest, rocks, grass — reads as near-black.
+    state.renderer.useLegacyLights = true;
     state.renderer.setSize(window.innerWidth, window.innerHeight);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.quality.pixelRatioCap));
     state.renderer.shadowMap.enabled = true;
