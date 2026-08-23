@@ -161,7 +161,7 @@ function buildRockVariant(type, seed, modifiers) {
     const dispAmount = type.disp * modifiers.rockRoughness;
 
     let geo = new THREE.IcosahedronGeometry(1, detail);
-    if (type.flatShaded) geo = geo.toNonIndexed(); // no shared vertices -> computeVertexNormals below yields per-face (flat) normals
+    if (type.flatShaded && geo.index) geo = geo.toNonIndexed(); // no shared vertices -> computeVertexNormals below yields per-face (flat) normals
 
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);

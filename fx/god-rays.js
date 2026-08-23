@@ -1051,6 +1051,9 @@ export class GodRaysPass
         this.material =
             new THREE.ShaderMaterial({
 
+                name:
+                    'GodRaysPass',
+
                 uniforms:
                     this.uniforms,
 
