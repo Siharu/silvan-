@@ -89,6 +89,13 @@ state.startEngine = function startEngine(afterReady) {
         requestAnimationFrame(() => requestAnimationFrame(async () => {
             await init();
             state.engineReady = true;
+            // Explicit 100% ping rather than relying on the last afterStep()
+            // call alone — belt-and-suspenders in case a future step gets
+            // added/removed and INIT_STEP_COUNT drifts out of sync, so the
+            // bar can never get stuck short of full right as the overlay
+            // that shows it disappears.
+            initStepsDone = INIT_STEP_COUNT;
+            reportLoadProgress();
             if (loadingScreen) loadingScreen.classList.add('hidden');
             // Freed once it's hidden rather than kept running behind the
             // title/HUD — it's got its own live Three.js render loop and
@@ -134,6 +141,31 @@ function nextFrame() {
     // the "animated" loading screen only ever showed its very first,
     // mostly-static frame for the entire load.
     return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+// init() is chunked into these steps (each followed by nextFrame()) purely
+// so loading-screen.html's progress bar can track real work instead of
+// running its own disconnected timer (that was the "loading screen isn't
+// in sync" bug: the bar used to climb to 100%/READY on a fixed clock with
+// no idea whether init() had actually finished). reportLoadProgress posts
+// the fraction of these steps completed so far into the iframe; it's a
+// no-op if the frame hasn't loaded or the postMessage listener isn't up
+// yet, which is fine — the next call catches it up to the current real
+// percentage instead of trying to replay missed increments.
+const INIT_STEP_COUNT = 12;
+let initStepsDone = 0;
+function reportLoadProgress() {
+    const loadingFrame = document.getElementById('loading-screen-frame');
+    if (!loadingFrame || !loadingFrame.contentWindow) return;
+    const percent = Math.min(100, Math.round((initStepsDone / INIT_STEP_COUNT) * 100));
+    try {
+        loadingFrame.contentWindow.postMessage({ type: 'silvan-loading-progress', percent }, '*');
+    } catch (e) { /* iframe not ready / navigated away — safe to ignore */ }
+}
+async function afterStep() {
+    initStepsDone++;
+    reportLoadProgress();
+    await nextFrame();
 }
 
 async function init() {
@@ -233,37 +265,39 @@ async function init() {
     state.moonLight = new THREE.DirectionalLight(0x7799ff, 0.3);
     state.scene.add(state.moonLight);
 
+    reportLoadProgress(); // 0% — as soon as the scene/renderer above exist, before the first heavy step
+
     createSky(state);
-    await nextFrame();
+    await afterStep();
     createTerrain(state);
-    await nextFrame();
+    await afterStep();
     createOcean(state);
     createLake(state);
-    await nextFrame();
+    await afterStep();
     createGrass(state);
-    await nextFrame();
+    await afterStep();
     createFlowers(state);
     createRocks(state);
-    await nextFrame();
+    await afterStep();
     createPuddles(state);
-    await nextFrame();
+    await afterStep();
     generateFractalForest(state);
-    await nextFrame();
+    await afterStep();
     createDetailedPineTrees(state, state.quality.pineTreeCount);
-    await nextFrame();
+    await afterStep();
     createFerns(state);
     createMossClusters(state);
-    await nextFrame();
+    await afterStep();
     createRainSystem(state);
     createRainSplashes(state);
-    await nextFrame();
+    await afterStep();
     createFireflies(state);
     createDustParticles(state);
-    await nextFrame();
+    await afterStep();
     createWindLeaves(state);
     spawnDemoAnimals(state);
     createRadioTower(state);
-    await nextFrame();
+    await afterStep();
 
     // Was (0, getElevation(0,0)+height, 0) — origin is the lake basin
     // center (see environment/terrain.js), so the player spawned ~29

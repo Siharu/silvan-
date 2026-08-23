@@ -74,23 +74,43 @@ export function addDynamicFog(material, backgroundTexture) {
 
         shader.uniforms.uBackgroundTexture = { value: backgroundTexture };
 
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `#include <common>
-            varying vec4 vClipPosition;`
-        );
+        // Anchoring on '#include <common>' assumes the shader came from
+        // three's chunked template. That's true for every MeshStandardMaterial
+        // caller here, but environment/ocean.js is a raw THREE.ShaderMaterial
+        // with hand-written GLSL — it has '#include <fog_vertex>' (so the
+        // assignment below still lands) but no '#include <common>' anywhere
+        // to anchor the declaration on, so the replace was silently a no-op
+        // and vClipPosition was never declared: "undeclared identifier" at
+        // the assignment, with GLSL's fallout from that read as bogus
+        // l-value/dimension errors on the same line. Fall back to
+        // prepending the declaration directly when the anchor isn't there.
+        const vClipDecl = 'varying vec4 vClipPosition;';
+        if (shader.vertexShader.includes('#include <common>')) {
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <common>',
+                `#include <common>
+            ${vClipDecl}`
+            );
+        } else {
+            shader.vertexShader = `${vClipDecl}\n${shader.vertexShader}`;
+        }
         shader.vertexShader = shader.vertexShader.replace(
             '#include <fog_vertex>',
             `#include <fog_vertex>
             vClipPosition = gl_Position;`
         );
 
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <clipping_planes_pars_fragment>',
-            `#include <clipping_planes_pars_fragment>
-            uniform sampler2D uBackgroundTexture;
-            varying vec4 vClipPosition;`
-        );
+        const fragDecl = `uniform sampler2D uBackgroundTexture;
+            ${vClipDecl}`;
+        if (shader.fragmentShader.includes('#include <clipping_planes_pars_fragment>')) {
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <clipping_planes_pars_fragment>',
+                `#include <clipping_planes_pars_fragment>
+            ${fragDecl}`
+            );
+        } else {
+            shader.fragmentShader = `${fragDecl}\n${shader.fragmentShader}`;
+        }
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <fog_fragment>',
             `

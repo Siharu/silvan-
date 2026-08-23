@@ -747,12 +747,36 @@ const pct=document.getElementById("pct");
 const fill=document.getElementById("fill");
 function applyState(s){statement.textContent=s[1];title.textContent=s[1];stage.textContent=s[2];tip.textContent=s[3]}
 applyState(states[0]);
+
+// Real load progress, driven by main.js via postMessage — this used to be
+// a pure time-based climb to 100% (target += dt*2.0 through the `states`
+// list) with zero connection to init()'s actual work, so the bar/copy
+// would finish (or sit stuck) on its own clock regardless of whether the
+// world had actually loaded: it could hit "READY / COMPLETE" seconds
+// before init() was done, or still read "06%" the instant the overlay got
+// yanked away because init() had already finished. realTarget is now set
+// only by an incoming message; until the first one arrives we sit at 0
+// rather than pretending to progress.
+let realTarget=0;
+window.addEventListener('message',(e)=>{
+  if(!e.data||e.data.type!=='silvan-loading-progress')return;
+  realTarget=Math.max(0,Math.min(100,e.data.percent));
+});
+function stateForPercent(p){
+  let s=states[0];
+  for(const st of states){ if(p>=st[0]) s=st; else break; }
+  return s;
+}
 function updateLoading(dt){
   if(gameStartedOnce)return;
-  const target=states[Math.min(index,states.length-1)][0];
-  progress+=(target-progress)*Math.min(1,dt*2.0);
-  if(index<states.length && progress>=target-.05){progress=target;applyState(states[index]);index++}
+  // Eased toward the real target rather than snapping, so the bar still
+  // reads as smooth motion between the (possibly chunky) progress messages
+  // main.js sends between init()'s heavy synchronous steps.
+  progress+=(realTarget-progress)*Math.min(1,dt*4.0);
+  if(Math.abs(realTarget-progress)<.05)progress=realTarget;
   const n=Math.round(progress);fill.style.width=n+"%";pct.textContent=String(n).padStart(2,"0")+"%";
+  const s=stateForPercent(progress);
+  if(s!==states[index]){index=states.indexOf(s);applyState(s);}
 }
 
 /* ---------------- moon-run mini game ---------------- */
