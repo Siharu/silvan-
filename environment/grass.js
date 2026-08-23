@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
 
-export function createGrass(state) {
+export async function createGrass(state, onProgress) {
     // Was hardcoded to a fixed 850k/radius-300 patch regardless of WORLD_SIZE,
     // so it never actually covered the full map even before WORLD_SIZE grew —
     // both now scale off WORLD_SIZE so grass reaches all the way to where the
@@ -103,6 +103,12 @@ export function createGrass(state) {
 
     const dummy = new THREE.Object3D();
     let validGrass = 0;
+    // Yielding every ~20k instances splits the 1.1M-instance placement loop
+    // into ~55 chunks at High quality instead of one multi-second freeze —
+    // small enough gaps that the loading screen (and the page generally)
+    // keeps painting smoothly throughout, big enough that the yields
+    // themselves aren't a meaningful chunk of the total time.
+    const YIELD_EVERY = 20000;
     for (let i = 0; i < grassCount; i++) {
         const r = Math.sqrt(Math.random()) * GRASS_RADIUS;
         const theta = Math.random() * Math.PI * 2;
@@ -120,8 +126,12 @@ export function createGrass(state) {
         
         dummy.updateMatrix();
         state.grassMesh.setMatrixAt(validGrass++, dummy.matrix);
+
+        if (i > 0 && i % YIELD_EVERY === 0) {
+            if (onProgress) onProgress(i / grassCount);
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
     }
     state.grassMesh.count = validGrass;
     state.scene.add(state.grassMesh);
 }
-

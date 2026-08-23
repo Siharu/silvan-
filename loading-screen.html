@@ -772,7 +772,7 @@ function updateLoading(dt){
   // Eased toward the real target rather than snapping, so the bar still
   // reads as smooth motion between the (possibly chunky) progress messages
   // main.js sends between init()'s heavy synchronous steps.
-  progress+=(realTarget-progress)*Math.min(1,dt*4.0);
+  progress+=(realTarget-progress)*Math.min(1,dt*6.0);
   if(Math.abs(realTarget-progress)<.05)progress=realTarget;
   const n=Math.round(progress);fill.style.width=n+"%";pct.textContent=String(n).padStart(2,"0")+"%";
   const s=stateForPercent(progress);

@@ -12,7 +12,7 @@ import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation, noise } from './terrain.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 
-export function generateFractalForest(state) {
+export async function generateFractalForest(state, onProgress) {
     const baseTrunkColor = new THREE.Color(0x28201a);
 
     function growBranch(matrix, depth, maxDepth, length, radius, leafBaseColor) {
@@ -49,6 +49,12 @@ export function generateFractalForest(state) {
         }
     }
 
+    // Each tree is a recursive fractal branch walk (depth up to 5, 2-4 way
+    // splits per node) — cheap individually but 780 of them (High quality)
+    // back-to-back was the same kind of multi-second unbroken block as
+    // grass's 1.1M instances. Yielding every 40 trees keeps it smooth
+    // without the yields themselves costing anything meaningful.
+    const YIELD_EVERY = 40;
     for (let i = 0; i < state.quality.treeCount; i++) {
         // Grove/clearing clustering: rejection-sample against a low-frequency
         // density mask instead of placing every tree at a uniformly random
@@ -86,6 +92,11 @@ export function generateFractalForest(state) {
         }
         growBranch(baseMatrix, 0, Math.random() > 0.8 ? 5 : 4, 7.5 * s, 0.75 * s, leafBase);
         state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
+
+        if (i > 0 && i % YIELD_EVERY === 0) {
+            if (onProgress) onProgress(i / state.quality.treeCount);
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
     }
 
     // Create a more organic, bumpy trunk geometry instead of a perfect cylinder
@@ -211,4 +222,3 @@ export function generateFractalForest(state) {
     for(let i=0; i < state.leafMatrices.length; i++) leafMesh.setMatrixAt(i, state.leafMatrices[i]);
     state.scene.add(leafMesh);
 }
-

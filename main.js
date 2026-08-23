@@ -154,10 +154,13 @@ function nextFrame() {
 // percentage instead of trying to replay missed increments.
 const INIT_STEP_COUNT = 12;
 let initStepsDone = 0;
-function reportLoadProgress() {
+// fraction (0..1): how far through the *current* step we are. Only the two
+// steps that chunk themselves (createGrass, generateFractalForest — see
+// below) ever pass this; everything else reports whole steps.
+function reportLoadProgress(fraction = 0) {
     const loadingFrame = document.getElementById('loading-screen-frame');
     if (!loadingFrame || !loadingFrame.contentWindow) return;
-    const percent = Math.min(100, Math.round((initStepsDone / INIT_STEP_COUNT) * 100));
+    const percent = Math.min(100, Math.round(((initStepsDone + fraction) / INIT_STEP_COUNT) * 100));
     try {
         loadingFrame.contentWindow.postMessage({ type: 'silvan-loading-progress', percent }, '*');
     } catch (e) { /* iframe not ready / navigated away — safe to ignore */ }
@@ -274,14 +277,23 @@ async function init() {
     createOcean(state);
     createLake(state);
     await afterStep();
-    createGrass(state);
+    // Grass is a single 1.1M-instance loop (see core/quality.js — "the
+    // single heaviest thing in the scene") — left synchronous, this was one
+    // multi-second unbroken block where nothing on the page, including the
+    // loading screen itself, could paint a single frame. Now yields
+    // periodically and reports sub-step progress instead of freezing then
+    // jumping straight from this step's start % to its end %.
+    await createGrass(state, reportLoadProgress);
     await afterStep();
     createFlowers(state);
     createRocks(state);
     await afterStep();
     createPuddles(state);
     await afterStep();
-    generateFractalForest(state);
+    // Same story as grass: 780 trees, each a recursive fractal branch walk
+    // (depth up to 5, 2-4 way splits per node) — chunked for the same
+    // reason.
+    await generateFractalForest(state, reportLoadProgress);
     await afterStep();
     createDetailedPineTrees(state, state.quality.pineTreeCount);
     await afterStep();
