@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { createGodRaysPass } from './fx/god-rays.js';
 
 import { createWorldState } from './core/world-state.js';
 import { resolveQualityPreset, QUALITY_PRESETS } from './core/quality.js';
@@ -58,6 +59,45 @@ if (state.viewMode === 'topdown') {
     state.quality = QUALITY_PRESETS.topdown;
 }
 state.modifiers = getModifiers(); // rock/water tuning — see core/modifiers.js
+
+// Title screen is interactive immediately on page load now — nothing
+// heavy runs until the player actually clicks Remember/Regain. input.js
+// calls this (via state.startEngine) from those two click handlers; it
+// shows the loading-screen.html moon-run iframe, then defers the actual
+// synchronous scene build (init(), below) a couple of frames so that
+// iframe gets a real paint first instead of racing init()'s freeze.
+// afterReady runs once init() has finished (engine/scene/player all
+// exist), so the caller can safely apply a save and/or enter play mode.
+state.engineReady = false;
+let engineStarting = false;
+let readyCallbacks = [];
+state.startEngine = function startEngine(afterReady) {
+    if (afterReady) readyCallbacks.push(afterReady);
+    if (engineStarting || state.engineReady) return;
+    engineStarting = true;
+    const loadingScreen = document.getElementById('loading-screen');
+    const loadingFrame = document.getElementById('loading-screen-frame');
+    if (loadingFrame) loadingFrame.src = 'loading-screen.html';
+    if (loadingScreen) loadingScreen.classList.remove('hidden');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        init();
+        state.engineReady = true;
+        if (loadingScreen) loadingScreen.classList.add('hidden');
+        // Freed once it's hidden rather than kept running behind the
+        // title/HUD — it's got its own live Three.js render loop and
+        // minigame input listeners that have no reason to keep ticking
+        // once the real game has taken over the frame.
+        if (loadingFrame) loadingFrame.src = '';
+        const callbacks = readyCallbacks; readyCallbacks = [];
+        callbacks.forEach(cb => cb());
+    }));
+};
+
+// Wired immediately (not from inside init()) so every title-screen control
+// — Remember, Regain, Settings, Credits, the volume slider — responds the
+// instant the page loads, instead of sitting dead until init()'s terrain/
+// forest/grass/rocks generation happens to finish.
+setupInput(state);
 
 function init() {
     state.scene = new THREE.Scene();
@@ -123,6 +163,15 @@ function init() {
         state.composer.addPass(state.bloomPass);
     }
 
+    // Screen-space volumetric god rays (fx/god-rays.js) — replaces the old
+    // sprite-based ray texture. Added after bloom so the rays themselves
+    // can still catch a touch of bloom glow at their brightest, same as
+    // everything else in frame. state.sunGlowFactor/state.sunSprite are fed
+    // into it every frame from animate() below, driven by
+    // atmosphere/day-night-cycle.js's actual sun math.
+    state.godRaysPass = createGodRaysPass(state.renderer, state.scene, state.camera);
+    state.composer.addPass(state.godRaysPass);
+
     // Ambient fill light — intensity now modulated per-frame in
     // atmosphere/day-night-cycle.js (day/night instead of a flat 1.15) so
     // it can add a proper night floor without also blowing out midday.
@@ -187,7 +236,6 @@ function init() {
     createAmbientAudio(state);
 
     window.addEventListener('resize', () => { onWindowResize(state); resizeBackgroundRenderTarget(state.backgroundRenderTarget); });
-    setupInput(state);
 
     // Last-chance save: if the tab is closing mid-play, this is the only
     // hook that reliably still gets to run. Not a substitute for the
@@ -197,9 +245,6 @@ function init() {
     window.addEventListener('beforeunload', () => {
         if (state.isPlaying) writeLocalSave(state);
     });
-
-    const loadingScreen = document.getElementById('loading-screen');
-    if (loadingScreen) loadingScreen.classList.add('hidden');
 
     requestAnimationFrame(animate);
 }
@@ -238,18 +283,13 @@ function animate(time) {
     }
 
     renderBackgroundPass(state, state.backgroundRenderTarget); // capture sky/mountain backdrop before the main pass below so this frame's dynamic fog (fx/dynamic-fog.js) reads current colors, not last frame's
+    // Feed the god-rays pass this frame's sun position/strength —
+    // day-night-cycle.js computed sunSprite's position and sunGlowFactor
+    // just above (via updateAtmosphere), the pass itself only owns the
+    // screen-space occlusion/radial-blur side, not any day-night logic.
+    if (state.godRaysPass && state.sunSprite) {
+        state.godRaysPass.sunWorldPosition.copy(state.sunSprite.position);
+        state.godRaysPass.intensity = state.sunGlowFactor || 0;
+    }
     state.composer.render();
 }
-
-window.onload = () => {
-    // One rAF hop guarantees the loading screen (visible by default — see
-    // index.html/#loading-screen) actually gets painted before init()'s
-    // synchronous scene-construction work blocks the main thread. This
-    // does NOT make that blocking work itself faster or async — init() is
-    // still one long synchronous call, terrain/grass/rocks/forest
-    // generation all still freezes the tab for however long it takes. It
-    // just guarantees that freeze has a visible "loading" label on screen
-    // first, instead of a real risk of the still-default-visible title
-    // screen painting first and the freeze reading as a hung/broken page.
-    requestAnimationFrame(() => requestAnimationFrame(init));
-};

@@ -92,23 +92,31 @@ export function setupInput(state) {
             location.reload();
             return;
         }
-        state.hasStartedGame = true;
-        enterPlayMode();
+        // The engine (scene/terrain/forest/player etc.) hasn't been built
+        // yet — see main.js's state.startEngine. It shows the loading
+        // screen and runs init(), then calls us back once state.scene and
+        // everything else actually exist and it's safe to enter play.
+        state.startEngine(() => {
+            state.hasStartedGame = true;
+            enterPlayMode();
+        });
     });
 
     regainBtn.addEventListener('click', () => {
-        // Two different situations both land here: (a) a live in-memory
-        // session already exists this tab (came from quit-to-title, state
-        // was never torn down) — nothing to load, just resume as-is. (b) a
-        // genuinely fresh page load with no live session, but a real save
-        // exists on disk from a previous visit — has to be applied now,
-        // before entering play, or "Regain" would silently just start a
-        // brand-new game at the default spawn instead of the saved one.
-        if (!state.hasStartedGame && hasLocalSave()) {
-            applySavedState(state, readLocalSave());
-        }
-        state.hasStartedGame = true;
-        enterPlayMode();
+        state.startEngine(() => {
+            // Two different situations both land here: (a) a live in-memory
+            // session already exists this tab (came from quit-to-title, state
+            // was never torn down) — nothing to load, just resume as-is. (b) a
+            // genuinely fresh page load with no live session, but a real save
+            // exists on disk from a previous visit — has to be applied now,
+            // before entering play, or "Regain" would silently just start a
+            // brand-new game at the default spawn instead of the saved one.
+            if (!state.hasStartedGame && hasLocalSave()) {
+                applySavedState(state, readLocalSave());
+            }
+            state.hasStartedGame = true;
+            enterPlayMode();
+        });
     });
 
     settingsBtn.addEventListener('click', () => {

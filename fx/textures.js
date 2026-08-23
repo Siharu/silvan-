@@ -122,7 +122,21 @@ export function createProceduralTextures() {
         // rather than evenly combed.
         cursor += width * 2 + 0.1 + rand() * 0.5;
     }
-    const sunRayTex = new THREE.CanvasTexture(rayCanvas);
+    // The wedges above still read as distinct spokes/streaks rather than a
+    // soft blend (each one has its own hard-ish gradient falloff, and gaps
+    // between beams stay visible) — compositing through a blurred context
+    // onto a second canvas merges them into one continuous glow, the same
+    // way a real light shaft photographs soft-edged rather than as separate
+    // comb teeth. Blur has to happen on the composite (a second drawImage
+    // pass), not while drawing the wedges themselves, or each wedge would
+    // just blur into a slightly-softer wedge instead of merging with its
+    // neighbors.
+    const rayBlurCanvas = document.createElement('canvas');
+    rayBlurCanvas.width = 512; rayBlurCanvas.height = 512;
+    const rbCtx = rayBlurCanvas.getContext('2d');
+    rbCtx.filter = 'blur(16px)';
+    rbCtx.drawImage(rayCanvas, 0, 0);
+    const sunRayTex = new THREE.CanvasTexture(rayBlurCanvas);
     sunRayTex.colorSpace = THREE.SRGBColorSpace;
 
     const fCanvas = document.createElement('canvas');

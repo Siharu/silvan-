@@ -174,31 +174,10 @@ export function createSky(state) {
     state.sunSprite.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.sunSprite);
 
-    // Sun-ray burst — cheap sprite-based god rays (see fx/textures.js's
-    // sunRays texture for the actual technique/tradeoffs). Scaled well
-    // past the sun disc itself and rotated slowly in
-    // atmosphere/day-night-cycle.js; opacity there also fades it out
-    // unless the camera's roughly looking toward the sun, so it doesn't
-    // read as a fixed decal stuck to the sky from every angle.
-    const sunRayMat = new THREE.SpriteMaterial({
-        map: state.globalTextures.sunRays,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        rotation: 0
-    });
-    state.sunRaySprite = new THREE.Sprite(sunRayMat);
-    // Smaller and stretched rather than a single giant 1400x1400 circle —
-    // at full symmetric size it read as a flat cardboard disc pasted on the
-    // sky no matter where the sun sat. The squash is fixed on the sprite
-    // itself (sprites always face the camera, so a true rotating stretch
-    // isn't possible without going to a plane) but combined with the now-
-    // irregular beam texture and the slow rotation already driven in
-    // day-night-cycle.js, the asymmetry reads as shafts rather than a disc.
-    state.sunRaySprite.scale.set(1000, 780, 1);
-    state.sunRaySprite.layers.enable(BACKGROUND_LAYER);
-    state.scene.add(state.sunRaySprite);
+    // Old sprite-based "sun-ray burst" billboard used to live here — see
+    // fx/god-rays.js for why it was replaced with an actual screen-space
+    // volumetric pass instead of continuing to patch a flat texture. The
+    // sun disc above is unrelated and stays as-is.
 
     // Create Stars
     const starGeo = new THREE.BufferGeometry();
@@ -227,7 +206,7 @@ export function createSky(state) {
             void main() {
                 vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
                 gl_Position = projectionMatrix * mvPosition;
-                gl_PointSize = min((1.0 + aSize * 2.0) * (300.0 / -mvPosition.z), 6.0);
+                gl_PointSize = min((1.0 + aSize * 2.0) * (300.0 / -mvPosition.z), 3.0);
                 vAlpha = 0.5 + 0.5 * sin(uTime * (1.0 + aSize * 2.0) + position.x * 0.1);
             }
         `,
@@ -237,7 +216,16 @@ export function createSky(state) {
             void main() {
                 float dist = length(gl_PointCoord - vec2(0.5));
                 if (dist > 0.5) discard;
-                gl_FragColor = vec4(1.0, 1.0, 1.0, (0.5 - dist) * 2.0 * vAlpha * uOpacity);
+                // Color/alpha deliberately capped below ~0.8 luminance —
+                // pure white (1,1,1) at high alpha was crossing
+                // UnrealBloomPass's 0.88 threshold (main.js), and at
+                // half-resolution bloom a 1-3px bright point blurs out
+                // into the big soft round blobs this was causing across
+                // the night sky instead of reading as crisp pinpoint
+                // stars. Slightly warm-white (not pure 1,1,1) so dimmed
+                // stars still read as starlight, not gray.
+                float b = (0.5 - dist) * 2.0 * vAlpha * uOpacity;
+                gl_FragColor = vec4(0.82, 0.85, 0.92, b * 0.75);
             }
         `
     });

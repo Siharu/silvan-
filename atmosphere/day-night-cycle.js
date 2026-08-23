@@ -12,11 +12,7 @@ import { getElevation } from '../environment/terrain.js';
 import { updateWindLeaves } from '../fx/wind-leaves.js';
 import { updateRadioTower, updateTowerCutscene } from '../environment/radio-tower.js';
 
-// Scratch vectors for the sun-ray facing check below — allocated once
-// rather than per-frame, same pattern as core/player-controller.js's
-// _radialDir.
-const _camForward = new THREE.Vector3();
-const _toSun = new THREE.Vector3();
+
 
 export function updateAtmosphere(state, delta) {
     state.timeMultiplier = state.keys.r ? 50 : 1;
@@ -80,33 +76,16 @@ export function updateAtmosphere(state, delta) {
         state.moonGlowSprite.material.opacity = Math.max(0, -sy + 0.2) * (1.0 - cloudCover * 0.85);
     }
 
-    // Sun-ray burst (fx/textures.js's sunRays texture) — pinned to the sun
-    // sprite's position. Opacity depends on both cloud cover (same fade as
-    // the sun disc itself) and how directly the camera's actually looking
-    // toward the sun — full strength staring straight at it, gone entirely
-    // once it's more than ~60° off-center, so it doesn't read as a decal
-    // glued to a fixed spot on the sky when glancing around the world.
-    if (state.sunRaySprite && state.sunSprite) {
-        state.sunRaySprite.position.copy(state.sunSprite.position);
-        // The ray texture is now a directional fan (see fx/textures.js) —
-        // it points a specific way, unlike the old full-circle burst that
-        // could spin freely with nothing looking wrong. A continuous
-        // rotation here would carry it sideways and upside-down over a
-        // single day/night cycle, so this is now a small back-and-forth
-        // sway instead of a one-way spin — still reads as "alive," not
-        // static, without ever pointing the fan away from the viewer.
-        state.sunRaySprite.material.rotation = Math.sin(performance.now() * 0.00007) * 0.06;
-        state.camera.getWorldDirection(_camForward);
-        _toSun.copy(state.sunRaySprite.position).sub(state.camera.position).normalize();
-        const facing = Math.max(0, _camForward.dot(_toSun)); // 1 = looking straight at it, 0 = 90°+ off
-        // Lower base multiplier (0.85 -> 0.55) plus a slow scale breathe —
-        // at constant full-strength opacity and fixed size the burst reads
-        // as a static sticker; the subtle size drift sells it as light
-        // actually moving through something instead.
-        state.sunRaySprite.material.opacity = Math.max(0, sy) * (1.0 - cloudCover) * Math.pow(facing, 2.2) * 0.55;
-        const breathe = 1.0 + Math.sin(performance.now() * 0.00015) * 0.06;
-        state.sunRaySprite.scale.set(1000 * breathe, 780 * breathe, 1);
-    }
+    // Sun glow factor — how strongly the volumetric god-rays pass
+    // (fx/god-rays.js) should read this frame. Same day/cloud fade the old
+    // sprite-based ray burst used (Math.max(0, sy) * (1.0 - cloudCover)),
+    // kept here since it's genuinely the same "is the sun up and not
+    // covered" math — the pass itself only handles the screen-space/
+    // occlusion side, not weather. main.js's animate() reads this each
+    // frame and feeds it into state.godRaysPass.intensity alongside
+    // state.sunSprite's position, rather than the pass duplicating any of
+    // this day-night logic itself.
+    state.sunGlowFactor = Math.max(0, sy) * (1.0 - cloudCover);
 
     const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
     // Sun peak trimmed from 1.5 -> 1.1 (was clipping white against the old

@@ -164,29 +164,11 @@
             opacity: 0;
             pointer-events: none;
         }
-        .loading-icon {
-            display: flex;
-            gap: 0.5rem;
-        }
-        .loading-icon span {
-            width: 0.55rem;
-            height: 0.55rem;
-            border-radius: 50%;
-            background: #aebfd1;
-            animation: loading-bounce 1.1s ease-in-out infinite;
-        }
-        .loading-icon span:nth-child(2) { animation-delay: 0.15s; }
-        .loading-icon span:nth-child(3) { animation-delay: 0.3s; }
-        @keyframes loading-bounce {
-            0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-            40% { transform: translateY(-0.5rem); opacity: 1; }
-        }
-        .loading-label {
-            font-family: 'Cinzel', serif;
-            font-size: 0.8rem;
-            letter-spacing: 0.3em;
-            text-transform: uppercase;
-            color: #6a7b8c;
+        #loading-screen-frame {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            display: block;
         }
 
         /* Autosave HUD indicator — toggled by main.js's flashAutosaveIcon(),
@@ -745,22 +727,61 @@
            inside keeps its original id — input.js's wiring (quality,
            view-mode, modifiers, save export/import, volume) is untouched,
            this is styling only. */
+        /* Was sitting inline inside .title-content's flex column, so
+           opening it just pushed the layout down instead of taking over
+           the screen the way a settings dialog should — no dimming of the
+           menu behind it, no centering, nothing else on screen
+           acknowledging it was open. Now a true overlay: fixed position,
+           centered independent of the menu's own layout/floaty animation,
+           above a dedicated dimmed/blurred backdrop (#title-panel-backdrop
+           below) instead of just appearing "under" Settings in the flow. */
         .title-panel {
             display: none;
             flex-direction: column;
             align-items: center;
             gap: 0.6rem;
-            margin-top: 1rem;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.96);
             padding: 1.2rem 1.7rem;
-            background: rgba(8, 8, 12, 0.88);
+            background: rgba(8, 8, 12, 0.92);
             border: 2px solid rgba(255, 255, 255, 0.18);
             border-radius: 6px;
             backdrop-filter: blur(10px);
-            box-shadow: 0 20px 50px rgba(0,0,0,0.85), inset 0 2px 0 rgba(255,255,255,0.08);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.9), inset 0 2px 0 rgba(255,255,255,0.08);
             min-width: 16rem;
+            max-height: 82vh;
+            overflow-y: auto;
             font-family: 'VT323', monospace;
+            z-index: 6;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
         }
-        .title-panel.open { display: flex; }
+        .title-panel.open {
+            display: flex;
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+        /* Dims + blurs everything else the instant either panel is open —
+           :has() lets pure CSS react to the same .open class input.js
+           already toggles, no extra JS needed to keep this in sync. */
+        #title-panel-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 5;
+            background: rgba(2, 4, 10, 0.6);
+            backdrop-filter: blur(3px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+        #ui-layer:has(#title-settings-panel.open, #title-credits-panel.open) #title-panel-backdrop {
+            opacity: 1;
+            pointer-events: auto;
+        }
         .title-panel label {
             font-family: 'VT323', monospace;
             font-size: 1.05rem;
@@ -885,16 +906,20 @@
 </head>
 <body class="text-white">
 
-    <!-- Visible by default (no 'hidden' class) — this is the very first
-         thing painted, before init() in main.js runs its long synchronous
-         scene-construction work (terrain/grass/rocks/forest generation).
-         Hidden by init() itself once that work finishes, right before the
-         render loop starts. See main.js's window.onload for the double-rAF
-         hop that guarantees this actually gets a paint before the freeze,
-         rather than racing it. -->
-    <div id="loading-screen" class="loading-screen">
-        <div class="loading-icon"><span></span><span></span><span></span></div>
-        <div class="loading-label">Loading Silvan…</div>
+    <!-- Hidden by default now — the title screen is the first thing the
+         player sees and can click on immediately. main.js only shows this
+         (removes 'hidden') once the player actually clicks Remember/Regain,
+         right before it runs init()'s long synchronous scene-construction
+         work (terrain/grass/rocks/forest generation). init() hides it again
+         once that work finishes, right before the render loop starts. See
+         main.js's startEngine() for the double-rAF hop that guarantees this
+         gets a paint before the freeze, rather than racing it. -->
+    <div id="loading-screen" class="loading-screen hidden">
+        <!-- src is set (and cleared again once loading finishes) by
+             main.js's startEngine() — left empty here so its own Three.js
+             scene/render loop and moon-run minigame never spin up until
+             the player actually clicks Remember/Regain. See loading-screen.html. -->
+        <iframe id="loading-screen-frame" title="Loading Silvan" src=""></iframe>
     </div>
 
     <div id="canvas-container"></div>
@@ -911,6 +936,7 @@
         <canvas id="pixel-sky"></canvas>
         <div class="title-vignette"></div>
         <div class="title-scrim"></div>
+        <div id="title-panel-backdrop"></div>
 
         <div class="title-content">
             <div class="title-kicker">Cygnus Signal Series</div>
@@ -1746,6 +1772,21 @@
                 tabBtns.forEach(b => b.classList.toggle('active', b === btn));
                 tabPanels.forEach(p => p.classList.toggle('active', p.dataset.tabPanel === target));
             });
+        });
+    })();
+    </script>
+
+    <!-- Click-outside-to-close for the settings/credits overlay panels —
+         purely additive, just removes the same 'open' class the
+         Settings/Credits menu buttons themselves toggle (see
+         core/input.js), so it can't get out of sync with their own
+         open/close state. -->
+    <script>
+    (function () {
+        const backdrop = document.getElementById('title-panel-backdrop');
+        if (!backdrop) return;
+        backdrop.addEventListener('click', () => {
+            document.querySelectorAll('.title-panel.open').forEach(p => p.classList.remove('open'));
         });
     })();
     </script>

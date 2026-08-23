@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Silvan — Loading</title>
+<style>
+:root{
+  --bg:#071018;
+  --paper:#ddd8cc;
+  --muted:#7f8990;
+  --dim:#566168;
+  --cold:#a9b9bd;
+  --gold:#c6a15b;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg)}
+body{font-family:Inter,Arial,sans-serif;color:var(--paper)}
+#scene{position:fixed;inset:0}
+canvas{width:100%;height:100%;display:block;image-rendering:pixelated}
+
+.overlay{position:fixed;inset:0;pointer-events:none}
+.grain{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+  opacity:.055;mix-blend-mode:screen
+}
+.scan{
+  background:repeating-linear-gradient(to bottom,transparent 0,transparent 3px,rgba(0,0,0,.18) 4px,transparent 5px);
+  opacity:.035
+}
+.vignette{
+  background:radial-gradient(circle at 50% 48%,transparent 34%,rgba(0,0,0,.34) 100%)
+}
+
+.ui{position:fixed;inset:0;pointer-events:none}
+.mark{
+  position:absolute;left:clamp(22px,4vw,62px);top:clamp(22px,4vw,52px);
+  font-size:10px;letter-spacing:.42em;color:#9ba7ad;opacity:.65
+}
+.mark b{font-weight:400;color:#d0c9ba}
+.meta{
+  position:absolute;right:clamp(22px,4vw,62px);top:clamp(22px,4vw,52px);
+  font:9px/1.8 "Courier New",monospace;letter-spacing:.16em;text-align:right;color:#68747b
+}
+.center{
+  position:absolute;left:50%;top:85%;transform:translate(-50%,-50%);
+  width:min(700px,82vw);text-align:center
+}
+.statement{
+  font:10px/1.8 "Courier New",monospace;letter-spacing:.34em;
+  color:#9da7aa;text-transform:uppercase;opacity:.9;min-height:19px
+}
+.title{
+  margin-top:7px;
+  font:300 clamp(20px,3vw,30px)/1.2 "Courier New",monospace;
+  letter-spacing:.22em;color:#e3ded2;
+  text-transform:uppercase
+}
+.rule{
+  width:min(480px,70vw);height:1px;margin:18px auto 11px;
+  background:linear-gradient(90deg,transparent,rgba(220,216,204,.45),transparent)
+}
+.loadrow{
+  display:flex;justify-content:center;align-items:center;gap:15px;
+  font:9px "Courier New",monospace;letter-spacing:.18em;color:#69757c
+}
+.pct{color:#c6a15b;min-width:38px;text-align:left}
+.bar{
+  width:min(390px,60vw);height:3px;background:rgba(220,216,204,.10);
+  border:1px solid rgba(220,216,204,.16);padding:0
+}
+.fill{width:0;height:100%;background:#c9b57e;box-shadow:0 0 10px rgba(201,181,126,.15)}
+.tip{
+  margin-top:13px;color:#536067;font:8px "Courier New",monospace;letter-spacing:.18em;
+  text-transform:uppercase
+}
+.corner{
+  position:absolute;width:24px;height:24px;opacity:.35
+}
+.a{left:18px;bottom:18px;border-left:1px solid #9ba7ad;border-bottom:1px solid #9ba7ad}
+.b{right:18px;bottom:18px;border-right:1px solid #9ba7ad;border-bottom:1px solid #9ba7ad}
+
+@media(max-width:700px){
+  .meta{display:none}
+  .center{top:85%;width:88vw}
+  .title{font-size:18px}
+  .bar{width:52vw}
+}
+
+
+/* ---------------- moon-run mini game ---------------- */
+.gameHud{
+  position:fixed;left:50%;top:16px;transform:translateX(-50%);
+  font:9px "Courier New",monospace;letter-spacing:.22em;color:#aab6b9;
+  opacity:0;pointer-events:none;text-align:center;text-transform:uppercase;
+  transition:opacity .2s ease;white-space:nowrap;
+}
+.gameHud.active{opacity:.88}
+.gameStartHint{
+  position:fixed;left:50%;top:56%;transform:translate(-50%,-50%);
+  font:9px "Courier New",monospace;letter-spacing:.2em;color:#c8c3b4;
+  opacity:0;pointer-events:none;text-align:center;text-transform:uppercase;
+  transition:opacity .25s ease;
+}
+.gameStartHint.active{opacity:.7}
+.gameOverHint{
+  position:fixed;left:50%;top:35%;transform:translate(-50%,-50%);
+  font:10px/1.8 "Courier New",monospace;letter-spacing:.26em;color:#d8d1bf;
+  opacity:0;pointer-events:none;text-align:center;text-transform:uppercase;
+}
+.gameOverHint.active{opacity:.9}
+
+</style>
+</head>
+<body>
+<div id="scene"></div>
+<div class="overlay grain"></div>
+<div class="overlay scan"></div>
+<div class="overlay vignette"></div>
+
+<div class="ui">
+<div id="gameHud" class="gameHud">MOON RUN / DISTANCE <span id="gameDistance">0000</span> / SCORE <span id="gameScore">0000</span></div>
+<div id="gameStartHint" class="gameStartHint">CLICK THE MOON TO ENTER / CLICK OR SPACE TO JUMP</div>
+<div id="gameOverHint" class="gameOverHint">RUN ENDED<br><span style="font-size:8px;letter-spacing:.18em">CLICK THE MOON TO RUN AGAIN</span></div>
+
+  <div class="mark" id="nihilismType">A WORLD WITHOUT AN ANSWER</div>
+  <div class="meta" id="observationMeta">OBSERVATION / CONTINUOUS<br>NO CONCLUSION REQUIRED</div>
+
+  <div class="center">
+    <div id="statement" class="statement">THE WORLD CONTINUES</div>
+    <div id="title" class="title">WAITING FOR NOTHING</div>
+    <div class="rule"></div>
+    <div class="loadrow">
+      <span id="stage">OBSERVING</span>
+      <div class="bar"><div id="fill" class="fill"></div></div>
+      <span id="pct" class="pct">00%</span>
+    </div>
+    <div id="tip" class="tip">everything remains in motion</div>
+  </div>
+
+  <div class="corner a"></div>
+  <div class="corner b"></div>
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+
+/* ---------------- renderer ---------------- */
+const renderer = new THREE.WebGLRenderer({antialias:false,powerPreference:"high-performance"});
+renderer.setPixelRatio(1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor("#071018",1);
+document.getElementById("scene").appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-10,10,5.625,-5.625,.1,100);
+camera.position.z = 50;
+
+function plane(w,h,color,z,opacity=1){
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(w,h),
+    new THREE.MeshBasicMaterial({color,transparent:opacity<1,opacity,depthWrite:false})
+  );
+  m.position.z=z; scene.add(m); return m;
+}
+function canvasTex(c){
+  const t=new THREE.CanvasTexture(c);
+  t.magFilter=THREE.NearestFilter;
+  t.minFilter=THREE.NearestFilter;
+  t.generateMipmaps=false;
+  t.colorSpace=THREE.SRGBColorSpace;
+  return t;
+}
+
+/* ---------------- sky ---------------- */
+plane(40,22,"#071018",-20);
+
+const skyWash=plane(40,9,"#1a2b39",-19,.82);
+skyWash.position.y=2.2;
+
+const upperHaze=plane(40,3.4,"#233c4b",-18,.28);
+upperHaze.position.y=4.2;
+
+/* stars: sparse, not decorative wallpaper */
+for(let i=0;i<120;i++){
+  const s=.012+Math.random()*.035;
+  const p=plane(s,s,"#c7c6b8",-17,.15+Math.random()*.48);
+  p.position.set(-12+Math.random()*24,1.5+Math.random()*6,0);
+}
+
+/* one large cold celestial body */
+const moon = new THREE.Mesh(
+  new THREE.CircleGeometry(1.08,32),
+  new THREE.MeshBasicMaterial({color:"#d8d4c5",transparent:true,opacity:.86})
+);
+moon.position.set(6.9,4.0,-16); scene.add(moon);
+moon.renderOrder=-100;
+renderer.domElement.style.cursor="crosshair";
+
+const moonHalo=new THREE.Mesh(
+  new THREE.CircleGeometry(1.55,32),
+  new THREE.MeshBasicMaterial({color:"#b8c7cc",transparent:true,opacity:.055,depthWrite:false})
+);
+moonHalo.position.copy(moon.position);moonHalo.position.z=-16.1;scene.add(moonHalo);
+
+/* tiny moon scars */
+for(const [x,y,r] of [[-.27,.16,.09],[.25,-.27,.07],[-.1,-.4,.05],[.32,.33,.05]]){
+  const c=new THREE.Mesh(
+    new THREE.CircleGeometry(r,8),
+    new THREE.MeshBasicMaterial({color:"#a9a79e",transparent:true,opacity:.08})
+  );
+  c.position.set(moon.position.x+x,moon.position.y+y,-15.8);scene.add(c);
+}
+
+/* distant cosmic smear — barely readable */
+const smear=plane(16,.8,"#6b7880",-16,.045);
+smear.position.set(-3.8,4.8,0);
+smear.rotation.z=-.05;
+
+/* ---------------- distant mountains ---------------- */
+/* Procedural silhouettes: every reload gets a different mountain profile. */
+function mountainPoints(variant=0){
+  const pts=[];
+  const step=1.15;
+  let x=-14;
+  while(x<14.01){
+    const t=(x+14)/28;
+    const envelope=.62+Math.sin(t*Math.PI)*.52;
+    const broad=Math.sin(t*(2.0+variant*.35)*Math.PI + Math.random()*.6)*.34;
+    const sharp=Math.random()*1.15;
+    const y=-.08 + envelope*(.24+broad+sharp);
+    pts.push([x, Math.min(2.05,y)]);
+    x+=step+Math.random()*.45;
+  }
+  return pts;
+}
+function mountainRange(color,z,base,peaks,opacity){
+  const sh=new THREE.Shape();
+  sh.moveTo(-14,base);
+  for(const [x,y] of peaks) sh.lineTo(x,y);
+  sh.lineTo(14,base);
+  sh.closePath();
+  const m=new THREE.Mesh(new THREE.ShapeGeometry(sh),new THREE.MeshBasicMaterial({
+    color,transparent:true,opacity,depthWrite:false
+  }));
+  m.position.z=z;scene.add(m);
+  return m;
+}
+const mountainBack=mountainRange('#0e202b',-15.75,-1.40,mountainPoints(0),.56);
+const mountainFront=mountainRange('#0b1a25',-15.45,-1.53,mountainPoints(1),.72);
+
+/* Sparse cold ridgelight adds separation without turning the mountains decorative. */
+const mountainHaze=[];
+for(let i=0;i<7;i++){
+  const haze=plane(2.0+Math.random()*2.8,.08+Math.random()*.16,'#6f858b',-15.2,.035+Math.random()*.025);
+  haze.position.set(-11+Math.random()*22,.45+Math.random()*1.15,0);
+  haze.rotation.z=(Math.random()-.5)*.05;
+  mountainHaze.push(haze);
+}
+
+/* ---------------- forest silhouette ---------------- */
+function ridge(color,z,base,pts,opacity){
+  const sh=new THREE.Shape();
+  sh.moveTo(-14,base);
+  for(const [x,y] of pts)sh.lineTo(x,y);
+  sh.lineTo(14,base);sh.closePath();
+  const m=new THREE.Mesh(new THREE.ShapeGeometry(sh),new THREE.MeshBasicMaterial({
+    color,transparent:true,opacity,depthWrite:false
+  }));
+  m.position.z=z;scene.add(m);return m;
+}
+function forestPoints(layer){
+  const pts=[];
+  let x=-14;
+  const step=1.0+Math.random()*.55;
+  while(x<14.01){
+    const y=-.16 + Math.random()*(layer===0?1.18:layer===1?.92:.62);
+    pts.push([x,y]);
+    if(Math.random()>.45) pts.push([x+.38+Math.random()*.35, y-.15+Math.random()*.28]);
+    x+=step+Math.random()*.55;
+  }
+  return pts;
+}
+ridge('#152834',-14.8,-1.45,forestPoints(0),.96);
+ridge('#10232e',-13.9,-1.62,forestPoints(1),1);
+ridge('#0c1c25',-13.1,-1.82,forestPoints(2),1);
+
+/* detailed midground forest: trunks, branch silhouettes, undergrowth */
+for(let i=0;i<42;i++){
+  const x=-12+Math.random()*24;
+  const h=.35+Math.random()*1.25;
+  const trunk=plane(.05+Math.random()*.05,h,"#0a1820",-12.0,.78);
+  trunk.position.set(x,-1.62+h*.2,0);
+  trunk.rotation.z=(Math.random()-.5)*.08;
+
+  for(let b=0;b<2+(i%3);b++){
+    const branch=plane(.16+Math.random()*.28,.025,"#0b1b22",-11.85,.72);
+    branch.position.set(x+(Math.random()-.5)*.35,-1.15+h*(.2+b*.13),0);
+    branch.rotation.z=(Math.random()>.5?1:-1)*(.25+Math.random()*.35);
+  }
+}
+for(let i=0;i<55;i++){
+  const x=-12+Math.random()*24;
+  const y=-2.0+Math.random()*.48;
+  const bush=plane(.08+Math.random()*.17,.12+Math.random()*.2,"#10252a",-11.6,.78);
+  bush.position.set(x,y,0);
+  bush.rotation.z=(Math.random()-.5)*.5;
+}
+
+/* irregular cloud veils: soft geometry rather than generic cartoon blobs */
+const cloudVeils=[];
+for(let i=0;i<9;i++){
+  const c=plane(1.0+Math.random()*2.7,.08+Math.random()*.22,"#50616a",-16.7,.045+Math.random()*.04);
+  c.position.set(-10+Math.random()*20,2.0+Math.random()*3.2,0);
+  c.rotation.z=(Math.random()-.5)*.08;
+  c.userData.speed=.006+Math.random()*.014;
+  cloudVeils.push(c);
+}
+
+/* subtle star clusters / distant galaxies */
+for(let i=0;i<18;i++){
+  const cluster=plane(.45+Math.random()*.8,.035+Math.random()*.08,"#9ba8ae",-16.6,.025+Math.random()*.04);
+  cluster.position.set(-10+Math.random()*20,3+Math.random()*4,0);
+  cluster.rotation.z=(Math.random()-.5)*.3;
+}
+
+/* tiny distant red/white lights buried in the forest line */
+for(let i=0;i<13;i++){
+  const c=plane(.025,.025,i%4===0?"#b08d78":"#83969b",-11.55,.18+Math.random()*.18);
+  c.position.set(-11+Math.random()*22,-1.55+Math.random()*.55,0);
+}
+
+
+/* isolated tree silhouettes */
+const foregroundTrees=[];
+for(let i=0;i<26;i++){
+  const x=-12+Math.random()*24;
+  const h=.25+Math.random()*.75;
+  const trunk=plane(.025,h*.7,"#0b1a22",-12.4,.95);
+  trunk.position.set(x,-1.4+h*.2,0);
+  const canopy=plane(.14+h*.16,.35+h*.25,"#0b1a22",-12.35,.95);
+  canopy.position.set(x,-1.0+h*.3,0);
+  canopy.rotation.z=(Math.random()-.5)*.2;
+  foregroundTrees.push({trunk,canopy,phase:Math.random()*6.28,sway:.025+Math.random()*.035});
+}
+
+/* ---------------- lush jungle enhancement ----------------
+   Added only to the forest/vegetation layer: dense canopy, broadleaf clusters,
+   palms, hanging vines, fern-like undergrowth, and depth haze. */
+function leafCluster(color,z,opacity,x,y,scale=1,rot=0){
+  const g=new THREE.Group();
+  const leaves=[
+    [-.22,.00,.16,.34,-.48],[-.06,.18,.19,.42,-.20],[.14,.06,.22,.38,.25],
+    [.28,-.06,.15,.30,.52],[-.14,-.18,.18,.34,.18],[.05,-.28,.17,.31,-.28]
+  ];
+  for(const [lx,ly,w,h,rz] of leaves){
+    const leaf=plane(w*scale,h*scale,color,z,opacity);
+    leaf.position.set(x+lx*scale,y+ly*scale,0);
+    leaf.rotation.z=rz+rot+(Math.random()-.5)*.12;
+    leaf.renderOrder=0;
+    g.add(leaf);
+  }
+  scene.add(g);
+  return g;
+}
+
+/* Deep jungle canopy: broad, irregular masses instead of a clean silhouette. */
+for(let i=0;i<34;i++){
+  const x=-12+Math.random()*24;
+  const y=-.55+Math.random()*1.05;
+  const s=.62+Math.random()*1.05;
+  leafCluster(i%3===0?"#17362f":(i%3===1?"#123028":"#0f2928"),-12.65,.46+Math.random()*.25,x,y,s,(Math.random()-.5)*.28);
+}
+
+/* Tall tropical trunks and palms to break the existing uniform tree rhythm. */
+const jungleTrunks=[];
+for(let i=0;i<18;i++){
+  const x=-12.2+Math.random()*24.4;
+  const h=1.05+Math.random()*2.0;
+  const w=.07+Math.random()*.10;
+  const trunk=plane(w,h,"#101f1d",-12.75,.78);
+  trunk.renderOrder=0;
+  trunk.position.set(x,-1.62+h*.46,0);
+  trunk.rotation.z=(Math.random()-.5)*.045;
+  jungleTrunks.push({trunk,phase:Math.random()*Math.PI*2,amp:.008+Math.random()*.015});
+
+  /* side foliage hugging the trunk */
+  for(let j=0;j<3;j++){
+    leafCluster("#183d32",-12.55,.5,x+(Math.random()-.5)*.34,
+      trunk.position.y-h*.32+j*.24,.55+Math.random()*.35,(Math.random()-.5)*.5);
+  }
+}
+
+function palm(x,y,h,lean){
+  const trunk=plane(.06,h,"#10201e",-12.9,.82);
+  trunk.renderOrder=0;
+  trunk.position.set(x,y+h*.34,0);
+  trunk.rotation.z=lean;
+  const crownY=y+h*.78;
+  const crown=[];
+  for(let i=0;i<8;i++){
+    const fr=plane(.55+Math.random()*.45,.035+Math.random()*.025,"#173b31",-12.72,.62);
+    fr.renderOrder=0;
+    const a=(i/8)*Math.PI*2;
+    fr.position.set(x+Math.cos(a)*.28,crownY+Math.sin(a)*.16,0);
+    fr.rotation.z=a+(Math.random()-.5)*.18;
+    crown.push(fr);
+  }
+  return {trunk,crown};
+}
+const palms=[];
+for(const [x,y,h,lean] of [
+  [-9.8,-1.55,2.6,-.08],[-5.7,-1.52,2.15,.06],[4.7,-1.55,2.45,-.07],[9.0,-1.55,2.0,.08]
+]) palms.push(palm(x,y,h,lean));
+
+/* Hanging vines: thin vertical elements add rainforest depth without changing the road. */
+for(let i=0;i<24;i++){
+  const x=-11.8+Math.random()*23.6;
+  const len=.25+Math.random()*.85;
+  const vine=plane(.018+Math.random()*.018,len,"#1b3d32",-12.45,.46+Math.random()*.18);
+  vine.renderOrder=0;
+  vine.position.set(x,.35+Math.random()*1.55,0);
+  vine.rotation.z=(Math.random()-.5)*.08;
+  vine.userData={phase:Math.random()*Math.PI*2,baseX:x,baseY:vine.position.y,amp:.012+Math.random()*.02};
+}
+
+/* Ferny / broadleaf ground layer: concentrated near the road edge. */
+for(let i=0;i<58;i++){
+  const x=-12+Math.random()*24;
+  const y=-1.84+Math.random()*.42;
+  const s=.22+Math.random()*.5;
+  const f=plane(.035+s*.30,.14+s*.20,"#17372f",-10.95,.48+Math.random()*.22);
+  f.renderOrder=0;
+  f.position.set(x,y,0);
+  f.rotation.z=(Math.random()-.5)*.9;
+  const f2=plane(.025+s*.22,.11+s*.16,"#205043",-10.9,.24+Math.random()*.15);
+  f2.renderOrder=0;
+  f2.position.set(x+(Math.random()-.5)*.12,y+.02,0);
+  f2.rotation.z=f.rotation.z+.7;
+}
+
+/* Mossy haze between jungle layers. */
+for(let i=0;i<10;i++){
+  const haze=plane(1.3+Math.random()*2.4,.12+Math.random()*.18,"#31504a",-12.35,.035+Math.random()*.035);
+  haze.renderOrder=0;
+  haze.position.set(-10+Math.random()*20,-.45+Math.random()*1.2,0);
+  haze.rotation.z=(Math.random()-.5)*.05;
+}
+
+/* ground bands */
+plane(40,1.25,"#0b171d",-11,-1); // base
+const distantGround=plane(40,.55,"#26383d",-10.7,.65); distantGround.position.y=-1.95;
+const road=plane(40,2.6,"#172327",-9.8,1); road.position.y=-3.05;
+const roadEdge=plane(40,.13,"#58605d",-9.5,.28); roadEdge.position.y=-1.75;
+
+/* scattered road scratches */
+for(let i=0;i<34;i++){
+  const s=plane(.12+Math.random()*.55,.02,"#788078",-9.4,.12);
+  s.position.set(-12+Math.random()*24,-3.3+Math.random()*1.25,0);
+  s.rotation.z=(Math.random()-.5)*.12;
+}
+
+/* ---------------- pixel ocean foreground ----------------
+   A low, blocky water plane sits in front of the jungle but behind the animals.
+   Small rectangular wavelets slide sideways to create a continuous pixel-water motion. */
+const oceanBase=plane(40,2.55,"#102a31",-9.05,.98);
+oceanBase.position.y=-3.02;
+oceanBase.renderOrder=10;
+
+const oceanBands=[];
+const oceanFoam=[];
+for(let row=0;row<9;row++){
+  const y=-1.98-row*.25;
+  const count=18+Math.floor(Math.random()*8);
+  for(let i=0;i<count;i++){
+    const w=.22+Math.random()*.58;
+    const h=.025+Math.random()*.045;
+    const wave=plane(w,h,row%3===0?"#31545a":(row%3===1?"#25474e":"#1d3c43"),-8.98,.24+Math.random()*.22);
+    wave.position.set(-12.5+Math.random()*25,y+Math.random()*.12,0);
+    wave.renderOrder=11;
+    wave.userData={speed:.22+Math.random()*.48,baseY:wave.position.y,phase:Math.random()*Math.PI*2,row};
+    oceanBands.push(wave);
+  }
+}
+
+for(let i=0;i<34;i++){
+  const w=.10+Math.random()*.32;
+  const foam=plane(w,.025,"#789090",-8.90,.16+Math.random()*.16);
+  foam.position.set(-12+Math.random()*24,-1.88-Math.random()*2.1,0);
+  foam.renderOrder=12;
+  foam.userData={speed:.35+Math.random()*.7,phase:Math.random()*Math.PI*2,baseY:foam.position.y};
+  oceanFoam.push(foam);
+}
+
+/* Dark pixel ripples give the water depth without smooth gradients. */
+const oceanRipples=[];
+for(let i=0;i<26;i++){
+  const ripple=plane(.28+Math.random()*.7,.018,"#0b2027",-8.88,.23);
+  ripple.position.set(-12+Math.random()*24,-2.0-Math.random()*2.0,0);
+  ripple.renderOrder=9;
+  ripple.userData={speed:.16+Math.random()*.32,phase:Math.random()*Math.PI*2};
+  oceanRipples.push(ripple);
+}
+
+/* ---------------- animals ---------------- */
+const PAL={
+  goldDog:{body:"#a96f2d",light:"#d2a05b",shadow:"#7a4a24",dark:"#493122",eye:"#16191b",nose:"#1d1b18"},
+  orangeCat:{body:"#c96320",light:"#efa147",shadow:"#8d421b",dark:"#5a301b",eye:"#17191a",nose:"#2b1b16"},
+  brownDog:{body:"#79503a",light:"#a87552",shadow:"#513224",dark:"#36251e",eye:"#111518",nose:"#151516"},
+  blackCat:{body:"#20272b",light:"#566066",shadow:"#12171a",dark:"#080b0d",eye:"#d0d2c4",nose:"#c5ad91"}
+};
+
+function pRect(ctx,x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x,y,w,h)}
+function drawDog(ctx,p,frame){
+  ctx.clearRect(0,0,48,30);
+  pRect(ctx,7,27,29,1,"rgba(0,0,0,.30)");
+  const bob=[0,0,1,1,0,0,-1,-1][frame];
+  const sway=[0,1,1,0,-1,-1,0,1][frame];
+
+  // Tail with eight distinct positions.
+  pRect(ctx,4,16+bob,4,7,p.body);
+  if(frame<=1){ pRect(ctx,2,13+bob,4,4,p.body); pRect(ctx,1,10+bob,3,4,p.shadow); }
+  else if(frame<=3){ pRect(ctx,2,16+bob,4,3,p.body); pRect(ctx,1,18+bob,3,3,p.shadow); }
+  else if(frame<=5){ pRect(ctx,2,13+bob,4,3,p.body); pRect(ctx,1,11+bob,3,3,p.shadow); }
+  else { pRect(ctx,2,15+bob,4,4,p.body); }
+
+  // torso and haunch
+  pRect(ctx,9,12+bob,21,10,p.body);
+  pRect(ctx,12,10+bob,13,4,p.body);
+  pRect(ctx,9,17+bob,22,4,p.body);
+  pRect(ctx,12,19+bob,11,2,p.shadow);
+  pRect(ctx,24,13+bob,6,7,p.light);
+  pRect(ctx,10,13+bob,5,2,"rgba(255,255,255,.10)");
+
+  // neck, head and muzzle
+  pRect(ctx,27,8+bob,9,10,p.body);
+  pRect(ctx,30,7+bob,6,7,p.body);
+  pRect(ctx,34,11+bob,6,6,p.light);
+  // floppy ears
+  pRect(ctx,27,7+bob,4,7,p.dark);
+  pRect(ctx,34,7+bob,4,5,p.shadow);
+  // face
+  pRect(ctx,32,10+bob,1,2,p.eye);
+  pRect(ctx,38,13+bob,2,2,p.nose);
+  pRect(ctx,34,15+bob,3,1,p.shadow);
+  // collar/fur break, subtle
+  pRect(ctx,27,15+bob,4,2,p.shadow);
+
+  // legs: alternating planted/raised poses
+  const poses=[
+    [[10,20,3,7],[15,20,3,7],[24,20,3,7],[29,20,3,7]],
+    [[10,20,3,5],[16,22,3,5],[24,20,3,7],[30,22,3,5]],
+    [[9,21,3,6],[16,20,3,7],[25,22,3,5],[31,20,3,7]],
+    [[10,22,3,5],[16,20,3,7],[24,20,3,7],[31,22,3,5]],
+    [[11,20,3,7],[16,22,3,5],[25,20,3,7],[30,22,3,5]],
+    [[10,20,3,7],[15,20,3,7],[25,22,3,5],[30,20,3,7]],
+    [[9,21,3,6],[16,20,3,7],[24,20,3,7],[31,21,3,6]],
+    [[10,20,3,7],[16,22,3,5],[24,20,3,7],[30,22,3,5]]
+  ][frame];
+  for(const [x,y,w,h] of poses)pRect(ctx,x,y+bob,w,h,p.body);
+  pRect(ctx,9,27+bob,5,1,p.shadow); pRect(ctx,29,27+bob,5,1,p.shadow);
+
+  // feet catches light
+  pRect(ctx,10,26+bob,3,1,p.light); pRect(ctx,30,26+bob,3,1,p.light);
+}
+
+function drawCat(ctx,p,frame){
+  ctx.clearRect(0,0,48,30);
+  pRect(ctx,8,27,27,1,"rgba(0,0,0,.28)");
+  const bob=[0,0,1,1,0,0,-1,-1][frame];
+
+  // long tail, changing arc rather than just teleporting
+  pRect(ctx,4,14+bob,4,10,p.body);
+  if(frame<=1){pRect(ctx,2,11+bob,4,5,p.body);pRect(ctx,1,8+bob,3,5,p.shadow);}
+  else if(frame<=3){pRect(ctx,2,15+bob,4,4,p.body);pRect(ctx,1,18+bob,3,3,p.shadow);}
+  else if(frame<=5){pRect(ctx,2,11+bob,4,4,p.body);pRect(ctx,1,9+bob,3,4,p.shadow);}
+  else {pRect(ctx,2,14+bob,4,6,p.body);}
+
+  // torso with shoulders and belly highlight
+  pRect(ctx,9,12+bob,18,10,p.body);
+  pRect(ctx,12,10+bob,11,4,p.body);
+  pRect(ctx,10,18+bob,16,3,p.shadow);
+  pRect(ctx,11,13+bob,5,2,p.light);
+
+  // head
+  pRect(ctx,24,7+bob,10,10,p.body);
+  pRect(ctx,25,4+bob,4,5,p.body);
+  pRect(ctx,30,4+bob,4,5,p.body);
+  // inner ears
+  pRect(ctx,26,5+bob,2,2,p.dark);pRect(ctx,31,5+bob,2,2,p.dark);
+  // eyes and muzzle
+  pRect(ctx,27,10+bob,1,2,p.eye);pRect(ctx,31,10+bob,1,2,p.eye);
+  pRect(ctx,33,13+bob,2,1,p.nose);
+  pRect(ctx,31,14+bob,4,1,p.light);
+  // whisker accents
+  pRect(ctx,35,12+bob,4,1,p.shadow);pRect(ctx,35,15+bob,3,1,p.shadow);
+
+  const poses=[
+    [[11,20,2,7],[22,20,2,7]],
+    [[10,21,2,5],[23,20,2,7]],
+    [[11,20,2,7],[22,22,2,5]],
+    [[10,20,2,7],[23,22,2,5]],
+    [[11,22,2,5],[22,20,2,7]],
+    [[10,20,2,7],[23,21,2,5]],
+    [[11,20,2,7],[22,20,2,7]],
+    [[10,21,2,6],[23,20,2,7]]
+  ][frame];
+  for(const [x,y,w,h] of poses)pRect(ctx,x,y+bob,w,h,p.body);
+  pRect(ctx,10,27+bob,4,1,p.shadow);pRect(ctx,22,27+bob,4,1,p.shadow);
+}
+
+function sheet(kind){
+  const c=document.createElement("canvas");c.width=48*8;c.height=30;
+  const out=c.getContext("2d");
+  for(let i=0;i<8;i++){
+    const f=document.createElement("canvas");f.width=48;f.height=30;
+    const ctx=f.getContext("2d");
+    if(kind.includes("Dog")) drawDog(ctx,PAL[kind],i); else drawCat(ctx,PAL[kind],i);
+    out.drawImage(f,i*48,0);
+  }
+  return c;
+}
+
+function animal(kind,x,scale,speed,phase){
+  const t=canvasTex(sheet(kind));t.repeat.set(1/8,1);
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthWrite:false}));
+  // Explicitly keep animals above every forest/jungle layer.
+  s.renderOrder=50;
+  s.scale.set(scale,scale*.62,1);
+  s.position.set(x,-2.02,-8.7);
+  s.userData={t:phase,frame:0,speed,baseY:-2.02,phase:Math.random()*6.28,hold:0};
+  scene.add(s);return s;
+}
+
+// Dogs/cats retain the requested order and relative sizes.
+const animals=[
+  animal("goldDog",-8.3,1.38,.56,.0),
+  animal("orangeCat",-5.65,1.48,.53,.8),
+  animal("brownDog",-3.0,1.34,.50,1.55),
+  animal("blackCat",-1.02,.84,.66,2.35)
+];
+
+function updateAnimal(a,dt,time){
+  const u=a.userData;
+  // Brief natural slowdowns prevent robotic uniform pacing.
+  if(u.hold>0){u.hold-=dt;}else{a.position.x+=u.speed*dt;}
+  if(Math.random()<dt*.045)u.hold=.12+Math.random()*.26;
+
+  a.position.y=u.baseY+Math.sin(time*6.8+u.phase)*.008;
+  u.t+=dt;
+  if(u.t>.11){u.t=0;u.frame=(u.frame+1)%8;a.material.map.offset.x=u.frame/8;}
+  if(a.position.x>11.4){
+    a.position.x=-11.8-Math.random()*1.8;
+    u.frame=Math.floor(Math.random()*8);a.material.map.offset.x=u.frame/8;
+  }
+}
+
+/* ---------------- particles ---------------- */
+const dust=[];
+for(let i=0;i<42;i++){
+  const m=plane(.018,.018,"#b6ad91",-7.8,.04+Math.random()*.16);
+  m.position.set(-11+Math.random()*22,-1.2+Math.random()*2.2,0);
+  m.userData.phase=Math.random()*Math.PI*2;
+  dust.push(m);
+}
+
+/* ---------------- fireflies ----------------
+   Warm, tiny, slow-moving lights. They stay behind the animals so
+   they add ambience without cutting through the sprites.
+*/
+const fireflies=[];
+for(let i=0;i<34;i++){
+  const size = .018 + Math.random()*.025;
+  const f = plane(size,size,"#d9c97d",-8.9,.18+Math.random()*.34);
+  f.position.set(-10.8+Math.random()*21.6,-1.35+Math.random()*2.25,0);
+  f.userData = {
+    phase: Math.random()*Math.PI*2,
+    drift: .12+Math.random()*.28,
+    rise: .025+Math.random()*.06,
+    baseX:f.position.x,
+    baseY:f.position.y,
+    speed:.45+Math.random()*.9,
+    resetY:-1.35+Math.random()*.8
+  };
+  fireflies.push(f);
+}
+
+/* A handful of colder, distant motes keep the forest from looking flat. */
+const ambientMotes=[];
+for(let i=0;i<26;i++){
+  const m=plane(.012+Math.random()*.018,.012+Math.random()*.018,
+    i%3===0?"#9fb2b3":"#77898f",-13.0,.08+Math.random()*.12);
+  m.position.set(-12+Math.random()*24,-1.0+Math.random()*2.7,0);
+  m.userData={phase:Math.random()*Math.PI*2};
+  ambientMotes.push(m);
+}
+
+/* ---------------- loading copy ---------------- */
+const nihilismCycle=[
+  ["MEANING IS NOT GUARANTEED","EXISTENTIAL","the day arrives whether it is interpreted or not"],
+  ["THE WORLD DOES NOT EXPLAIN ITSELF","COSMIC","distance does not become smaller because we ask"],
+  ["THINGS PASS WITHOUT A CONCLUSION","IMPERMANENT","a life may end without resolving anything"],
+  ["NOTHING HERE IS OBLIGED TO MATTER","VALUE","importance is something we place, not something we discover"],
+  ["THERE IS NO FINAL WITNESS","COSMIC","the sky does not keep a record of what we were"],
+  ["ABSENCE IS ORDINARY","ABSURD","silence does not always hide an answer"],
+  ["LIFE CONTINUES WITHOUT A REASON","NATURAL","growth does not require a purpose"],
+  ["WE NOTICE; THEN WE MOVE ON","HUMAN","attention gives a moment shape, not permanence"],
+  ["THE FOREST KEEPS GROWING","INDIFFERENT","it does not need us to continue"],
+  ["NOTHING ENDS UPON UNDERSTANDING IT","EPISTEMIC","knowing a thing does not make it meaningful"],
+  ["THE STARS REMAIN DISTANT","COSMIC","their indifference is neither cruel nor kind"],
+  ["FOR A WHILE, WE ARE HERE","TEMPORAL","that is enough to be observed"],
+];
+let nihilismIndex=0;
+const NIHILISM_HOLD=3800;
+let nihilismTimer=0;
+let lastNihilismIndex=-1;
+function updateNihilism(dt){
+  nihilismTimer+=dt*1000;
+  if(nihilismTimer>=NIHILISM_HOLD){
+    nihilismTimer=0;
+    nihilismIndex=(nihilismIndex+1)%nihilismCycle.length;
+  }
+  if(nihilismIndex!==lastNihilismIndex){
+    lastNihilismIndex=nihilismIndex;
+    const s=nihilismCycle[nihilismIndex];
+    statement.textContent=s[0];
+    stage.textContent=s[1];
+    tip.textContent=s[2];
+  }
+}
+
+const states=[
+  [12,"THE WORLD CONTINUES","OBSERVING","motion persists without asking why"],
+  [28,"NOTHING WAITS","TRACING TERRAIN","the forest makes no distinction"],
+  [44,"THE SKY REMAINS","READING ATMOSPHERE","distance does not become smaller"],
+  [61,"LIFE CONTINUES","RECORDING MOTION","small things still move"],
+  [78,"NO ANSWER DETECTED","LISTENING","there may be no answer"],
+  [92,"YOU ARE HERE","FINALIZING","for now"],
+  [100,"READY","COMPLETE","it will continue without you"]
+];
+let progress=0,index=0;
+const statement=document.getElementById("statement");
+const title=document.getElementById("title");
+const stage=document.getElementById("stage");
+const tip=document.getElementById("tip");
+const pct=document.getElementById("pct");
+const fill=document.getElementById("fill");
+function applyState(s){statement.textContent=s[1];title.textContent=s[1];stage.textContent=s[2];tip.textContent=s[3]}
+applyState(states[0]);
+function updateLoading(dt){
+  if(gameStartedOnce)return;
+  const target=states[Math.min(index,states.length-1)][0];
+  progress+=(target-progress)*Math.min(1,dt*2.0);
+  if(index<states.length && progress>=target-.05){progress=target;applyState(states[index]);index++}
+  const n=Math.round(progress);fill.style.width=n+"%";pct.textContent=String(n).padStart(2,"0")+"%";
+}
+
+/* ---------------- moon-run mini game ---------------- */
+const gameHud=document.getElementById("gameHud");
+const gameDistance=document.getElementById("gameDistance");
+const gameScore=document.getElementById("gameScore");
+const gameStartHint=document.getElementById("gameStartHint");
+const gameOverHint=document.getElementById("gameOverHint");
+
+let gameActive=false;
+let gameOver=false;
+let gameDistanceValue=0;
+let gameScoreValue=0;
+let gameSpeed=4.15;
+let gameSpawnTimer=.8;
+let gameTime=0;
+let gameRunClock=0;
+let gameJump=0;
+let gameJumpV=0;
+let gameBest=0;
+let gameStartedOnce=false;
+
+/* ---------------- gentle offline pixel BGM ----------------
+   Synthesized locally with Web Audio so the page needs no external audio file. */
+let bgmCtx=null,bgmMaster=null,bgmTimer=null,bgmNextTime=0;
+let bgmStep=0;
+const BGM_NOTES=[220.00,246.94,293.66,329.63,293.66,246.94,196.00,220.00];
+function ensureBGM(){
+  if(bgmCtx)return;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)return;
+  bgmCtx=new AC();
+  bgmMaster=bgmCtx.createGain();
+  bgmMaster.gain.value=.0001;
+  bgmMaster.connect(bgmCtx.destination);
+}
+function playPixelNote(freq,start,duration,type='triangle',gain=.018){
+  if(!bgmCtx||!bgmMaster)return;
+  const osc=bgmCtx.createOscillator();
+  const g=bgmCtx.createGain();
+  osc.type=type;
+  osc.frequency.setValueAtTime(freq,start);
+  g.gain.setValueAtTime(.0001,start);
+  g.gain.exponentialRampToValueAtTime(gain,start+.012);
+  g.gain.exponentialRampToValueAtTime(.0001,start+duration);
+  osc.connect(g);g.connect(bgmMaster);
+  osc.start(start);osc.stop(start+duration+.02);
+}
+function scheduleBGM(){
+  if(!bgmCtx||!bgmMaster)return;
+  const now=bgmCtx.currentTime;
+  const step=.48;
+  while(bgmNextTime<now+.9){
+    const root=BGM_NOTES[bgmStep%BGM_NOTES.length];
+    playPixelNote(root,bgmNextTime,.34,'triangle',.012);
+    if((bgmStep%4)===1)playPixelNote(root*2,bgmNextTime+.08,.16,'square',.0045);
+    if((bgmStep%8)===3)playPixelNote(root*1.5,bgmNextTime+.22,.18,'sine',.0035);
+    bgmNextTime+=step;
+    bgmStep++;
+  }
+}
+function startBGM(){
+  ensureBGM();
+  if(!bgmCtx)return;
+  if(bgmCtx.state==='suspended')bgmCtx.resume();
+  const now=bgmCtx.currentTime;
+  bgmMaster.gain.cancelScheduledValues(now);
+  bgmMaster.gain.setValueAtTime(bgmMaster.gain.value,now);
+  bgmMaster.gain.linearRampToValueAtTime(.045,now+.8);
+  if(!bgmTimer){
+    bgmNextTime=now+.05;bgmStep=0;
+    scheduleBGM();
+    bgmTimer=setInterval(scheduleBGM,220);
+  }
+}
+
+const raycaster=new THREE.Raycaster();
+const pointer=new THREE.Vector2();
+const gameObstacles=[];
+const gameParallax=[];
+const gameScrollers=[];
+
+/* A fixed herd line keeps the animals readable while the world scrolls around them. */
+const herdX=[-5.65,-3.25,-.95,1.05];
+const herdGround=[-2.02,-2.02,-2.02,-2.02];
+const herdPhase=animals.map(a=>a.userData.phase);
+
+function pixelSprite(w,h,draw){
+  const c=document.createElement("canvas");
+  c.width=w;c.height=h;
+  const ctx=c.getContext("2d");
+  ctx.imageSmoothingEnabled=false;
+  draw(ctx);
+  return canvasTex(c);
+}
+
+const obstacleTextures=[
+  pixelSprite(32,32,ctx=>{
+    const q="#5a2423", l="#9b4a2e", d="#34191d";
+    pRect(ctx,10,3,12,4,q);pRect(ctx,7,7,18,14,q);pRect(ctx,4,12,7,7,d);pRect(ctx,21,11,7,8,d);
+    pRect(ctx,9,20,5,9,d);pRect(ctx,18,19,6,10,d);pRect(ctx,8,10,4,4,l);pRect(ctx,20,9,4,4,l);
+    pRect(ctx,13,13,3,3,"#d0b27b");pRect(ctx,18,14,3,2,"#d0b27b");
+  }),
+  pixelSprite(32,32,ctx=>{
+    const q="#263d40", l="#5e7772", d="#17292d";
+    pRect(ctx,4,18,24,8,d);pRect(ctx,7,13,18,10,q);pRect(ctx,10,8,12,16,q);pRect(ctx,12,4,8,7,l);
+    pRect(ctx,8,18,5,3,l);pRect(ctx,20,17,6,4,l);pRect(ctx,13,14,3,3,"#b6c0a5");pRect(ctx,19,14,3,3,"#b6c0a5");
+  }),
+  pixelSprite(40,32,ctx=>{
+    const q="#352f28", l="#79644b", d="#17191a";
+    pRect(ctx,3,22,34,7,q);pRect(ctx,7,16,26,9,q);pRect(ctx,11,10,18,15,q);pRect(ctx,15,5,10,7,l);
+    pRect(ctx,12,18,4,3,l);pRect(ctx,25,16,5,4,l);pRect(ctx,16,13,3,3,d);pRect(ctx,22,13,3,3,d);
+  })
+];
+
+function spawnGameObstacle(){
+  const kind=Math.floor(Math.random()*obstacleTextures.length);
+  const tex=obstacleTextures[kind];
+  const mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthWrite:false});
+  const s=new THREE.Sprite(mat);
+  const scale=kind===2?.95:.78+Math.random()*.12;
+  s.scale.set(scale,scale*.88,1);
+  s.position.set(12.8,-1.73,-8.35);
+  s.renderOrder=45;
+  s.userData={kind,passed:false,phase:Math.random()*Math.PI*2,baseY:-1.73,bob:.0};
+  scene.add(s);gameObstacles.push(s);
+}
+
+function clearObstacles(){
+  while(gameObstacles.length){
+    const o=gameObstacles.pop();scene.remove(o);o.material.dispose();
+  }
+}
+
+function setGameHint(on){
+  gameStartHint.classList.toggle("active",on);
+}
+
+function setGameOver(on){
+  gameOverHint.classList.toggle("active",on);
+}
+
+function resetAnimalForGame(a,i){
+  a.position.x=herdX[i];
+  a.position.y=herdGround[i];
+  a.userData.hold=0;
+  a.renderOrder=50;
+}
+
+function resetGame(){
+  document.querySelector(".center").style.opacity="0";
+  document.querySelector(".center").style.pointerEvents="none";
+  clearObstacles();
+  for(let i=0;i<animals.length;i++)resetAnimalForGame(animals[i],i);
+  gameActive=true;
+  startBGM();
+  gameOver=false;
+  gameStartedOnce=true;
+  gameDistanceValue=0;
+  gameScoreValue=0;
+  gameSpeed=4.15;
+  gameSpawnTimer=.75;
+  gameTime=0;
+  gameRunClock=0;
+  gameJump=0;
+  gameJumpV=0;
+  gameHud.classList.add("active");
+  setGameHint(false);
+  setGameOver(false);
+}
+
+function startGame(){ resetGame(); }
+
+function jumpGame(){
+  if(!gameActive){
+    if(gameOver){startGame();return;}
+    return;
+  }
+  if(gameJump<=.015){
+    gameJumpV=5.7;
+  }
+}
+
+function hitMoon(clientX,clientY){
+  const rect=renderer.domElement.getBoundingClientRect();
+  pointer.x=((clientX-rect.left)/rect.width)*2-1;
+  pointer.y=-((clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(pointer,camera);
+  return raycaster.intersectObject(moon,false).length>0;
+}
+
+function handlePointer(clientX,clientY){
+  if(hitMoon(clientX,clientY)){
+    if(!gameActive || gameOver) startGame();
+    return;
+  }
+  if(gameActive) jumpGame();
+}
+
+renderer.domElement.addEventListener("pointerdown",e=>handlePointer(e.clientX,e.clientY));
+addEventListener("keydown",e=>{
+  if(e.code==="Space" || e.code==="ArrowUp"){
+    e.preventDefault();
+    if(gameOver){startGame();return;}
+    jumpGame();
+  }
+});
+
+gameParallax.push(
+  {group:cloudVeils,factor:.18},
+  {group:mountainHaze,factor:.28},
+  {group:[mountainBack],factor:.42},
+  {group:[mountainFront],factor:.6}
+);
+gameScrollers.push({group:foregroundTrees,factor:.92});
+
+function shiftGroup(group,dx){
+  for(const m of group){
+    m.position.x-=dx;
+    if(m.position.x<-14.5)m.position.x+=29;
+  }
+}
+
+function updateGameWorld(dt){
+  if(!gameActive)return;
+  gameTime+=dt;
+  gameRunClock+=dt;
+  const worldStep=gameSpeed*dt;
+  gameDistanceValue+=worldStep*10;
+  gameSpeed=Math.min(8.6,4.15+gameRunClock*.085);
+
+  /* Parallax: distant mountains barely move, jungle and ocean move faster. */
+  for(const layer of gameParallax){
+    for(const m of layer.group){
+      m.position.x-=worldStep*layer.factor*.34;
+      if(m.position.x<-16)m.position.x+=32;
+    }
+  }
+  for(const t of gameScrollers){
+    for(const m of t.group){
+      m.trunk.position.x-=worldStep*t.factor*.32;
+      m.canopy.position.x-=worldStep*t.factor*.32;
+      if(m.trunk.position.x<-14.5){
+        const nx=13+Math.random()*2;
+        m.trunk.position.x=nx;m.canopy.position.x=nx;
+      }
+    }
+  }
+  for(const w of oceanBands){w.position.x-=worldStep*.92;if(w.position.x<-14.5)w.position.x+=29;}
+  for(const f of oceanFoam){f.position.x-=worldStep*1.02;if(f.position.x<-14.5)f.position.x+=29;}
+  for(const r of oceanRipples){r.position.x-=worldStep*1.08;if(r.position.x<-14.5)r.position.x+=29;}
+
+  /* Herd jump. Every animal gets a different small phase offset so the run feels alive. */
+  gameJump+=gameJumpV*dt;
+  gameJumpV-=15.0*dt;
+  if(gameJump<0){gameJump=0;gameJumpV=0;}
+  for(let i=0;i<animals.length;i++){
+    const a=animals[i],u=a.userData;
+    a.position.x=herdX[i]+Math.sin(gameTime*1.65+herdPhase[i])*.045;
+    a.position.y=herdGround[i]+gameJump+Math.sin(gameTime*9+herdPhase[i])*.012;
+    if(u.t>.06){u.t=0;u.frame=(u.frame+1)%8;a.material.map.offset.x=u.frame/8;}
+  }
+
+  gameSpawnTimer-=dt;
+  if(gameSpawnTimer<=0){
+    spawnGameObstacle();
+    gameSpawnTimer=.82+Math.random()*.85-(Math.min(gameRunClock,24)*.012);
+    gameSpawnTimer=Math.max(.52,gameSpawnTimer);
+  }
+
+  for(let i=gameObstacles.length-1;i>=0;i--){
+    const o=gameObstacles[i],u=o.userData;
+    o.position.x-=worldStep;
+    o.position.y=u.baseY+Math.sin(gameTime*3+u.phase)*.015;
+
+    if(!u.passed && o.position.x<-5.8){u.passed=true;gameScoreValue+=25;}
+    const dx=Math.abs(o.position.x-(-4.7));
+    const verticalGap=o.position.y-(gameGroundY()+gameJump);
+    if(dx<.72 && verticalGap<.60 && verticalGap>-.25){
+      gameActive=false;gameOver=true;gameBest=Math.max(gameBest,Math.floor(gameDistanceValue));
+      setGameOver(true);
+      break;
+    }
+    if(o.position.x<-13.5){scene.remove(o);gameObstacles.splice(i,1);o.material.dispose();}
+  }
+
+  gameDistance.textContent=String(Math.floor(gameDistanceValue)).padStart(4,"0");
+  gameScore.textContent=String(Math.floor(gameScoreValue)).padStart(4,"0");
+}
+
+function gameGroundY(){return -2.02;}
+
+setGameHint(false);
+
+/* ---------------- loop ---------------- */
+const clock=new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.05);
+  const time=clock.elapsedTime;
+
+  updateLoading(dt);
+  updateNihilism(dt);
+
+  for(const c of cloudVeils){
+    c.position.x += c.userData.speed*dt;
+    c.material.opacity=.025+.025*(Math.sin(time*.12+c.position.y)+1);
+    if(c.position.x>12.5)c.position.x=-12.5;
+  }
+
+  for(const t of foregroundTrees){
+    const sway=Math.sin(time*.35+t.phase)*t.sway;
+    t.trunk.rotation.z=sway;
+    t.canopy.rotation.z=sway*.8;
+    t.canopy.position.x=t.trunk.position.x+Math.sin(time*.28+t.phase)*.012;
+  }
+
+  /* slow cosmic drift */
+  moon.position.y=4.0+Math.sin(time*.06)*.015;
+  moonHalo.position.y=moon.position.y;
+
+  for(let i=0;i<animals.length;i++)updateAnimal(animals[i],dt,time);
+
+  for(const d of dust){
+    d.position.y+=Math.sin(time*.32+d.userData.phase)*.00045;
+    d.material.opacity=.04+.05*(Math.sin(time*.8+d.userData.phase)+1);
+  }
+
+  /* Fireflies: gentle drifting arcs, occasional brighter pulses, and slow rise. */
+  for(const f of fireflies){
+    const u=f.userData;
+    f.position.x += Math.sin(time*u.speed + u.phase)*0.00055 + u.drift*dt*0.01;
+    f.position.y += u.rise*dt*0.035 + Math.sin(time*0.7+u.phase)*0.00055;
+
+    const pulse=(Math.sin(time*(1.35+u.speed*0.35)+u.phase)+1)*0.5;
+    f.material.opacity=.10 + pulse*.42;
+
+    if(f.position.y>1.2 || f.position.x>11.4){
+      f.position.x=-11.4-Math.random()*1.0;
+      f.position.y=u.resetY;
+    }
+  }
+
+  /* Far motes drift much more slowly than fireflies. */
+  for(const m of ambientMotes){
+    const u=m.userData;
+    m.position.x += Math.sin(time*.25+u.phase)*0.00035;
+    m.position.y += Math.cos(time*.18+u.phase)*0.00018;
+    m.material.opacity=.045+.055*(Math.sin(time*.5+u.phase)+1);
+  }
+
+  /* Pixel-ocean motion: lateral drift plus a tiny vertical shimmer. */
+  for(const w of oceanBands){
+    const u=w.userData;
+    w.position.x += u.speed*dt;
+    w.position.y = u.baseY + Math.sin(time*(.8+u.speed)+u.phase)*.006;
+    if(w.position.x>12.8) w.position.x=-12.8-Math.random()*.8;
+    w.material.opacity=.16+.10*(Math.sin(time*(.9+u.speed)+u.phase)+1);
+  }
+
+  for(const f of oceanFoam){
+    const u=f.userData;
+    f.position.x += u.speed*dt;
+    f.position.y = u.baseY + Math.sin(time*1.1+u.phase)*.008;
+    if(f.position.x>12.7) f.position.x=-12.7-Math.random()*.7;
+    f.material.opacity=.10+.18*(Math.sin(time*(1.2+u.speed*.2)+u.phase)+1);
+  }
+
+  for(const r of oceanRipples){
+    const u=r.userData;
+    r.position.x -= u.speed*dt;
+    r.material.opacity=.08+.08*(Math.sin(time*.7+u.phase)+1);
+    if(r.position.x<-12.8) r.position.x=12.8+Math.random()*.8;
+  }
+
+  updateGameWorld(dt);
+
+  renderer.render(scene,camera);
+}
+
+/* Render the 3D scene at a deliberately low internal resolution, then upscale
+   it with nearest-neighbour filtering. This keeps the HTML UI crisp while making
+   every world element read as chunky pixel art rather than smooth vector art. */
+const PIXEL_RENDER_WIDTH=480;
+function resize(){
+  const a=innerWidth/innerHeight;
+  const h=11.25;
+  camera.top=h/2;camera.bottom=-h/2;
+  camera.left=-(h*a)/2;camera.right=(h*a)/2;
+  camera.updateProjectionMatrix();
+
+  const pixelHeight=Math.max(180,Math.round(PIXEL_RENDER_WIDTH/a));
+  renderer.setSize(PIXEL_RENDER_WIDTH,pixelHeight,false);
+  renderer.domElement.style.width='100%';
+  renderer.domElement.style.height='100%';
+  renderer.domElement.style.imageRendering='pixelated';
+}
+addEventListener("resize",resize);
+resize();
+animate();
+</script>
+</body>
+</html>
