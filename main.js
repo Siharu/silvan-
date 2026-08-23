@@ -77,20 +77,46 @@ state.startEngine = function startEngine(afterReady) {
     engineStarting = true;
     const loadingScreen = document.getElementById('loading-screen');
     const loadingFrame = document.getElementById('loading-screen-frame');
-    if (loadingFrame) loadingFrame.src = 'loading-screen.html';
+
+    function runInit() {
+        // Two more rAF hops here (on top of however long the iframe took
+        // to load) so its first couple of real frames — stars, moon,
+        // progress bar — actually get composited to screen before init()'s
+        // synchronous terrain/forest/grass/rocks work freezes the tab.
+        // Without this, the freeze can land on the iframe's very first
+        // paint before its own script has drawn anything, which reads as
+        // the screen just going dark instead of showing a loading screen.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            init();
+            state.engineReady = true;
+            if (loadingScreen) loadingScreen.classList.add('hidden');
+            // Freed once it's hidden rather than kept running behind the
+            // title/HUD — it's got its own live Three.js render loop and
+            // minigame input listeners that have no reason to keep ticking
+            // once the real game has taken over the frame.
+            if (loadingFrame) loadingFrame.src = '';
+            const callbacks = readyCallbacks; readyCallbacks = [];
+            callbacks.forEach(cb => cb());
+        }));
+    }
+
     if (loadingScreen) loadingScreen.classList.remove('hidden');
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-        init();
-        state.engineReady = true;
-        if (loadingScreen) loadingScreen.classList.add('hidden');
-        // Freed once it's hidden rather than kept running behind the
-        // title/HUD — it's got its own live Three.js render loop and
-        // minigame input listeners that have no reason to keep ticking
-        // once the real game has taken over the frame.
-        if (loadingFrame) loadingFrame.src = '';
-        const callbacks = readyCallbacks; readyCallbacks = [];
-        callbacks.forEach(cb => cb());
-    }));
+    if (loadingFrame) {
+        // Safety net: if loading-screen.html's own CDN fetch (Three.js
+        // from jsdelivr) is slow, blocked, or offline, 'load' may never
+        // fire — don't leave the player staring at a permanently dark
+        // screen waiting for it. Whichever happens first wins; the other
+        // is a no-op since runInit only ever actually starts init() once
+        // (guarded by engineStarting/state.engineReady above it, and this
+        // local guard for the timeout/load race specifically).
+        let started = false;
+        const start = () => { if (started) return; started = true; runInit(); };
+        loadingFrame.addEventListener('load', start, { once: true });
+        setTimeout(start, 2500);
+        loadingFrame.src = 'loading-screen.html';
+    } else {
+        runInit();
+    }
 };
 
 // Wired immediately (not from inside init()) so every title-screen control
