@@ -1,81 +1,105 @@
-// Cinematic atmospheric sun + volumetric god rays for Three.js
+// ============================================================
+// GOD-RAYS — ROBUST HYBRID VERSION
+// ============================================================
 //
-// Drop-in replacement for the original GodRaysPass.
-// Public compatibility kept:
-//   const pass = createGodRaysPass(renderer, scene, camera, options);
-//   pass.sunWorldPosition.copy(sunPosition);
-//   pass.intensity = 0..1;
+// Designed as a safer replacement for the original pass.
 //
-// This version is intentionally hybrid rather than a simple radial blur:
-//   1. Low-resolution camera depth for correct world-space ray marching.
-//   2. A dedicated sun-facing depth map for real occlusion by trees/buildings.
-//   3. Height/distance atmospheric density.
-//   4. Henyey-Greenstein-like forward scattering for a sun-facing atmosphere.
-//   5. Temporal/spatial jitter to hide banding without making visible streaks.
-//   6. A restrained HDR sun glow/disc that disappears when the sun is blocked.
+// Features:
+//   • Real scene-geometry occlusion
+//   • Alpha-aware foliage occlusion
+//   • Camera depth awareness
+//   • Soft, visible atmospheric shafts
+//   • Reduced "giant triangle" radial-blur look
+//   • Subtle dithering to reduce banding
+//   • Warm sun scattering
+//   • Sun-edge fading
+//   • No custom shadow camera
+//   • No WebGL2-only shader code
+//   • Keeps the original public API
 //
-// It does NOT replace your scene's materials, lights, or render loop.
-// The optional setupSunLighting() helper can be used to make the scene's
-// actual object lighting more physically convincing.
+// Existing usage:
+//
+//   const godRays = createGodRaysPass(
+//       renderer,
+//       scene,
+//       camera
+//   );
+//
+//   godRays.sunWorldPosition.copy(sunPosition);
+//   godRays.intensity = sunIntensity;
+//
+// ============================================================
 
 import * as THREE from 'three';
-import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import {
+    Pass,
+    FullScreenQuad
+} from 'three/addons/postprocessing/Pass.js';
 
-const MAX_VOLUME_SAMPLES = 48;
 
-const VERTEX = /* glsl */ `
+// ============================================================
+// FULLSCREEN VERTEX SHADER
+//
+// Important:
+// Use the normal Three.js transform chain.
+// Do NOT manually force clip-space coordinates here.
+// ============================================================
+
+const GOD_RAYS_VERTEX = /* glsl */ `
+
     varying vec2 vUv;
 
     void main() {
+
         vUv = uv;
-        gl_Position = vec4(position.xy, 0.0, 1.0);
+
+        gl_Position =
+            projectionMatrix *
+            modelViewMatrix *
+            vec4(position, 1.0);
     }
+
 `;
 
-const FRAGMENT = /* glsl */ `
+
+// ============================================================
+// GOD-RAY FRAGMENT SHADER
+// ============================================================
+
+const GOD_RAYS_FRAGMENT = /* glsl */ `
+
     uniform sampler2D tDiffuse;
-    uniform sampler2D tSceneDepth;
-    uniform sampler2D tSunDepth;
+    uniform sampler2D tOcclusion;
+    uniform sampler2D tDepth;
 
     uniform vec2 lightPos;
-    uniform float sunViewDepth;
+
+    uniform float exposure;
+    uniform float decay;
+    uniform float density;
+    uniform float weight;
+
     uniform float sunVisible;
-
-    uniform mat4 cameraInvProjection;
-    uniform mat4 cameraMatrixWorld;
-    uniform mat4 sunMatrix;
-
-    uniform vec3 cameraPositionWorld;
-    uniform vec3 sunDirection;
-    uniform vec3 sunColor;
 
     uniform float cameraNear;
     uniform float cameraFar;
 
-    uniform float maxDistance;
-    uniform float atmosphereDensity;
-    uniform float atmosphereHeight;
-    uniform float atmosphereBase;
-
-    uniform float scattering;
-    uniform float anisotropy;
-    uniform float extinction;
-
-    uniform float shadowBias;
-    uniform vec2 shadowTexelSize;
-
     uniform float time;
 
-    uniform float exposure;
-    uniform float sunDiscStrength;
-    uniform float sunHaloStrength;
+    uniform float edgeFade;
+
+    uniform vec3 rayColor;
 
     varying vec2 vUv;
 
 
-    // ------------------------------------------------------------
-    // Small deterministic hash for dithering.
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------
+    // Small deterministic noise.
+    //
+    // Used only to slightly jitter the ray samples so that
+    // the effect doesn't look like perfectly parallel digital
+    // streaks.
+    // ---------------------------------------------------------
 
     float hash12(vec2 p) {
 
@@ -98,726 +122,573 @@ const FRAGMENT = /* glsl */ `
     }
 
 
-    // ------------------------------------------------------------
-    // Unpack RGBADepthPacking.
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------
+    // Linearize depth.
+    // ---------------------------------------------------------
 
-    float unpackDepth(vec4 rgbaDepth) {
-
-        const vec4 bitShift =
-            vec4(
-                1.0,
-                1.0 / 255.0,
-                1.0 / 65025.0,
-                1.0 / 16581375.0
-            );
-
-        return dot(
-            rgbaDepth,
-            bitShift
-        );
-    }
-
-
-    // ------------------------------------------------------------
-    // Hardware depth -> positive view-space distance.
-    // ------------------------------------------------------------
-
-    float linearizeDepth(float depth) {
+    float linearizeDepth(
+        float depth
+    ) {
 
         float z =
             depth * 2.0 - 1.0;
 
         return
-            (2.0 * cameraNear * cameraFar) /
+            (
+                2.0 *
+                cameraNear *
+                cameraFar
+            )
+            /
             (
                 cameraFar +
                 cameraNear -
                 z *
-                (cameraFar - cameraNear)
+                (
+                    cameraFar -
+                    cameraNear
+                )
             );
     }
 
 
-    // ------------------------------------------------------------
-    // Reconstruct a view-space ray from screen UV.
-    // ------------------------------------------------------------
-
-    vec3 viewRay(vec2 uv) {
-
-        vec4 clip =
-            vec4(
-                uv * 2.0 - 1.0,
-                1.0,
-                1.0
-            );
-
-        vec4 view =
-            cameraInvProjection *
-            clip;
-
-        return normalize(
-            view.xyz /
-            max(view.w, 0.00001)
-        );
-    }
-
-
-    // ------------------------------------------------------------
-    // View -> world.
-    // ------------------------------------------------------------
-
-    vec3 worldFromView(
-        vec3 viewPosition
-    ) {
-
-        return (
-            cameraMatrixWorld *
-            vec4(
-                viewPosition,
-                1.0
-            )
-        ).xyz;
-    }
-
-
-    // ------------------------------------------------------------
-    // Henyey-Greenstein phase approximation.
-    //
-    // Positive g = forward scattering.
-    // Sunlight naturally has stronger forward scattering in mist.
-    // ------------------------------------------------------------
-
-    float hgPhase(
-        float cosTheta,
-        float g
-    ) {
-
-        float gg =
-            g * g;
-
-        float denom =
-            pow(
-                max(
-                    1.0 +
-                    gg -
-                    2.0 *
-                    g *
-                    cosTheta,
-                    0.0001
-                ),
-                1.5
-            );
-
-        return
-            (1.0 - gg) /
-            (
-                4.0 *
-                3.14159265 *
-                denom
-            );
-    }
-
-
-    // ------------------------------------------------------------
-    // Sample the dedicated sun-space shadow/depth map.
-    //
-    // This is a soft 3x3 PCF lookup rather than a single hard sample.
-    // ------------------------------------------------------------
-
-    float shadowVisibility(
-        vec3 worldPos
-    ) {
-
-        vec4 shadowPos =
-            sunMatrix *
-            vec4(
-                worldPos,
-                1.0
-            );
-
-        if (shadowPos.w <= 0.0) {
-            return 1.0;
-        }
-
-        vec3 suv =
-            shadowPos.xyz /
-            shadowPos.w;
-
-        suv =
-            suv * 0.5 +
-            0.5;
-
-        if (
-            suv.x <= 0.001 ||
-            suv.x >= 0.999 ||
-            suv.y <= 0.001 ||
-            suv.y >= 0.999 ||
-            suv.z <= 0.001 ||
-            suv.z >= 0.999
-        ) {
-            return 1.0;
-        }
-
-        float visible = 0.0;
-
-        vec2 texel =
-            shadowTexelSize;
-
-        for (
-            int y = -1;
-            y <= 1;
-            y++
-        ) {
-
-            for (
-                int x = -1;
-                x <= 1;
-                x++
-            ) {
-
-                vec2 offset =
-                    vec2(
-                        float(x),
-                        float(y)
-                    ) *
-                    texel;
-
-                float mapDepth =
-                    unpackDepth(
-                        texture2D(
-                            tSunDepth,
-                            suv.xy + offset
-                        )
-                    );
-
-                visible +=
-                    (
-                        suv.z <=
-                        mapDepth +
-                        shadowBias
-                    )
-                    ? 1.0
-                    : 0.0;
-            }
-        }
-
-        return
-            visible / 9.0;
-    }
-
-
-    // ------------------------------------------------------------
-    // Exponential atmospheric density by height.
-    //
-    // Dense near ground -> gradually thinner upward.
-    // ------------------------------------------------------------
-
-    float altitudeDensity(
-        vec3 worldPos
-    ) {
-
-        float h =
-            max(
-                worldPos.y -
-                atmosphereBase,
-                0.0
-            );
-
-        float normalized =
-            h /
-            max(
-                atmosphereHeight,
-                0.001
-            );
-
-        float vertical =
-            exp(
-                -normalized * 3.2
-            );
-
-        return
-            clamp(
-                vertical,
-                0.05,
-                1.0
-            );
-    }
-
-
-    // ------------------------------------------------------------
-    // Main volumetric shader.
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------
+    // Main.
+    // ---------------------------------------------------------
 
     void main() {
 
-        vec3 sceneColor =
+        vec3 base =
             texture2D(
                 tDiffuse,
                 vUv
             ).rgb;
 
 
-        // --------------------------------------------------------
-        // Determine where the camera ray should terminate.
-        // --------------------------------------------------------
+        // -----------------------------------------------------
+        // Vector from this pixel toward the sun.
+        // -----------------------------------------------------
 
-        float depth =
-            texture2D(
-                tSceneDepth,
-                vUv
-            ).r;
+        vec2 toLight =
+            lightPos -
+            vUv;
 
-        float rayEnd =
-            maxDistance;
 
+        float distanceToLight =
+            length(
+                toLight
+            );
+
+
+        // If the sun isn't relevant, simply output the scene.
         if (
-            depth <
-            0.999999
+            sunVisible <= 0.0001 ||
+            distanceToLight <= 0.0001
         ) {
 
-            rayEnd =
-                min(
-                    rayEnd,
-                    linearizeDepth(
-                        depth
-                    )
+            gl_FragColor =
+                vec4(
+                    base,
+                    1.0
                 );
+
+            return;
         }
 
 
-        // --------------------------------------------------------
-        // Build the camera ray.
-        // --------------------------------------------------------
-
-        vec3 rayDirView =
-            viewRay(
-                vUv
-            );
-
-        float marchLength =
-            max(
-                rayEnd -
-                cameraNear,
-                0.01
-            );
-
-        float stepLength =
-            marchLength /
-            float(
-                MAX_VOLUME_SAMPLES
+        vec2 direction =
+            normalize(
+                toLight
             );
 
 
-        // --------------------------------------------------------
-        // Temporal/spatial jitter.
+        // -----------------------------------------------------
+        // Only travel through a controlled fraction of the
+        // screen-space path.
         //
-        // Without this, low sample-count volume marching produces
-        // obvious horizontal/vertical banding.
-        // --------------------------------------------------------
+        // This is important:
+        //
+        // Old version:
+        //   almost entire screen
+        //
+        // New version:
+        //   concentrated shafts
+        // -----------------------------------------------------
 
-        float jitter =
+        float travel =
+            distanceToLight *
+            density;
+
+
+        vec2 delta =
+            direction *
+            (
+                travel /
+                64.0
+            );
+
+
+        // -----------------------------------------------------
+        // Dither the starting position.
+        // -----------------------------------------------------
+
+        float noise =
             hash12(
                 gl_FragCoord.xy +
-                time * 17.0
+                time * 11.73
             );
 
-        float firstOffset =
-            (jitter - 0.5) *
-            stepLength;
+
+        vec2 sampleUv =
+            vUv +
+            delta *
+            (
+                noise -
+                0.5
+            );
 
 
-        // --------------------------------------------------------
-        // Accumulator + extinction.
-        // --------------------------------------------------------
+        // -----------------------------------------------------
+        // Accumulation.
+        // -----------------------------------------------------
 
-        vec3 accumulated =
-            vec3(0.0);
-
-        float transmittance =
+        float illuminationDecay =
             1.0;
 
 
-        // --------------------------------------------------------
-        // Calculate view direction in world space.
-        // --------------------------------------------------------
-
-        vec3 viewDirWorld =
-            normalize(
-                worldFromView(
-                    rayDirView *
-                    max(
-                        rayEnd,
-                        cameraNear
-                    )
-                ) -
-                cameraPositionWorld
-            );
+        float accumulated =
+            0.0;
 
 
-        // --------------------------------------------------------
-        // Atmospheric phase term.
-        // --------------------------------------------------------
-
-        float phase =
-            hgPhase(
-                dot(
-                    viewDirWorld,
-                    -sunDirection
-                ),
-                anisotropy
-            );
+        float silhouetteAccum =
+            0.0;
 
 
-        // Art-direct the physical phase function into a useful
-        // game range.
-        phase *=
-            (
-                0.35 +
-                3.5 *
-                scattering
-            );
+        float previousOcclusion =
+            texture2D(
+                tOcclusion,
+                clamp(
+                    sampleUv,
+                    vec2(0.001),
+                    vec2(0.999)
+                )
+            ).r;
 
 
-        // --------------------------------------------------------
-        // Ray march.
-        // --------------------------------------------------------
+        // -----------------------------------------------------
+        // Radial samples.
+        // -----------------------------------------------------
 
         for (
             int i = 0;
-            i < MAX_VOLUME_SAMPLES;
+            i < 64;
             i++
         ) {
 
-            float fi =
-                float(i);
-
-            float sampleDistance =
-                cameraNear +
-                max(
-                    firstOffset,
-                    0.0
-                ) +
-                fi *
-                stepLength;
-
-            if (
-                sampleDistance >=
-                rayEnd
-            ) {
-                break;
-            }
+            sampleUv +=
+                delta;
 
 
-            // ----------------------------------------------
-            // Position.
-            // ----------------------------------------------
-
-            vec3 viewPos =
-                rayDirView *
-                sampleDistance;
-
-            vec3 worldPos =
-                worldFromView(
-                    viewPos
+            vec2 suv =
+                clamp(
+                    sampleUv,
+                    vec2(0.001),
+                    vec2(0.999)
                 );
 
 
-            // ----------------------------------------------
-            // Atmospheric density.
-            // ----------------------------------------------
+            float occlusion =
+                texture2D(
+                    tOcclusion,
+                    suv
+                ).r;
 
-            float density =
-                atmosphereDensity *
-                altitudeDensity(
-                    worldPos
+
+            // ---------------------------------------------
+            // Sample position along the ray.
+            // ---------------------------------------------
+
+            float t =
+                float(i) /
+                63.0;
+
+
+            // Stronger close to the pixel and softer
+            // toward the light source.
+            float longitudinalFade =
+                pow(
+                    1.0 - t,
+                    0.85
                 );
 
 
-            // ----------------------------------------------
-            // Suppress the first few meters.
-            //
-            // This prevents a giant flat white veil immediately
-            // in front of the camera.
-            // ----------------------------------------------
-
-            float cameraFade =
-                smoothstep(
-                    1.5,
-                    8.0,
-                    sampleDistance
-                );
-
-
-            // ----------------------------------------------
-            // Directionality.
-            // ----------------------------------------------
-
-            vec3 toSun =
-                normalize(
-                    -sunDirection
-                );
-
-            float sunAngle =
-                max(
-                    dot(
-                        normalize(
-                            -rayDirView
-                        ),
-                        toSun
-                    ),
-                    0.0
-                );
-
-            float directional =
-                0.65 +
-                0.35 *
-                sunAngle;
-
-
-            // ----------------------------------------------
-            // Actual sunlight visibility.
-            //
-            // This is what makes tree masses and buildings
-            // carve out the volumetric light.
-            // ----------------------------------------------
-
-            float visibility =
-                shadowVisibility(
-                    worldPos
-                );
-
-
-            // ----------------------------------------------
-            // Beer-Lambert style extinction.
-            // ----------------------------------------------
-
-            float extinctionStep =
-                density *
-                extinction *
-                stepLength *
-                0.0025;
-
-            transmittance *=
-                exp(
-                    -extinctionStep
-                );
-
-
-            // ----------------------------------------------
-            // Scattering contribution.
-            // ----------------------------------------------
-
-            float scatterStep =
-                density *
-                stepLength *
-                phase *
-                directional *
-                cameraFade *
-                visibility;
-
+            // ---------------------------------------------
+            // Actual occlusion contribution.
+            // ---------------------------------------------
 
             accumulated +=
-                sunColor *
-                scatterStep *
-                transmittance;
+                occlusion *
+                illuminationDecay *
+                longitudinalFade;
+
+
+            // ---------------------------------------------
+            // Silhouette contribution.
+            //
+            // Tree edges become slightly brighter, helping
+            // the rays look like light passing through gaps
+            // between foliage instead of a uniform blur.
+            // ---------------------------------------------
+
+            float silhouette =
+                abs(
+                    occlusion -
+                    previousOcclusion
+                );
+
+
+            silhouetteAccum +=
+                silhouette *
+                illuminationDecay *
+                (
+                    1.0 -
+                    t
+                );
+
+
+            previousOcclusion =
+                occlusion;
+
+
+            // ---------------------------------------------
+            // Radial decay.
+            // ---------------------------------------------
+
+            illuminationDecay *=
+                decay;
         }
 
 
-        // --------------------------------------------------------
-        // Sun disc + subtle halo.
+        accumulated /=
+            64.0;
+
+
+        silhouetteAccum /=
+            64.0;
+
+
+        // -----------------------------------------------------
+        // Camera depth.
         //
-        // The sun itself is small and intense. The atmosphere around
-        // it is much softer.
-        // --------------------------------------------------------
+        // Prevents the effect from becoming a huge opaque fog
+        // sheet directly in front of the camera.
+        // -----------------------------------------------------
 
-        float sunDistance =
-            distance(
-                vUv,
-                lightPos
-            );
-
-
-        // Determine whether geometry occupies the sun's screen pixel.
-        float sunDepthSample =
+        float sceneDepth =
             texture2D(
-                tSceneDepth,
-                lightPos
+                tDepth,
+                vUv
             ).r;
 
-        float sunSurfaceDepth =
-            (
-                sunDepthSample <
-                0.999999
-            )
-            ?
+
+        float linearDepth =
             linearizeDepth(
-                sunDepthSample
+                sceneDepth
+            );
+
+
+        float atmosphericDepthFade =
+            smoothstep(
+                2.0,
+                40.0,
+                linearDepth
+            );
+
+
+        // -----------------------------------------------------
+        // More natural shaft structure.
+        // -----------------------------------------------------
+
+        float shaftEnergy =
+            accumulated *
+            0.76;
+
+
+        float gapEnergy =
+            silhouetteAccum *
+            0.85;
+
+
+        float totalEnergy =
+            shaftEnergy +
+            gapEnergy;
+
+
+        // -----------------------------------------------------
+        // Very soft haze around the shaft.
+        //
+        // Keeps the scene atmospheric without filling the
+        // entire sky with white light.
+        // -----------------------------------------------------
+
+        float haze =
+            exp(
+                -distanceToLight *
+                distanceToLight *
+                9.0
             )
-            :
-            1000000.0;
+            *
+            0.14;
 
 
-        float sunBlocked =
+        totalEnergy +=
+            haze;
+
+
+        // -----------------------------------------------------
+        // Depth weighting.
+        // -----------------------------------------------------
+
+        totalEnergy *=
+            mix(
+                0.30,
+                1.0,
+                atmosphericDepthFade
+            );
+
+
+        // -----------------------------------------------------
+        // Screen-edge fade.
+        //
+        // Stops the sun near the edge of the screen from
+        // creating a huge triangular smear.
+        // -----------------------------------------------------
+
+        float edge =
+            max(
+                abs(
+                    lightPos.x -
+                    0.5
+                ) * 2.0,
+
+                abs(
+                    lightPos.y -
+                    0.5
+                ) * 2.0
+            );
+
+
+        float localEdgeFade =
             1.0 -
             smoothstep(
-                0.0,
-                6.0,
-                sunViewDepth -
-                sunSurfaceDepth
+                0.72,
+                1.08,
+                edge
             );
 
 
-        // Tiny high-energy sun disc.
-        float sunDisk =
+        totalEnergy *=
+            localEdgeFade *
+            edgeFade;
+
+
+        // -----------------------------------------------------
+        // Reduce brightness outside the main sun direction.
+        // This gives the shafts a more focused look.
+        // -----------------------------------------------------
+
+        float angularFade =
             smoothstep(
-                0.010,
-                0.0,
-                sunDistance
-            ) *
-            sunDiscStrength *
-            sunVisible *
-            (
-                1.0 -
-                sunBlocked
+                1.0,
+                0.05,
+                distanceToLight
             );
 
 
-        // Soft atmospheric glow.
-        float sunHalo =
+        totalEnergy *=
+            mix(
+                0.55,
+                1.0,
+                angularFade
+            );
+
+
+        // -----------------------------------------------------
+        // Final intensity.
+        // -----------------------------------------------------
+
+        float energy =
+            totalEnergy *
+            exposure *
+            weight *
+            sunVisible;
+
+
+        // -----------------------------------------------------
+        // Warm-neutral sunlight.
+        //
+        // Keep the effect warm even if the sky itself is blue.
+        // -----------------------------------------------------
+
+        vec3 scatteringColor =
+            rayColor;
+
+
+        vec3 rayLight =
+            scatteringColor *
+            energy;
+
+
+        // -----------------------------------------------------
+        // Very subtle highlight around the solar position.
+        //
+        // Not a giant disc.
+        // -----------------------------------------------------
+
+        float sunGlow =
             exp(
-                -sunDistance *
-                sunDistance *
-                80.0
-            ) *
-            sunHaloStrength *
-            sunVisible *
-            (
-                1.0 -
-                0.65 *
-                sunBlocked
+                -distanceToLight *
+                distanceToLight *
+                70.0
             );
 
 
-        accumulated +=
-            sunColor *
-            (
-                sunDisk +
-                sunHalo
-            );
+        rayLight +=
+            rayColor *
+            sunGlow *
+            0.035 *
+            sunVisible;
 
 
-        // --------------------------------------------------------
-        // Final exposure.
-        // --------------------------------------------------------
-
-        accumulated *=
-            exposure;
-
+        // -----------------------------------------------------
+        // Output.
+        // -----------------------------------------------------
 
         gl_FragColor =
             vec4(
-                sceneColor +
-                accumulated,
+                base +
+                rayLight,
+
                 1.0
             );
     }
+
 `;
 
 
 // ============================================================
-// MATERIAL HELPERS
+// MATERIAL CREATION
+// ============================================================
+//
+// The biggest improvement over your original pass:
+//
+// DO NOT use:
+//
+//     scene.overrideMaterial = blackMaterial;
+//
+//
+//
+// That destroys foliage alpha.
+//
+// Instead, temporarily replace each material while preserving:
+//   • map
+//   • alphaMap
+//   • alphaTest
+//   • side
+//
+// This means leaf cards can actually create holes in the
+// occlusion buffer.
 // ============================================================
 
-function copyAlphaState(
-    source,
-    target
+function createOcclusionMaterial(
+    source
 ) {
 
     if (
         !source ||
-        !target
+        !source.isMaterial
     ) {
-        return;
-    }
 
-    if (source.map) {
-        target.map =
-            source.map;
-    }
-
-    if (source.alphaMap) {
-        target.alphaMap =
-            source.alphaMap;
-    }
-
-    target.alphaTest =
-        Math.max(
-            Number.isFinite(
-                source.alphaTest
-            )
-                ? source.alphaTest
-                : 0,
-
-            source.alphaMap ||
-            source.map
-                ? 0.1
-                : 0
-        );
-
-
-    if ('side' in source) {
-        target.side =
-            source.side;
+        return null;
     }
 
 
-    if ('skinning' in source) {
-        target.skinning =
-            source.skinning;
+    const hasMap =
+        !!source.map;
+
+
+    const hasAlphaMap =
+        !!source.alphaMap;
+
+
+    const sourceAlphaTest =
+        Number.isFinite(
+            source.alphaTest
+        )
+            ? source.alphaTest
+            : 0;
+
+
+    const usesAlpha =
+        hasMap ||
+        hasAlphaMap ||
+        sourceAlphaTest > 0;
+
+
+    // Completely transparent materials such as certain
+    // water/glass materials should not become solid blockers.
+    if (
+        source.transparent &&
+        !usesAlpha
+    ) {
+
+        return null;
     }
 
-
-    if ('morphTargets' in source) {
-        target.morphTargets =
-            source.morphTargets;
-    }
-
-
-    if ('morphNormals' in source) {
-        target.morphNormals =
-            source.morphNormals;
-    }
-
-
-    target.needsUpdate =
-        true;
-}
-
-
-function makePackedDepthMaterial(
-    source
-) {
 
     const material =
-        new THREE.MeshDepthMaterial({
+        new THREE.MeshBasicMaterial({
 
-            depthPacking:
-                THREE.RGBADepthPacking,
+            color:
+                0x000000,
+
+            map:
+                hasMap
+                    ? source.map
+                    : null,
+
+            alphaMap:
+                hasAlphaMap
+                    ? source.alphaMap
+                    : null,
+
+            transparent:
+                usesAlpha,
+
+            alphaTest:
+                usesAlpha
+                    ? Math.max(
+                        0.10,
+                        sourceAlphaTest
+                    )
+                    : 0,
 
             side:
                 source.side ??
                 THREE.FrontSide,
 
-            alphaTest:
-                0
+            depthTest:
+                true,
+
+            depthWrite:
+                true,
+
+            fog:
+                false,
+
+            toneMapped:
+                false
         });
-
-
-    copyAlphaState(
-        source,
-        material
-    );
 
 
     return material;
@@ -838,35 +709,14 @@ export class GodRaysPass
         {
             occlusionScale = 0.5,
 
-            shadowMapSize = 1024,
+            // Initial values intentionally restrained.
+            exposure = 0.30,
+            decay = 0.94,
+            density = 0.72,
+            weight = 0.42,
 
-            shadowWorldSize = 160,
-
-            maxDistance = 120,
-
-            atmosphereDensity = 0.09,
-
-            atmosphereHeight = 60,
-
-            atmosphereBase = 0,
-
-            scattering = 0.42,
-
-            anisotropy = 0.72,
-
-            extinction = 0.7,
-
-            shadowBias = 0.0012,
-
-            exposure = 0.75,
-
-            sunDiscStrength = 7.0,
-
-            sunHaloStrength = 1.3,
-
-            sunColor = 0xfff2d5,
-
-            autoCreateShadowCamera = true
+            // Warm sunlight.
+            rayColor = 0xffe8c4
 
         } = {}
     ) {
@@ -877,8 +727,10 @@ export class GodRaysPass
         this.renderer =
             renderer;
 
+
         this.scene =
             scene;
+
 
         this.camera =
             camera;
@@ -887,39 +739,53 @@ export class GodRaysPass
         this.occlusionScale =
             occlusionScale;
 
-        this.shadowMapSize =
-            shadowMapSize;
 
-        this.shadowWorldSize =
-            shadowWorldSize;
+        // ----------------------------------------------------
+        // Public API from original version.
+        // ----------------------------------------------------
 
-
-        // Public compatibility.
         this.sunWorldPosition =
             new THREE.Vector3();
+
 
         this.intensity =
             0;
 
 
-        this._frame =
+        // ----------------------------------------------------
+        // Internal state.
+        // ----------------------------------------------------
+
+        this.time =
             0;
 
-        this._time =
-            0;
 
-        this._autoCreateShadowCamera =
-            autoCreateShadowCamera;
+        this._ndc =
+            new THREE.Vector3();
 
 
-        this.sunColor =
-            new THREE.Color(
-                sunColor
-            );
+        this._camForward =
+            new THREE.Vector3();
+
+
+        this._toSun =
+            new THREE.Vector3();
+
+
+        this._tmpColor =
+            new THREE.Color();
+
+
+        this._materialRestore =
+            [];
+
+
+        this._materialCache =
+            new WeakMap();
 
 
         // ----------------------------------------------------
-        // Resolution.
+        // Occlusion target.
         // ----------------------------------------------------
 
         const size =
@@ -928,34 +794,68 @@ export class GodRaysPass
             );
 
 
-        const w =
-            Math.max(
-                1,
-                Math.floor(
-                    size.x *
-                    occlusionScale
-                )
-            );
+        this.occlusionTarget =
+            new THREE.WebGLRenderTarget(
 
+                Math.max(
+                    1,
+                    Math.floor(
+                        size.x *
+                        occlusionScale
+                    )
+                ),
 
-        const h =
-            Math.max(
-                1,
-                Math.floor(
-                    size.y *
-                    occlusionScale
-                )
+                Math.max(
+                    1,
+                    Math.floor(
+                        size.y *
+                        occlusionScale
+                    )
+                ),
+
+                {
+
+                    minFilter:
+                        THREE.LinearFilter,
+
+                    magFilter:
+                        THREE.LinearFilter,
+
+                    depthBuffer:
+                        true,
+
+                    stencilBuffer:
+                        false,
+
+                    format:
+                        THREE.RGBAFormat
+                }
             );
 
 
         // ----------------------------------------------------
-        // Camera depth target.
+        // Separate camera depth target.
         // ----------------------------------------------------
 
         this.depthTarget =
             new THREE.WebGLRenderTarget(
-                w,
-                h,
+
+                Math.max(
+                    1,
+                    Math.floor(
+                        size.x *
+                        occlusionScale
+                    )
+                ),
+
+                Math.max(
+                    1,
+                    Math.floor(
+                        size.y *
+                        occlusionScale
+                    )
+                ),
+
                 {
 
                     minFilter:
@@ -963,9 +863,6 @@ export class GodRaysPass
 
                     magFilter:
                         THREE.NearestFilter,
-
-                    format:
-                        THREE.RGBAFormat,
 
                     depthBuffer:
                         true,
@@ -977,117 +874,78 @@ export class GodRaysPass
 
 
         this.depthTarget.depthTexture =
-            new THREE.DepthTexture(
-                w,
-                h
-            );
-
-
-        this.depthTarget.depthTexture.type =
-            THREE.UnsignedIntType;
+            new THREE.DepthTexture();
 
 
         this.depthTarget.depthTexture.format =
             THREE.DepthFormat;
 
 
+        this.depthTarget.depthTexture.type =
+            THREE.UnsignedIntType;
+
+
         // ----------------------------------------------------
-        // Sun-space packed depth.
+        // Tiny sun proxy.
+        //
+        // IMPORTANT:
+        // This is deliberately tiny.
+        //
+        // The original version used:
+        //
+        //   CircleGeometry(38)
+        //
+        // which created an enormous source in the occlusion
+        // buffer.
         // ----------------------------------------------------
 
-        this.sunDepthTarget =
-            new THREE.WebGLRenderTarget(
+        this.sunProxyMaterial =
+            new THREE.SpriteMaterial({
 
-                shadowMapSize,
-                shadowMapSize,
+                color:
+                    0xffffff,
 
-                {
+                transparent:
+                    false,
 
-                    minFilter:
-                        THREE.LinearFilter,
+                depthTest:
+                    true,
 
-                    magFilter:
-                        THREE.LinearFilter,
+                depthWrite:
+                    false,
 
-                    format:
-                        THREE.RGBAFormat,
+                sizeAttenuation:
+                    false,
 
-                    depthBuffer:
-                        true,
+                fog:
+                    false,
 
-                    stencilBuffer:
-                        false
-                }
+                toneMapped:
+                    false
+            });
+
+
+        this.sunProxy =
+            new THREE.Sprite(
+                this.sunProxyMaterial
             );
 
 
-        this.depthMaterialCache =
-            new WeakMap();
+        // 6 pixels on the occlusion target.
+        this.sunProxy.scale.set(
+            6,
+            6,
+            1
+        );
 
-
-        this.depthRestore =
-            [];
-
-
-        // ----------------------------------------------------
-        // Dedicated orthographic sun camera.
-        // ----------------------------------------------------
-
-        this.sunShadowCamera =
-            new THREE.OrthographicCamera(
-
-                -shadowWorldSize * 0.5,
-
-                shadowWorldSize * 0.5,
-
-                shadowWorldSize * 0.5,
-
-                -shadowWorldSize * 0.5,
-
-                0.5,
-
-                maxDistance * 2.5
-            );
-
-
-        this.sunMatrix =
-            new THREE.Matrix4();
-
-
-        this.sunViewDepth =
-            100000;
-
-
-        this._sunDir =
-            new THREE.Vector3(
-                0,
-                1,
-                0
-            );
-
-
-        this._sunTarget =
-            new THREE.Vector3();
-
-
-        this._tmp =
-            new THREE.Vector3();
-
-
-        this._tmp2 =
-            new THREE.Vector3();
-
-
-        this._tmpColor =
-            new THREE.Color();
-
-
-        // ----------------------------------------------------
-        // Empty scene retained for extension compatibility.
-        // ----------------------------------------------------
 
         this.sunProxyScene =
             new THREE.Scene();
+
+
+        this.sunProxyScene.add(
+            this.sunProxy
+        );
 
 
         // ----------------------------------------------------
@@ -1102,15 +960,15 @@ export class GodRaysPass
             },
 
 
-            tSceneDepth: {
+            tOcclusion: {
                 value:
-                    this.depthTarget.depthTexture
+                    this.occlusionTarget.texture
             },
 
 
-            tSunDepth: {
+            tDepth: {
                 value:
-                    this.sunDepthTarget.texture
+                    this.depthTarget.depthTexture
             },
 
 
@@ -1123,59 +981,33 @@ export class GodRaysPass
             },
 
 
-            sunViewDepth: {
+            exposure: {
                 value:
-                    this.sunViewDepth
+                    exposure
+            },
+
+
+            decay: {
+                value:
+                    decay
+            },
+
+
+            density: {
+                value:
+                    density
+            },
+
+
+            weight: {
+                value:
+                    weight
             },
 
 
             sunVisible: {
                 value:
                     0
-            },
-
-
-            cameraInvProjection: {
-                value:
-                    camera
-                        .projectionMatrixInverse
-                        .clone()
-            },
-
-
-            cameraMatrixWorld: {
-                value:
-                    camera
-                        .matrixWorld
-                        .clone()
-            },
-
-
-            sunMatrix: {
-                value:
-                    this.sunMatrix
-            },
-
-
-            cameraPositionWorld: {
-                value:
-                    camera
-                        .position
-                        .clone()
-            },
-
-
-            sunDirection: {
-                value:
-                    this._sunDir
-                        .clone()
-            },
-
-
-            sunColor: {
-                value:
-                    this.sunColor
-                        .clone()
             },
 
 
@@ -1191,93 +1023,29 @@ export class GodRaysPass
             },
 
 
-            maxDistance: {
-                value:
-                    maxDistance
-            },
-
-
-            atmosphereDensity: {
-                value:
-                    atmosphereDensity
-            },
-
-
-            atmosphereHeight: {
-                value:
-                    atmosphereHeight
-            },
-
-
-            atmosphereBase: {
-                value:
-                    atmosphereBase
-            },
-
-
-            scattering: {
-                value:
-                    scattering
-            },
-
-
-            anisotropy: {
-                value:
-                    anisotropy
-            },
-
-
-            extinction: {
-                value:
-                    extinction
-            },
-
-
-            shadowBias: {
-                value:
-                    shadowBias
-            },
-
-
-            shadowTexelSize: {
-                value:
-                    new THREE.Vector2(
-                        1 /
-                        shadowMapSize,
-
-                        1 /
-                        shadowMapSize
-                    )
-            },
-
-
             time: {
                 value:
                     0
             },
 
 
-            exposure: {
+            edgeFade: {
                 value:
-                    exposure
+                    1
             },
 
 
-            sunDiscStrength: {
+            rayColor: {
                 value:
-                    sunDiscStrength
-            },
-
-
-            sunHaloStrength: {
-                value:
-                    sunHaloStrength
+                    new THREE.Color(
+                        rayColor
+                    )
             }
         };
 
 
         // ----------------------------------------------------
-        // Fullscreen shader material.
+        // Shader material.
         // ----------------------------------------------------
 
         this.material =
@@ -1287,10 +1055,10 @@ export class GodRaysPass
                     this.uniforms,
 
                 vertexShader:
-                    VERTEX,
+                    GOD_RAYS_VERTEX,
 
                 fragmentShader:
-                    FRAGMENT,
+                    GOD_RAYS_FRAGMENT,
 
                 depthTest:
                     false,
@@ -1311,106 +1079,545 @@ export class GodRaysPass
 
 
     // ========================================================
-    // Runtime atmosphere control.
+    // Cache occlusion materials.
     // ========================================================
 
-    setAtmosphere(
-        options = {}
+    _getOcclusionMaterial(
+        source
     ) {
 
-        const map = [
-
-            [
-                'atmosphereDensity',
-                'atmosphereDensity'
-            ],
-
-            [
-                'atmosphereHeight',
-                'atmosphereHeight'
-            ],
-
-            [
-                'atmosphereBase',
-                'atmosphereBase'
-            ],
-
-            [
-                'scattering',
-                'scattering'
-            ],
-
-            [
-                'anisotropy',
-                'anisotropy'
-            ],
-
-            [
-                'extinction',
-                'extinction'
-            ],
-
-            [
-                'maxDistance',
-                'maxDistance'
-            ],
-
-            [
-                'exposure',
-                'exposure'
-            ],
-
-            [
-                'sunDiscStrength',
-                'sunDiscStrength'
-            ],
-
-            [
-                'sunHaloStrength',
-                'sunHaloStrength'
-            ]
-        ];
-
-
-        for (
-            const [
-                key,
-                uniform
-            ]
-            of map
+        if (
+            this._materialCache.has(
+                source
+            )
         ) {
 
-            if (
-                Number.isFinite(
-                    options[key]
-                )
-            ) {
-
-                this.uniforms[
-                    uniform
-                ].value =
-                    options[key];
-            }
+            return this._materialCache.get(
+                source
+            );
         }
 
 
-        if (
-            options.sunColor !==
-            undefined
-        ) {
-
-            this.sunColor.set(
-                options.sunColor
+        const replacement =
+            createOcclusionMaterial(
+                source
             );
 
 
-            this.uniforms
-                .sunColor
-                .value
-                .copy(
-                    this.sunColor
-                );
+        this._materialCache.set(
+            source,
+            replacement
+        );
+
+
+        return replacement;
+    }
+
+
+    // ========================================================
+    // Replace scene materials.
+    // ========================================================
+
+    _beginOcclusionPass() {
+
+        this._materialRestore.length =
+            0;
+
+
+        this.scene.traverse(
+            (object) => {
+
+                if (
+                    !object.isMesh ||
+                    !object.material
+                ) {
+
+                    return;
+                }
+
+
+                const original =
+                    object.material;
+
+
+                this._materialRestore.push({
+
+                    object:
+                        object,
+
+                    material:
+                        original,
+
+                    visible:
+                        object.visible
+                });
+
+
+                if (
+                    Array.isArray(
+                        original
+                    )
+                ) {
+
+                    object.material =
+                        original.map(
+                            (material) => {
+
+                                if (
+                                    !material
+                                ) {
+
+                                    return null;
+                                }
+
+
+                                return this
+                                    ._getOcclusionMaterial(
+                                        material
+                                    );
+                            }
+                        );
+
+
+                } else {
+
+                    const replacement =
+                        this
+                            ._getOcclusionMaterial(
+                                original
+                            );
+
+
+                    if (
+                        replacement
+                        === null
+                    ) {
+
+                        object.visible =
+                            false;
+
+                    } else {
+
+                        object.material =
+                            replacement;
+                    }
+                }
+            }
+        );
+    }
+
+
+    // ========================================================
+    // Restore materials.
+    // ========================================================
+
+    _endOcclusionPass() {
+
+        for (
+            let i =
+                this._materialRestore.length - 1;
+
+            i >= 0;
+
+            i--
+        ) {
+
+            const entry =
+                this._materialRestore[i];
+
+
+            entry.object.material =
+                entry.material;
+
+
+            entry.object.visible =
+                entry.visible;
         }
+
+
+        this._materialRestore.length =
+            0;
+    }
+
+
+    // ========================================================
+    // Render scene into black occlusion buffer.
+    // ========================================================
+
+    _renderOcclusion(
+        renderer
+    ) {
+
+        const previousTarget =
+            renderer.getRenderTarget();
+
+
+        const previousAutoClear =
+            renderer.autoClear;
+
+
+        const previousClearColor =
+            renderer
+                .getClearColor(
+                    this._tmpColor
+                )
+                .clone();
+
+
+        const previousClearAlpha =
+            renderer.getClearAlpha();
+
+
+        try {
+
+            renderer.setRenderTarget(
+                this.occlusionTarget
+            );
+
+
+            renderer.setClearColor(
+                0x000000,
+                1
+            );
+
+
+            renderer.autoClear =
+                true;
+
+
+            this._beginOcclusionPass();
+
+
+            renderer.render(
+                this.scene,
+                this.camera
+            );
+
+
+            this._endOcclusionPass();
+
+
+            // ----------------------------------------------
+            // Draw the tiny sun on top of the occluders.
+            //
+            // Depth testing means trees / terrain that are
+            // physically between camera and sun can hide it.
+            // ----------------------------------------------
+
+            renderer.autoClear =
+                false;
+
+
+            renderer.render(
+                this.sunProxyScene,
+                this.camera
+            );
+
+
+        } finally {
+
+            this._endOcclusionPass();
+
+
+            renderer.autoClear =
+                previousAutoClear;
+
+
+            renderer.setRenderTarget(
+                previousTarget
+            );
+
+
+            renderer.setClearColor(
+                previousClearColor,
+                previousClearAlpha
+            );
+        }
+    }
+
+
+    // ========================================================
+    // Render camera depth.
+    //
+    // We use the scene's normal materials here. Three.js writes
+    // the actual camera depth into the DepthTexture.
+    // ========================================================
+
+    _renderDepth(
+        renderer
+    ) {
+
+        const previousTarget =
+            renderer.getRenderTarget();
+
+
+        const previousAutoClear =
+            renderer.autoClear;
+
+
+        const previousClearColor =
+            renderer
+                .getClearColor(
+                    this._tmpColor
+                )
+                .clone();
+
+
+        const previousClearAlpha =
+            renderer.getClearAlpha();
+
+
+        try {
+
+            renderer.setRenderTarget(
+                this.depthTarget
+            );
+
+
+            renderer.setClearColor(
+                0xffffff,
+                1
+            );
+
+
+            renderer.autoClear =
+                true;
+
+
+            this._beginOcclusionPass();
+
+
+            renderer.render(
+                this.scene,
+                this.camera
+            );
+
+
+            this._endOcclusionPass();
+
+
+        } finally {
+
+            this._endOcclusionPass();
+
+
+            renderer.autoClear =
+                previousAutoClear;
+
+
+            renderer.setRenderTarget(
+                previousTarget
+            );
+
+
+            renderer.setClearColor(
+                previousClearColor,
+                previousClearAlpha
+            );
+        }
+    }
+
+
+    // ========================================================
+    // Main render.
+    // ========================================================
+
+    render(
+        renderer,
+        writeBuffer,
+        readBuffer,
+        deltaTime
+    ) {
+
+        this.time +=
+            Number.isFinite(
+                deltaTime
+            )
+                ? deltaTime
+                : 0.016;
+
+
+        this.uniforms.time.value =
+            this.time;
+
+
+        // ----------------------------------------------------
+        // Sun facing direction.
+        // ----------------------------------------------------
+
+        this._camForward.set(
+            0,
+            0,
+            -1
+        );
+
+
+        this._camForward.applyQuaternion(
+            this.camera.quaternion
+        );
+
+
+        this._toSun
+            .copy(
+                this.sunWorldPosition
+            )
+            .sub(
+                this.camera.position
+            );
+
+
+        const sunDistance =
+            this._toSun.length();
+
+
+        if (
+            sunDistance <
+            0.0001
+        ) {
+
+            this.uniforms.sunVisible.value =
+                0;
+
+        } else {
+
+            this._toSun.normalize();
+
+
+            const facing =
+                this._camForward.dot(
+                    this._toSun
+                );
+
+
+            // Smooth fade when sun approaches the back of
+            // the camera.
+            const facingFade =
+                THREE.MathUtils.smoothstep(
+                    facing,
+                    -0.10,
+                    0.20
+                );
+
+
+            this.uniforms.sunVisible.value =
+                THREE.MathUtils.clamp(
+                    this.intensity,
+                    0,
+                    1
+                ) *
+                facingFade;
+        }
+
+
+        // ----------------------------------------------------
+        // Sun screen position.
+        // ----------------------------------------------------
+
+        this._ndc.copy(
+            this.sunWorldPosition
+        );
+
+
+        this._ndc.project(
+            this.camera
+        );
+
+
+        const screenX =
+            (
+                this._ndc.x +
+                1
+            ) *
+            0.5;
+
+
+        const screenY =
+            (
+                this._ndc.y +
+                1
+            ) *
+            0.5;
+
+
+        this.uniforms
+            .lightPos
+            .value
+            .set(
+                screenX,
+                screenY
+            );
+
+
+        // ----------------------------------------------------
+        // Avoid expensive passes when the sun is irrelevant.
+        // ----------------------------------------------------
+
+        const sunUseful =
+            this.uniforms
+                .sunVisible
+                .value > 0.001;
+
+
+        if (
+            sunUseful
+        ) {
+
+            this._renderOcclusion(
+                renderer
+            );
+
+
+            this._renderDepth(
+                renderer
+            );
+        }
+
+
+        // ----------------------------------------------------
+        // Update camera uniforms.
+        // ----------------------------------------------------
+
+        this.uniforms
+            .cameraNear
+            .value =
+                this.camera.near;
+
+
+        this.uniforms
+            .cameraFar
+            .value =
+                this.camera.far;
+
+
+        this.uniforms
+            .tDiffuse
+            .value =
+                readBuffer.texture;
+
+
+        // ----------------------------------------------------
+        // Render fullscreen shader.
+        // ----------------------------------------------------
+
+        if (
+            this.renderToScreen
+        ) {
+
+            renderer.setRenderTarget(
+                null
+            );
+
+        } else {
+
+            renderer.setRenderTarget(
+                writeBuffer
+            );
+        }
+
+
+        this.fsQuad.render(
+            renderer
+        );
     }
 
 
@@ -1443,691 +1650,16 @@ export class GodRaysPass
             );
 
 
-        this.depthTarget.setSize(
+        this.occlusionTarget.setSize(
             w,
             h
         );
 
 
-        this.depthTarget
-            .depthTexture
-            .image.width =
-                w;
-
-
-        this.depthTarget
-            .depthTexture
-            .image.height =
-                h;
-    }
-
-
-    // ========================================================
-    // Material cache.
-    // ========================================================
-
-    _getDepthMaterial(
-        source
-    ) {
-
-        let material =
-            this.depthMaterialCache.get(
-                source
-            );
-
-
-        if (!material) {
-
-            material =
-                makePackedDepthMaterial(
-                    source
-                );
-
-
-            this.depthMaterialCache.set(
-                source,
-                material
-            );
-        }
-
-
-        return material;
-    }
-
-
-    // ========================================================
-    // Temporarily replace scene materials with depth materials.
-    // ========================================================
-
-    _swapToDepthMaterials() {
-
-        this.depthRestore.length =
-            0;
-
-
-        this.scene.traverse(
-            (object) => {
-
-                if (
-                    !object.isMesh ||
-                    !object.material
-                ) {
-                    return;
-                }
-
-
-                const original =
-                    object.material;
-
-
-                this.depthRestore.push(
-                    [
-                        object,
-                        original,
-                        object.visible
-                    ]
-                );
-
-
-                if (
-                    Array.isArray(
-                        original
-                    )
-                ) {
-
-                    object.material =
-                        original.map(
-                            (m) => {
-
-                                if (!m) {
-                                    return null;
-                                }
-
-
-                                if (
-                                    m.transparent &&
-                                    !m.alphaMap &&
-                                    !m.map &&
-                                    m.alphaTest <= 0
-                                ) {
-
-                                    return null;
-                                }
-
-
-                                return this
-                                    ._getDepthMaterial(
-                                        m
-                                    );
-                            }
-                        );
-
-                } else {
-
-                    if (
-                        original.transparent &&
-                        !original.alphaMap &&
-                        !original.map &&
-                        original.alphaTest <= 0
-                    ) {
-
-                        object.visible =
-                            false;
-
-                    } else {
-
-                        object.material =
-                            this._getDepthMaterial(
-                                original
-                            );
-                    }
-                }
-            }
+        this.depthTarget.setSize(
+            w,
+            h
         );
-    }
-
-
-    // ========================================================
-    // Restore original materials.
-    // ========================================================
-
-    _restoreDepthMaterials() {
-
-        for (
-            let i =
-                this.depthRestore.length - 1;
-
-            i >= 0;
-
-            i--
-        ) {
-
-            const [
-                object,
-                material,
-                visible
-            ] =
-                this.depthRestore[i];
-
-
-            object.material =
-                material;
-
-
-            object.visible =
-                visible;
-        }
-
-
-        this.depthRestore.length =
-            0;
-    }
-
-
-    // ========================================================
-    // Calculate sun direction + sun camera.
-    // ========================================================
-
-    _updateSunFrame() {
-
-        this._tmp
-            .copy(
-                this.sunWorldPosition
-            )
-            .sub(
-                this.camera.position
-            );
-
-
-        const sunDistance =
-            this._tmp.length();
-
-
-        if (
-            sunDistance <
-            0.0001
-        ) {
-
-            this._sunDir.set(
-                0,
-                1,
-                0
-            );
-
-        } else {
-
-            this._sunDir
-                .copy(
-                    this._tmp
-                )
-                .multiplyScalar(
-                    -1 /
-                    sunDistance
-                );
-        }
-
-
-        // Direction sunlight travels.
-        this._sunDir
-            .copy(
-                this.sunWorldPosition
-            )
-            .sub(
-                this.camera.position
-            )
-            .normalize();
-
-
-        this.uniforms
-            .sunDirection
-            .value
-            .copy(
-                this._sunDir
-            );
-
-
-        // ----------------------------------------------------
-        // Position the sun camera behind the camera view.
-        // ----------------------------------------------------
-
-        this.sunShadowCamera.position
-            .copy(
-                this.camera.position
-            )
-            .addScaledVector(
-                this._sunDir,
-                this.shadowWorldSize *
-                0.9
-            );
-
-
-        this._sunTarget
-            .copy(
-                this.camera.position
-            );
-
-
-        this.sunShadowCamera.lookAt(
-            this._sunTarget
-        );
-
-
-        this.sunShadowCamera
-            .updateMatrixWorld(
-                true
-            );
-
-
-        this.sunShadowCamera
-            .updateProjectionMatrix();
-
-
-        // ----------------------------------------------------
-        // World -> sun clip transform.
-        // ----------------------------------------------------
-
-        this.sunMatrix
-            .copy(
-                this.sunShadowCamera
-                    .projectionMatrix
-            )
-            .multiply(
-                this.sunShadowCamera
-                    .matrixWorldInverse
-            );
-
-
-        this.uniforms
-            .sunMatrix
-            .value
-            .copy(
-                this.sunMatrix
-            );
-
-
-        // ----------------------------------------------------
-        // Sun depth in main camera.
-        // ----------------------------------------------------
-
-        const sunView =
-            this.sunWorldPosition
-                .clone()
-                .applyMatrix4(
-                    this.camera
-                        .matrixWorldInverse
-                );
-
-
-        this.sunViewDepth =
-            Math.max(
-                -sunView.z,
-                this.camera.near
-            );
-
-
-        this.uniforms
-            .sunViewDepth
-            .value =
-                this.sunViewDepth;
-
-
-        // ----------------------------------------------------
-        // Project sun into main screen.
-        // ----------------------------------------------------
-
-        const ndc =
-            this._tmp2
-                .copy(
-                    this.sunWorldPosition
-                )
-                .project(
-                    this.camera
-                );
-
-
-        const visible =
-            this.intensity >
-                0.0001 &&
-
-            ndc.z > -1.0 &&
-            ndc.z < 1.0 &&
-
-            ndc.x > -1.25 &&
-            ndc.x < 1.25 &&
-
-            ndc.y > -1.25 &&
-            ndc.y < 1.25;
-
-
-        if (!visible) {
-
-            this.uniforms
-                .sunVisible
-                .value =
-                    0;
-
-            return false;
-        }
-
-
-        this.uniforms
-            .lightPos
-            .value
-            .set(
-                (ndc.x + 1) * 0.5,
-                (ndc.y + 1) * 0.5
-            );
-
-
-        this.uniforms
-            .sunVisible
-            .value =
-                THREE.MathUtils.clamp(
-                    this.intensity,
-                    0,
-                    1
-                );
-
-
-        return true;
-    }
-
-
-    // ========================================================
-    // Camera depth pass.
-    // ========================================================
-
-    _renderDepth(
-        renderer
-    ) {
-
-        const previousTarget =
-            renderer.getRenderTarget();
-
-
-        const previousClearColor =
-            renderer
-                .getClearColor(
-                    this._tmpColor
-                )
-                .clone();
-
-
-        const previousClearAlpha =
-            renderer.getClearAlpha();
-
-
-        const previousAutoClear =
-            renderer.autoClear;
-
-
-        const previousOverride =
-            this.scene.overrideMaterial;
-
-
-        try {
-
-            renderer.setRenderTarget(
-                this.depthTarget
-            );
-
-
-            renderer.setClearColor(
-                0x000000,
-                1
-            );
-
-
-            renderer.autoClear =
-                true;
-
-
-            this._swapToDepthMaterials();
-
-
-            renderer.render(
-                this.scene,
-                this.camera
-            );
-
-        } finally {
-
-            this._restoreDepthMaterials();
-
-
-            this.scene.overrideMaterial =
-                previousOverride;
-
-
-            renderer.autoClear =
-                previousAutoClear;
-
-
-            renderer.setRenderTarget(
-                previousTarget
-            );
-
-
-            renderer.setClearColor(
-                previousClearColor,
-                previousClearAlpha
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Sun depth pass.
-    // ========================================================
-
-    _renderSunDepth(
-        renderer
-    ) {
-
-        const previousTarget =
-            renderer.getRenderTarget();
-
-
-        const previousClearColor =
-            renderer
-                .getClearColor(
-                    this._tmpColor
-                )
-                .clone();
-
-
-        const previousClearAlpha =
-            renderer.getClearAlpha();
-
-
-        const previousAutoClear =
-            renderer.autoClear;
-
-
-        const previousOverride =
-            this.scene.overrideMaterial;
-
-
-        try {
-
-            renderer.setRenderTarget(
-                this.sunDepthTarget
-            );
-
-
-            renderer.setClearColor(
-                0xffffff,
-                1
-            );
-
-
-            renderer.autoClear =
-                true;
-
-
-            this._swapToDepthMaterials();
-
-
-            renderer.render(
-                this.scene,
-                this.sunShadowCamera
-            );
-
-        } finally {
-
-            this._restoreDepthMaterials();
-
-
-            this.scene.overrideMaterial =
-                previousOverride;
-
-
-            renderer.autoClear =
-                previousAutoClear;
-
-
-            renderer.setRenderTarget(
-                previousTarget
-            );
-
-
-            renderer.setClearColor(
-                previousClearColor,
-                previousClearAlpha
-            );
-        }
-    }
-
-
-    // ========================================================
-    // Main pass render.
-    // ========================================================
-
-    render(
-        renderer,
-        writeBuffer,
-        readBuffer,
-        deltaTime = 0.016
-    ) {
-
-        this._frame++;
-
-
-        this._time +=
-            Number.isFinite(
-                deltaTime
-            )
-                ? deltaTime
-                : 0.016;
-
-
-        this.uniforms
-            .time
-            .value =
-                this._time;
-
-
-        const sunInView =
-            this._updateSunFrame();
-
-
-        this.uniforms
-            .tDiffuse
-            .value =
-                readBuffer.texture;
-
-
-        this.uniforms
-            .cameraInvProjection
-            .value
-            .copy(
-                this.camera
-                    .projectionMatrixInverse
-            );
-
-
-        this.uniforms
-            .cameraMatrixWorld
-            .value
-            .copy(
-                this.camera
-                    .matrixWorld
-            );
-
-
-        this.uniforms
-            .cameraNear
-            .value =
-                this.camera.near;
-
-
-        this.uniforms
-            .cameraFar
-            .value =
-                this.camera.far;
-
-
-        this.uniforms
-            .cameraPositionWorld
-            .value
-            .copy(
-                this.camera
-                    .position
-            );
-
-
-        // ----------------------------------------------------
-        // Only generate expensive depth passes while the sun
-        // is actually useful to the current view.
-        // ----------------------------------------------------
-
-        if (
-            sunInView &&
-            this.intensity >
-                0.001
-        ) {
-
-            this._renderDepth(
-                renderer
-            );
-
-
-            this._renderSunDepth(
-                renderer
-            );
-
-        } else {
-
-            this.uniforms
-                .sunVisible
-                .value =
-                    0;
-        }
-
-
-        const previousTarget =
-            renderer.getRenderTarget();
-
-
-        try {
-
-            renderer.setRenderTarget(
-                this.renderToScreen
-                    ? null
-                    : writeBuffer
-            );
-
-
-            this.fsQuad.render(
-                renderer
-            );
-
-        } finally {
-
-            renderer.setRenderTarget(
-                previousTarget
-            );
-        }
     }
 
 
@@ -2137,25 +1669,21 @@ export class GodRaysPass
 
     dispose() {
 
+        this.occlusionTarget.dispose();
+
         this.depthTarget.dispose();
 
-        this.sunDepthTarget.dispose();
+        this.sunProxyMaterial.dispose();
 
         this.material.dispose();
 
         this.fsQuad.dispose();
-
-        // WeakMaps do not expose their stored values, so the cached
-        // materials are intentionally left to garbage collection along
-        // with the source material references.
-        this.depthMaterialCache =
-            new WeakMap();
     }
 }
 
 
 // ============================================================
-// Factory.
+// FACTORY
 // ============================================================
 
 export function createGodRaysPass(
@@ -2175,37 +1703,32 @@ export function createGodRaysPass(
 
 
 // ============================================================
-// OPTIONAL REAL SUN LIGHTING
+// OPTIONAL REAL SUN LIGHT
 //
-// God rays affect the atmosphere.
-// This helper handles the other half:
+// This is separate from the god-ray pass.
 //
-//       SUNLIGHT -> ACTUAL OBJECTS
+// God rays = light scattering through air.
 //
-// DirectionalLight + shadow map gives the forest genuine sun-facing
-// illumination and tree shadows.
+// DirectionalLight = actual sunlight hitting your geometry.
+//
+// If your game already has a sun DirectionalLight, DON'T create
+// another one. Just use your existing light.
 // ============================================================
 
-export function setupSunLighting(
+export function createSunLight(
     scene,
     {
-        color = 0xfff0d0,
+        color = 0xfff1d2,
 
-        intensity = 3.0,
-
-        distance = 250,
+        intensity = 2.5,
 
         shadowMapSize = 2048,
 
-        shadowRange = 90,
+        shadowRange = 100,
 
         shadowNear = 1,
 
-        shadowFar = 260,
-
-        bias = -0.00015,
-
-        normalBias = 0.02
+        shadowFar = 250
 
     } = {}
 ) {
@@ -2221,19 +1744,11 @@ export function setupSunLighting(
         true;
 
 
-    // --------------------------------------------------------
-    // Shadow resolution.
-    // --------------------------------------------------------
-
     sun.shadow.mapSize.set(
         shadowMapSize,
         shadowMapSize
     );
 
-
-    // --------------------------------------------------------
-    // Shadow camera coverage.
-    // --------------------------------------------------------
 
     sun.shadow.camera.left =
         -shadowRange;
@@ -2259,16 +1774,12 @@ export function setupSunLighting(
         shadowFar;
 
 
-    // --------------------------------------------------------
-    // Reduce shadow acne.
-    // --------------------------------------------------------
-
     sun.shadow.bias =
-        bias;
+        -0.00015;
 
 
     sun.shadow.normalBias =
-        normalBias;
+        0.025;
 
 
     scene.add(
@@ -2281,19 +1792,15 @@ export function setupSunLighting(
     );
 
 
-    // DirectionalLight doesn't use distance for attenuation.
-    void distance;
-
-
     return sun;
 }
 
 
 // ============================================================
-// Update real sunlight each frame.
+// UPDATE REAL SUN
 // ============================================================
 
-export function updateSunLighting(
+export function updateSunLight(
     sun,
     sunWorldPosition,
     targetPosition
