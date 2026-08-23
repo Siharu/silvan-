@@ -120,7 +120,17 @@ export function updateAtmosphere(state, delta) {
         fogC = new THREE.Color(0x9dc3e0).lerp(new THREE.Color(0x607080), state.currentCloudiness);
         cloudC = new THREE.Color(0xffffff).lerp(new THREE.Color(0x9098a0), state.currentCloudiness);
     } else {
-        topC = skyNight; botC = horNight; fogC = new THREE.Color(0x040810); cloudC = new THREE.Color(0x111125);
+        // Was pure near-black (0x111125) with opacity climbing to a full
+        // 1.0 at max cloudiness — since the cloud shell sits in front of
+        // the star sphere (see sky.js), an overcast night stacked an
+        // almost-opaque near-black dome directly over an already-near-black
+        // night sky (skyNight/horNight below), blotting out every star and
+        // reading as flat, featureless black instead of a moonlit overcast
+        // night. Lightened toward a visible slate-blue so the cloud layer
+        // itself is legible, and its opacity cap is lowered further down
+        // (see uOpacity below) so a hint of the sky/stars still shows
+        // through even at full overcast.
+        topC = skyNight; botC = horNight; fogC = new THREE.Color(0x040810); cloudC = new THREE.Color(0x33415a);
     }
     
     // Darken the atmosphere when it's raining
@@ -135,7 +145,10 @@ export function updateAtmosphere(state, delta) {
         // opacity fades thin wisps down further so a barely-cloudy sky doesn't
         // still read as a hazy film over everything.
         state.cloudMat.uniforms.uCoverage.value = state.currentCloudiness;
-        state.cloudMat.uniforms.opacity.value = 0.45 + state.currentCloudiness * 0.55;
+        // Capped at 0.8 rather than a fully opaque 1.0 at max cloudiness —
+        // a totally solid cloud shell at night left nothing of the sky or
+        // stars visible behind it at all (see cloudC above).
+        state.cloudMat.uniforms.opacity.value = 0.35 + state.currentCloudiness * 0.45;
     }
 
     const ts = performance.now() * 0.001;

@@ -75,7 +75,7 @@ const RADIAL_BLUR_VERTEX = /* glsl */ `
 `;
 
 export class GodRaysPass extends Pass {
-    constructor(renderer, scene, camera, { occlusionScale = 0.25 } = {}) {
+    constructor(renderer, scene, camera, { occlusionScale = 0.5 } = {}) {
         super();
         this.renderer = renderer;
         this.scene = scene;
@@ -91,9 +91,18 @@ export class GodRaysPass extends Pass {
         this.intensity = 0;
 
         const size = renderer.getSize(new THREE.Vector2());
+        // occlusionScale bumped 0.25 -> 0.5, plus linear filtering and 4x
+        // MSAA on this target: at quarter-res, thin single-pixel-wide
+        // occluders (grass blades, reeds, the tower antenna) either fell
+        // entirely between sample points (flickering in and out) or landed
+        // as a single stray bright/dark texel — and the 48-tap radial blur
+        // below stretches any one of those into a long visible streak
+        // across the whole frame. Filtering + more resolution smooths
+        // those thin occluders out before they ever reach the blur.
         this.occlusionTarget = new THREE.WebGLRenderTarget(
             Math.max(1, Math.floor(size.x * occlusionScale)),
-            Math.max(1, Math.floor(size.y * occlusionScale))
+            Math.max(1, Math.floor(size.y * occlusionScale)),
+            { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, samples: 4 }
         );
 
         this.blackMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
@@ -113,10 +122,14 @@ export class GodRaysPass extends Pass {
             tDiffuse: { value: null },
             tOcclusion: { value: this.occlusionTarget.texture },
             lightPos: { value: new THREE.Vector2(0.5, 0.5) },
-            exposure: { value: 0.45 },
+            // exposure/weight trimmed slightly (0.45->0.38, 0.55->0.45) on
+            // top of the occlusion-buffer fix above — any streak artifact
+            // that still slips through reads much fainter at this exposure
+            // instead of as a hard bright/dark line.
+            exposure: { value: 0.38 },
             decay: { value: 0.96 },
             density: { value: 0.85 },
-            weight: { value: 0.55 },
+            weight: { value: 0.45 },
             sunVisible: { value: 0 }
         };
         this.material = new THREE.ShaderMaterial({
@@ -138,6 +151,7 @@ export class GodRaysPass extends Pass {
             Math.max(1, Math.floor(width * this.occlusionScale)),
             Math.max(1, Math.floor(height * this.occlusionScale))
         );
+        this.occlusionTarget.samples = 4;
     }
 
     render(renderer, writeBuffer, readBuffer) {

@@ -86,8 +86,8 @@ state.startEngine = function startEngine(afterReady) {
         // Without this, the freeze can land on the iframe's very first
         // paint before its own script has drawn anything, which reads as
         // the screen just going dark instead of showing a loading screen.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            init();
+        requestAnimationFrame(() => requestAnimationFrame(async () => {
+            await init();
             state.engineReady = true;
             if (loadingScreen) loadingScreen.classList.add('hidden');
             // Freed once it's hidden rather than kept running behind the
@@ -125,7 +125,18 @@ state.startEngine = function startEngine(afterReady) {
 // forest/grass/rocks generation happens to finish.
 setupInput(state);
 
-function init() {
+function nextFrame() {
+    // Lets the browser actually paint a frame — and, crucially, lets the
+    // loading-screen.html iframe's own render loop tick and animate —
+    // between each heavy synchronous scene-build step below. Without this,
+    // init() was one unbroken block of work; the tab (and the iframe
+    // riding on the same thread) couldn't paint anything in between, so
+    // the "animated" loading screen only ever showed its very first,
+    // mostly-static frame for the entire load.
+    return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function init() {
     state.scene = new THREE.Scene();
     // Density nudged down (0.007 -> 0.0052) — stacked with the near-black
     // old terrain color and the 0.85 exposure, distance was going murky
@@ -223,24 +234,36 @@ function init() {
     state.scene.add(state.moonLight);
 
     createSky(state);
+    await nextFrame();
     createTerrain(state);
+    await nextFrame();
     createOcean(state);
     createLake(state);
+    await nextFrame();
     createGrass(state);
+    await nextFrame();
     createFlowers(state);
     createRocks(state);
+    await nextFrame();
     createPuddles(state);
+    await nextFrame();
     generateFractalForest(state);
+    await nextFrame();
     createDetailedPineTrees(state, state.quality.pineTreeCount);
+    await nextFrame();
     createFerns(state);
     createMossClusters(state);
+    await nextFrame();
     createRainSystem(state);
     createRainSplashes(state);
+    await nextFrame();
     createFireflies(state);
     createDustParticles(state);
+    await nextFrame();
     createWindLeaves(state);
     spawnDemoAnimals(state);
     createRadioTower(state);
+    await nextFrame();
 
     // Was (0, getElevation(0,0)+height, 0) — origin is the lake basin
     // center (see environment/terrain.js), so the player spawned ~29
