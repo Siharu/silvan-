@@ -135,7 +135,7 @@ export async function createTerrain(state, onProgress) {
     // forest-floor tone that still reads as shadowed dirt/undergrowth but
     // actually responds to sunLight/hemiLight instead of sitting flat.
     const mat = new THREE.MeshStandardMaterial({ 
-        color: 0x2b3a1e, 
+        color: 0x374a26, 
         roughness: 1.0, 
         metalness: 0.0
     });

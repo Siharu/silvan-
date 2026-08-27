@@ -224,7 +224,11 @@ async function init() {
     // midday; 0.95 keeps the sun/hemi peaks (still trimmed below, see
     // day-night-cycle.js) from re-clipping while giving midday its
     // brightness back.
-    state.renderer.toneMappingExposure = 0.95;
+    // Nudged again (0.95->1.15) alongside the sun/hemi peak bump above —
+    // still well under ACES's clip point, this is what actually lets the
+    // higher light values above translate into visibly brighter midday
+    // instead of tone-mapping most of the increase back away.
+    state.renderer.toneMappingExposure = 1.15;
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
 
     // Offscreen target the sky/mountain backdrop renders into each frame —

@@ -24,7 +24,7 @@ export async function createGrass(state, onProgress) {
     grassGeo.computeVertexNormals();
 
     state.grassMat = new THREE.MeshStandardMaterial({
-        color: 0x3d661d, 
+        color: 0x4d7a26, 
         roughness: 0.9,
         side: THREE.DoubleSide
     });

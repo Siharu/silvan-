@@ -75,9 +75,19 @@ export function updateAtmosphere(state, delta) {
         // toward clear (mostly 0.0-0.4, with real overcast/storm days still
         // possible but rarer) — matches how an actual sky spends most of its
         // time mild/clear with occasional heavy cloud, not a coin flip.
+        // Was gated behind cloudiness > 0.5 (only ~15% of rolls, since
+        // cloudiness = random*random skews low) AND a second independent
+        // random() > 0.35 check (65% of those) — combined, only about a
+        // 1-in-10 chance of any rain per weather roll, which is what made
+        // it feel like it "barely rains" even over a long session. Lowered
+        // the cloudiness gate (clouds don't need to be that heavy before
+        // rain becomes possible) and loosened the second roll so more of
+        // those cloudy moments actually produce rain, without touching the
+        // cloudiness distribution itself — clear skies are still the most
+        // common state, this only fixes what happens once it's cloudy.
         state.targetCloudiness = Math.random() * Math.random();
-        state.targetRainIntensity = (state.targetCloudiness > 0.5 && Math.random() > 0.35)
-            ? Math.random() * state.targetCloudiness
+        state.targetRainIntensity = (state.targetCloudiness > 0.32 && Math.random() > 0.15)
+            ? Math.random() * state.targetCloudiness + 0.15
             : 0.0;
     }
     // Smoothly interpolate rain intensity and cloudiness (cloudiness eases a
@@ -144,9 +154,16 @@ export function updateAtmosphere(state, delta) {
     // exposure bump to 0.95 — still comfortably under ACES's clipping
     // point at this exposure, this time actually giving midday its
     // brightness back instead of just trimming to fix the clip.
-    state.sunLight.intensity = Math.max(0, sy) * 1.25;
+    // Bumped again (1.25->1.6, hemi 0.6/0.85->0.75/1.1) — even after the
+    // previous rounds of tuning (see comment above), daytime still read
+    // dim. useLegacyLights keeps these as simple linear multipliers
+    // (no physically-correct candela conversion), and ACESFilmicToneMapping
+    // compresses everything toward its shoulder rather than clipping, so
+    // there's real headroom left before hitting the 0.95 exposure's actual
+    // clip point — this was undershooting that headroom, not sitting at it.
+    state.sunLight.intensity = Math.max(0, sy) * 1.6;
     state.moonLight.intensity = Math.max(0, -sy) * 0.85;
-    if (state.hemiLight) state.hemiLight.intensity = 0.6 + dayBlend * 0.85;
+    if (state.hemiLight) state.hemiLight.intensity = 0.75 + dayBlend * 1.1;
 
     const skyDay = REF.skyDay, skyNight = REF.skyNight;
     const horDay = REF.horDay, horSunset = REF.horSunset, horNight = REF.horNight;
@@ -254,7 +271,14 @@ export function updateAtmosphere(state, delta) {
         state.rainMaterial.color.set(_rainColor.copy(REF.rainDayColor).lerp(REF.rainNightColor, 1 - dayBlend));
         
         state.rainMaterial.opacity = 0.15 * Math.min(1.0, state.currentRainIntensity * 2.0);
-        state.rainMesh.count = Math.max(0, Math.floor(45000 * state.currentRainIntensity));
+        // Was a hardcoded 45000 — that happens to equal High quality's
+        // rainCount (core/quality.js), so it silently only worked right at
+        // High. On Medium/Low it asked InstancedMesh for more instances
+        // than were ever allocated (rainCount 22000/10000), so this either
+        // clamped to whatever the GPU buffer actually held or rendered
+        // nothing once currentRainIntensity climbed — either way, far
+        // less rain than intended outside the High preset.
+        state.rainMesh.count = Math.max(0, Math.min(state.quality.rainCount, Math.floor(state.quality.rainCount * state.currentRainIntensity)));
         state.rainMesh.visible = state.currentRainIntensity > 0.01;
     }
 
