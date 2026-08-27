@@ -25,6 +25,8 @@ import { createTerrain } from './environment/terrain.js';
 import { createSky } from './environment/sky.js';
 import { createLake } from './environment/lake.js';
 import { createOcean } from './environment/ocean.js';
+import { createMountainBoundary } from './environment/mountain-boundary.js';
+import { createDistantIslands } from './environment/distant-islands.js';
 import { createGrass } from './environment/grass.js';
 import { createFlowers } from './environment/flowers.js';
 import { createRocks } from './environment/rocks.js';
@@ -274,7 +276,17 @@ async function init() {
     state.sunLight.shadow.camera.left = -d;
     state.sunLight.shadow.camera.right = d;
     state.sunLight.shadow.camera.top = d;
-    state.sunLight.shadow.bottom = -d;
+    // Was `state.sunLight.shadow.bottom` — DirectionalLightShadow has no
+    // `.bottom` property; that's on `.camera`. The typo silently created a
+    // stray property and left shadow.camera.bottom at THREE's default (-5),
+    // while left/right/top were correctly set to the full ±620 extent. That
+    // lopsided orthographic shadow frustum (effectively 5 units tall on one
+    // side vs. 1240 on the other/across) meant almost every fragment on the
+    // ground sampled outside the light's actual shadow coverage and came
+    // back reading as fully shadowed — this is why the sky (a self-lit
+    // shader material, untouched by shadows) looked correctly bright while
+    // terrain/grass/trees rendered near-black regardless of time of day.
+    state.sunLight.shadow.camera.bottom = -d;
     state.sunLight.shadow.bias = -0.0001;
     state.scene.add(state.sunLight);
 
@@ -289,6 +301,8 @@ async function init() {
     await afterStep();
     createOcean(state);
     createLake(state);
+    createMountainBoundary(state); // was defined but never called anywhere — the painted mountain-ring backdrop (and its assets/textures/mountains/*.png) has never actually been rendering
+    createDistantIslands(state);
     await afterStep();
     // Grass is a single 1.1M-instance loop (see core/quality.js — "the
     // single heaviest thing in the scene") — left synchronous, this was one

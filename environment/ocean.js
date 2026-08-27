@@ -17,21 +17,29 @@ import { WORLD_SIZE, OCEAN_LEVEL } from '../core/world-state.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 import { createWaterMaterial } from './water-shader.js';
 
+// Values below came from a hand-tuned JSON preset (not the reference
+// demo's original numbers anymore — see the original OCEAN_BREEZE_PRESET
+// this replaced for those). skyColor isn't part of this shape: it's not a
+// static preset value at all, it's fed live every frame from the actual
+// sky gradient (u_skyColor, see atmosphere/day-night-cycle.js's
+// updateAtmosphere) so the horizon fresnel always matches whatever's
+// really behind it — a fixed skyColor here would just be overwritten the
+// next frame, so it's intentionally left out rather than silently ignored.
 const OCEAN_BREEZE_PRESET = {
-    speed: 1.0,
-    elevationScale: 1.0,
-    depthColor: '#0a1d3a',
-    surfaceColor: '#113040', // custom — darker/more muted than the demo's default #1ca3ec cyan
-    foamColor: '#0c1531',    // custom — darker than the demo's default white, keeps foam subtle rather than bright
-    colorOffset: 0.25,
-    colorMultiplier: 2.0,
-    foamThreshold: 1.2,
-    opacity: 0.7,
+    speed: 1.8,
+    elevationScale: 1.5,
+    depthColor: '#050c14',
+    surfaceColor: '#1a334d',
+    foamColor: '#000000',
+    colorOffset: 0.1,
+    colorMultiplier: 1,
+    foamThreshold: 0.8,
+    opacity: 0.95,
     waves: [
-        { dir: 45,  steep: 0.15, len: 20 },
-        { dir: 120, steep: 0.15, len: 10 },
-        { dir: 200, steep: 0.1,  len: 5 },
-        { dir: 0,   steep: 0.05, len: 2 }
+        { dir: 45,  steep: 0.35, len: 35 },
+        { dir: 120, steep: 0.25, len: 18 },
+        { dir: 200, steep: 0.2,  len: 8 },
+        { dir: 0,   steep: 0.15, len: 3 }
     ]
 };
 

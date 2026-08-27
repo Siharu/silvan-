@@ -902,15 +902,27 @@
             transform: translate(-50%, -50%) scale(1);
             pointer-events: auto;
         }
-        /* Dims + blurs everything else the instant either panel is open —
-           :has() lets pure CSS react to the same .open class input.js
-           already toggles, no extra JS needed to keep this in sync. */
+        /* Dims everything else the instant either panel is open — :has()
+           lets pure CSS react to the same .open class input.js already
+           toggles, no extra JS needed to keep this in sync.
+           Deliberately no backdrop-filter of its own: this sits nested
+           inside #ui-layer (already permanently blurred at 12px, see
+           .ui-layer above) and .title-panel itself blurs again on top
+           (10px). Three stacked backdrop-filter layers is a known Chromium/
+           WebKit compositing bug — each layer's blur samples the
+           already-blurred layer beneath it, and in practice that
+           compounding didn't stay contained to the background: it bled
+           into blurring .title-panel's own text/controls too, which is
+           exactly the "everything goes blurry" symptom this caused. This
+           layer only needs to dim (the parent's existing 12px blur already
+           does the blurring job), so the extra blur(1px) — imperceptible
+           on its own anyway — comes off entirely rather than patching
+           around the nesting. */
         #title-panel-backdrop {
             position: fixed;
             inset: 0;
             z-index: 5;
             background: rgba(2, 4, 10, 0.6);
-            backdrop-filter: blur(1px);
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.2s ease;

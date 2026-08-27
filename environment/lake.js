@@ -12,21 +12,28 @@ import { WORLD_SIZE } from '../core/world-state.js';
 import { createWaterMaterial } from './water-shader.js';
 import { getElevation } from './terrain.js';
 
+// Values from a hand-tuned JSON preset (water-style.json). skyColor isn't
+// part of this shape: it's not a static preset value at all, it's fed live
+// every frame from the actual sky gradient (u_skyColor, see
+// atmosphere/day-night-cycle.js's updateAtmosphere) so the horizon fresnel
+// always matches whatever's really behind it — a fixed skyColor here would
+// just be overwritten the next frame, so it's intentionally left out
+// rather than silently ignored.
 const CALM_LAKE_PRESET = {
-    speed: 0.5,
-    elevationScale: 1.0,
+    speed: 0.2552,
+    elevationScale: 1.3601,
     depthColor: '#07182e',
-    surfaceColor: '#1f6580',
+    surfaceColor: '#7cd9fd',
     foamColor: '#ffffff',
-    colorOffset: 0.5,
-    colorMultiplier: 1.5,
-    foamThreshold: 2.0,
-    opacity: 0.45,
+    colorOffset: 0.853,
+    colorMultiplier: 0.1,
+    foamThreshold: 3,
+    opacity: 0.1,
     waves: [
         { dir: 45,  steep: 0.05, len: 15 },
         { dir: 120, steep: 0.03, len: 8 },
         { dir: 200, steep: 0.01, len: 3 },
-        { dir: 0,   steep: 0.0,  len: 1 }
+        { dir: 0,   steep: 0,    len: 1 }
     ]
 };
 

@@ -212,6 +212,17 @@ export function updateAtmosphere(state, delta) {
         // tree LOD switch materials just have to declare this uniform to
         // pick it up, no per-material wiring here either.
         if (u.uSwitchDist && state.settings) u.uSwitchDist.value = state.settings.drawDistance;
+        // Was declared as fed here (see mountain-boundary.js's own comment
+        // on why an unlit MeshBasicMaterial needs this at all) but never
+        // actually wired into the generic per-frame traverse below it —
+        // uBrightness sat frozen at its initial 1.0 forever, so the painted
+        // mountain rings never dimmed at night or under cloud cover the way
+        // every real lit surface (terrain/forest/rocks/grass) does. Mirrors
+        // hemiLight's night floor (0.6 base + dayBlend headroom, see above)
+        // so the mountains track the same day/night curve as the rest of
+        // the world's ambient light, with cloud cover darkening them a bit
+        // further on top since an overcast sky reads flatter/greyer.
+        if (u.uBrightness) u.uBrightness.value = (0.35 + dayBlend * 0.65) * (1 - cloudCover * 0.3);
     });
     if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
         state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
