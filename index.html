@@ -1137,7 +1137,20 @@
                  at the bottom of </body>; it only ever toggles a
                  'tab-active' class on these five .tab-panel blocks, it does
                  not touch state or any control's own listener. -->
-            <div class="title-panel tabs-panel" id="title-settings-panel">
+</div>
+        <!-- Moved out of .title-content: that element has a perpetual
+             `transform` animation (title-float), and any transformed
+             ancestor becomes the containing block/stacking context for
+             `position: fixed` descendants. With the panel nested inside
+             title-content, its z-index:6 got trapped inside
+             title-content's own (z-index:2) stacking context, so the
+             sibling #title-panel-backdrop (z-index:5, outside that
+             context) composited above the entire panel — dimming the
+             screen and eating clicks on the panel's own controls, not
+             just the menu behind it. Living here as a direct sibling of
+             the backdrop fixes the stacking order; no positioning values
+             changed. -->
+        <div class="title-panel tabs-panel" id="title-settings-panel">
                 <div class="tabs-header" id="title-settings-tabs">
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
@@ -1250,7 +1263,6 @@
                     A quiet afterlife for animals, wandered and built one small piece at a time.
                 </div>
             </div>
-        </div>
     </div>
 
     <div class="title-farewell" id="title-farewell">
