@@ -302,6 +302,7 @@ export function animateAnimalRig(rig, dt, animState) {
 // frame. Shuu/Bimo/Primo remain the recruitable wander/follow companions.
 const WANDER_NAMES = ['Shuu', 'Bimo', 'Primo']; // also spawnDemoAnimals()'s full roster now that Kat's excluded — every companion wanders
 const RECRUIT_RANGE = 3.2;
+const _playerForward = new THREE.Vector3(); // reused in updateDemoAnimals every frame instead of allocated fresh
 
 function getInteractPromptEl(state) {
     if (state.interactPromptEl === undefined) state.interactPromptEl = document.getElementById('interact-prompt');
@@ -437,7 +438,7 @@ export function updateDemoAnimals(state, dt) {
     // Player forward vector, flattened — same source player-controller.js
     // uses for movement, so followers trail directly behind wherever the
     // camera is actually looking rather than off raw player.rotation.y.
-    const forward = new THREE.Vector3();
+    const forward = _playerForward;
     if (state.camera) { state.camera.getWorldDirection(forward); forward.y = 0; forward.normalize(); }
 
     for (const rig of state.demoAnimals) {

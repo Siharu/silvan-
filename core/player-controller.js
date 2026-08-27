@@ -37,6 +37,13 @@ const BOUNDARY_SOFT_ZONE = 70;
 export const BOUNDARY_START = BASE_BOUNDARY_RADIUS * 0.55 - BOUNDARY_SOFT_ZONE;
 
 const _radialDir = new THREE.Vector3();
+// Reused every frame in updatePlayer's movement-direction calc below,
+// same pattern as _radialDir above — was `new THREE.Vector3()` allocated
+// fresh on every single call (60+ times/sec, forever, for the life of the
+// session) for two vectors whose values are fully overwritten each frame
+// anyway. Not a correctness bug, just steady GC pressure for no reason.
+const _moveDir = new THREE.Vector3();
+const _moveRight = new THREE.Vector3();
 
 const RUN_MULTIPLIER = 1.8;
 const SWIM_SPEED_MULTIPLIER = 0.55; // swimming is slower than walking
@@ -161,13 +168,13 @@ export function updatePlayer(state, delta) {
     // before. Both branches feed the same cross-product for `right` so the
     // a/d sign convention stays identical either way instead of risking a
     // hand-derived sign flip in a separate code path.
-    const dir = new THREE.Vector3();
+    const dir = _moveDir;
     if (state.viewMode === 'topdown') {
         dir.copy(TOPDOWN_FORWARD);
     } else {
         state.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
     }
-    const right = new THREE.Vector3().crossVectors(state.camera.up, dir).normalize();
+    const right = _moveRight.crossVectors(state.camera.up, dir).normalize();
     if (state.keys.w) state.player.velocity.add(dir); if (state.keys.s) state.player.velocity.sub(dir);
     if (state.keys.a) state.player.velocity.add(right); if (state.keys.d) state.player.velocity.sub(right);
 

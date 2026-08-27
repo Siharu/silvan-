@@ -13,6 +13,31 @@ import { updateWindLeaves } from '../fx/wind-leaves.js';
 import { setAmbientVolume } from '../audio/ambience.js';
 import { updateRadioTower, updateTowerCutscene } from '../environment/radio-tower.js';
 
+// Every one of these used to be a fresh `new THREE.Color(...)` allocated
+// inside updateAtmosphere() below, every single frame, forever — 15+
+// Color objects/frame at 60fps just to hold fixed reference values that
+// never change, plus 4 more scratch Colors below that used to be `.clone()`
+// calls doing the same thing. None of this changed the visual output, it
+// was pure steady GC pressure for no reason. Hoisted to module scope
+// (computed once) with a handful of reusable scratch Colors that get
+// overwritten via .copy()+.lerp() each frame instead of re-allocated.
+const REF = {
+    skyDay: new THREE.Color(0x5a6a7a), skyNight: new THREE.Color(0x0a0f1c),
+    horDay: new THREE.Color(0x8a9aa8), horSunset: new THREE.Color(0xa86c42), horNight: new THREE.Color(0x040810),
+    skyClearTop: new THREE.Color(0x3f7fc9), skyClearHor: new THREE.Color(0xcfe8f5),
+    cloudTwilightA: new THREE.Color(0x222233), cloudTwilightB: new THREE.Color(0x887777), cloudTwilightC: new THREE.Color(0xa0a5ab),
+    fogClear: new THREE.Color(0x9dc3e0), fogCloudy: new THREE.Color(0x607080),
+    cloudClear: new THREE.Color(0xffffff), cloudOvercastDay: new THREE.Color(0x9098a0),
+    cloudNight: new THREE.Color(0x33415a),
+    rainFogTint: new THREE.Color(0x2a3038), rainTopTint: new THREE.Color(0x3a4048), rainCloudTint: new THREE.Color(0x2a2a2a),
+    rainDayColor: new THREE.Color(0xffffff), rainNightColor: new THREE.Color(0x334466),
+};
+// Reused every frame instead of cloned from REF each time — safe because
+// nothing outside this function holds onto these between frames (they're
+// copied into real scene uniforms via .copy() before the frame ends).
+const _topC = new THREE.Color(), _botC = new THREE.Color(), _fogC = new THREE.Color(), _cloudC = new THREE.Color();
+const _rainColor = new THREE.Color();
+
 
 
 // Wave-height modifier + storm reactivity applied continuously (core/
@@ -123,25 +148,25 @@ export function updateAtmosphere(state, delta) {
     state.moonLight.intensity = Math.max(0, -sy) * 0.85;
     if (state.hemiLight) state.hemiLight.intensity = 0.6 + dayBlend * 0.85;
 
-    const skyDay = new THREE.Color(0x5a6a7a); const skyNight = new THREE.Color(0x0a0f1c);
-    const horDay = new THREE.Color(0x8a9aa8); const horSunset = new THREE.Color(0xa86c42); const horNight = new THREE.Color(0x040810);
+    const skyDay = REF.skyDay, skyNight = REF.skyNight;
+    const horDay = REF.horDay, horSunset = REF.horSunset, horNight = REF.horNight;
     // True clear-sky colors — previously daytime always used the muted
     // skyDay/horDay pair above regardless of weather, so even "CLEAR" read as
     // overcast. Now clear skies lerp toward vivid blue and only settle into
     // the grey/muted look as currentCloudiness climbs.
-    const skyClearTop = new THREE.Color(0x3f7fc9); const skyClearHor = new THREE.Color(0xcfe8f5);
+    const skyClearTop = REF.skyClearTop, skyClearHor = REF.skyClearHor;
     let topC, botC, fogC, cloudC;
     if (sy > -0.2 && sy < 0.2) {
         const t = (sy + 0.2) / 0.4;
-        topC = skyNight.clone().lerp(skyDay, t);
-        botC = horNight.clone().lerp(horSunset, t<0.5?t*2:1).lerp(horDay, t>0.5?(t-0.5)*2:0);
-        fogC = horNight.clone().lerp(horSunset, t);
-        cloudC = new THREE.Color(0x222233).lerp(new THREE.Color(0x887777), t<0.5?t*2:1).lerp(new THREE.Color(0xa0a5ab), t>0.5?(t-0.5)*2:0);
+        topC = _topC.copy(skyNight).lerp(skyDay, t);
+        botC = _botC.copy(horNight).lerp(horSunset, t<0.5?t*2:1).lerp(horDay, t>0.5?(t-0.5)*2:0);
+        fogC = _fogC.copy(horNight).lerp(horSunset, t);
+        cloudC = _cloudC.copy(REF.cloudTwilightA).lerp(REF.cloudTwilightB, t<0.5?t*2:1).lerp(REF.cloudTwilightC, t>0.5?(t-0.5)*2:0);
     } else if (sy >= 0.2) {
-        topC = skyClearTop.clone().lerp(skyDay, state.currentCloudiness);
-        botC = skyClearHor.clone().lerp(horDay, state.currentCloudiness);
-        fogC = new THREE.Color(0x9dc3e0).lerp(new THREE.Color(0x607080), state.currentCloudiness);
-        cloudC = new THREE.Color(0xffffff).lerp(new THREE.Color(0x9098a0), state.currentCloudiness);
+        topC = _topC.copy(skyClearTop).lerp(skyDay, state.currentCloudiness);
+        botC = _botC.copy(skyClearHor).lerp(horDay, state.currentCloudiness);
+        fogC = _fogC.copy(REF.fogClear).lerp(REF.fogCloudy, state.currentCloudiness);
+        cloudC = _cloudC.copy(REF.cloudClear).lerp(REF.cloudOvercastDay, state.currentCloudiness);
     } else {
         // Was pure near-black (0x111125) with opacity climbing to a full
         // 1.0 at max cloudiness — since the cloud shell sits in front of
@@ -153,12 +178,12 @@ export function updateAtmosphere(state, delta) {
         // itself is legible, and its opacity cap is lowered further down
         // (see uOpacity below) so a hint of the sky/stars still shows
         // through even at full overcast.
-        topC = skyNight; botC = horNight; fogC = new THREE.Color(0x040810); cloudC = new THREE.Color(0x33415a);
+        topC = _topC.copy(skyNight); botC = _botC.copy(horNight); fogC = _fogC.copy(horNight); cloudC = _cloudC.copy(REF.cloudNight);
     }
     
     // Darken the atmosphere when it's raining
-    fogC.lerp(new THREE.Color(0x2a3038), state.currentRainIntensity * 0.6);
-    topC.lerp(new THREE.Color(0x3a4048), state.currentRainIntensity * 0.7);
+    fogC.lerp(REF.rainFogTint, state.currentRainIntensity * 0.6);
+    topC.lerp(REF.rainTopTint, state.currentRainIntensity * 0.7);
     
     // Declared here (not further down where it's used for updateWindLeaves/
     // updateRadioTower) because the cloudMat block right below also reads
@@ -169,7 +194,7 @@ export function updateAtmosphere(state, delta) {
 
     state.scene.fog.color.copy(fogC); state.skyMat.uniforms.topColor.value.copy(topC); state.skyMat.uniforms.bottomColor.value.copy(botC);
     if(state.cloudMat) {
-        cloudC.lerp(new THREE.Color(0x2a2a2a), state.currentRainIntensity * 0.8);
+        cloudC.lerp(REF.rainCloudTint, state.currentRainIntensity * 0.8);
         state.cloudMat.uniforms.cloudColor.value.copy(cloudC);
         // Coverage shapes actual gaps/density (see sky.js fragment shader);
         // opacity fades thin wisps down further so a barely-cloudy sky doesn't
@@ -226,7 +251,7 @@ export function updateAtmosphere(state, delta) {
     });
     if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
         state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
-        state.rainMaterial.color.set(new THREE.Color(0xffffff).lerp(new THREE.Color(0x334466), 1 - dayBlend));
+        state.rainMaterial.color.set(_rainColor.copy(REF.rainDayColor).lerp(REF.rainNightColor, 1 - dayBlend));
         
         state.rainMaterial.opacity = 0.15 * Math.min(1.0, state.currentRainIntensity * 2.0);
         state.rainMesh.count = Math.max(0, Math.floor(45000 * state.currentRainIntensity));
