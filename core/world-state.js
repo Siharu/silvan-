@@ -59,10 +59,14 @@ export function createWorldState() {
         stepTimer: 0,
 
         // --- weather ---
-        currentRainIntensity: 1.0,
-        targetRainIntensity: 0.0, // starts transitioning to clear
-        currentCloudiness: 0.5,
-        targetCloudiness: 0.5, // rolled independently of rain so overcast-but-dry and clear-but-drizzling skies can both happen
+        // Was 1.0/0.5 — a session always opened mid-storm/overcast and had
+        // to visibly ease down to clear over the first couple seconds.
+        // Starting clear and letting the first weatherChangeTimer roll (25s
+        // in) introduce whatever's next reads as a calm start instead.
+        currentRainIntensity: 0.0,
+        targetRainIntensity: 0.0,
+        currentCloudiness: 0.15,
+        targetCloudiness: 0.15, // rolled independently of rain so overcast-but-dry and clear-but-drizzling skies can both happen
         weatherChangeTimer: 0,
 
         // --- three.js core ---

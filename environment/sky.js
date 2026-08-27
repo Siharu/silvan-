@@ -115,8 +115,13 @@ export function createSky(state) {
                 // peaks pass, reading as scattered wisps with real gaps of open
                 // sky between them; at high coverage almost the whole band
                 // passes, reading as solid overcast.
-                float lo = mix(0.55, 0.05, uCoverage);
-                float hi = mix(0.88, 0.55, uCoverage);
+                // Raised the clear-sky end of this range (was 0.55/0.88) —
+                // fbm's noise centers around ~0.5, so a 0.55 threshold at
+                // uCoverage=0 still let a big chunk of the dome pass as
+                // cloud even on a nominally "clear" day. 0.78 leaves only
+                // the actual noise peaks visible as scattered wisps.
+                float lo = mix(0.78, 0.05, uCoverage);
+                float hi = mix(0.96, 0.55, uCoverage);
                 float density = smoothstep(lo, hi, n);
                 density *= smoothstep(0.12, 0.4, dir.y);
                 gl_FragColor = vec4(cloudColor, density * opacity * 0.9);

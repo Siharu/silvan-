@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { WATER_LEVEL } from './world-state.js';
 import { getElevation, islandRadiusAt, BASE_BOUNDARY_RADIUS } from '../environment/terrain.js';
 import { animateAnimalRig } from '../environment/animals.js';
+import { setAmbientVolume } from '../audio/ambience.js';
 
 // Soft world boundary — instead of a hard clamp that reads as an invisible
 // wall, movement gets increasingly resisted ("wind") as the player nears
@@ -284,7 +285,7 @@ export function updatePlayer(state, delta) {
     // gentler shoreline-proximity fade atmosphere/day-night-cycle.js already
     // applies every frame before this runs.
     if (state.player.isInWater && state.isPlaying) {
-        state.waterAudio.volume(0.55);
+        setAmbientVolume(state, state.waterAudio, 0.55);
     }
 
     // Screen-edge tint so the water reads as water, not just a slowdown.

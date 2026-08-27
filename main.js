@@ -14,6 +14,7 @@ import { createGodRaysPass } from './fx/god-rays.js';
 import { createWorldState } from './core/world-state.js';
 import { resolveQualityPreset, QUALITY_PRESETS } from './core/quality.js';
 import { getModifiers } from './core/modifiers.js';
+import { getSettings } from './core/settings.js';
 import { getViewMode } from './core/view-mode.js';
 import { writeLocalSave, AUTOSAVE_INTERVAL_MS } from './core/save-system.js';
 import { setupInput, onWindowResize } from './core/input.js';
@@ -47,6 +48,8 @@ import { createBackgroundRenderTarget, resizeBackgroundRenderTarget, renderBackg
 const state = createWorldState();
 state.viewMode = getViewMode(); // 'firstperson' | 'topdown' — see core/view-mode.js
 state.quality = resolveQualityPreset();
+state.settings = getSettings(); // Camera/Graphics/Audio live settings — core/settings.js
+state.baseFogDensity = 0.0052; // main.js's own historical default, kept as a named constant so settings.js's fogDensityMult has a fixed base to multiply rather than compounding against whatever scene.fog.density last was
 if (state.viewMode === 'topdown') {
     // Top-down mode still forces the cheap instance-count tier regardless
     // of whatever the player separately chose in the Graphics toggle — the
@@ -152,7 +155,7 @@ function nextFrame() {
 // no-op if the frame hasn't loaded or the postMessage listener isn't up
 // yet, which is fine — the next call catches it up to the current real
 // percentage instead of trying to replay missed increments.
-const INIT_STEP_COUNT = 12;
+const INIT_STEP_COUNT = 13; // bumped 12->13 for the compileAsync() step added at the end of init(), below
 let initStepsDone = 0;
 // fraction (0..1): how far through the *current* step we are. Only the two
 // steps that chunk themselves (createGrass, generateFractalForest — see
@@ -179,7 +182,7 @@ async function init() {
     // still does the actual "hide the edge of the world" job, so this only
     // needed to be thick enough to soften pop-in, not to actively darken
     // mid-distance terrain.
-    state.scene.fog = new THREE.FogExp2(0x111625, 0.0052);
+    state.scene.fog = new THREE.FogExp2(0x111625, state.baseFogDensity * state.settings.fogDensityMult);
 
     state.globalTextures = createProceduralTextures();
 
@@ -193,6 +196,7 @@ async function init() {
     // first-person's 75 so it still doesn't fisheye at the steeper
     // downward pitch.
     state.camera = new THREE.PerspectiveCamera(state.viewMode === 'topdown' ? 62 : 75, window.innerWidth / window.innerHeight, 0.1, 1500);
+    if (state.viewMode !== 'topdown') { state.camera.fov = state.settings.fov; state.camera.updateProjectionMatrix(); } // user FOV setting — topdown keeps its own fixed framing, see comment above
 
     state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
     // three.js r155+ defaults useLegacyLights to false (physically-correct
@@ -349,6 +353,20 @@ async function init() {
     window.addEventListener('beforeunload', () => {
         if (state.isPlaying) writeLocalSave(state);
     });
+
+    // Force every material's shader to compile now, while the loading
+    // overlay is still covering the screen, instead of letting it happen
+    // lazily on this scene's actual first render. WebGL shader compilation
+    // is lazy per-material — with dozens of custom ShaderMaterials in this
+    // scene (water, sky, clouds, grass wind, rock noise, god-rays, bloom),
+    // they'd all compile at once on the very first real frame, which is a
+    // well-documented multi-hundred-ms hitch. That hitch used to land
+    // exactly when the loading screen faded away (see index.html's 0.5s
+    // opacity transition), turning the reveal itself into the stutter.
+    // Paying that cost here instead means it happens under the loading
+    // screen where a brief pause is invisible, not during the reveal.
+    await state.renderer.compileAsync(state.scene, state.camera);
+    await afterStep();
 
     requestAnimationFrame(animate);
 }

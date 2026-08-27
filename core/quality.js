@@ -30,6 +30,27 @@ export const QUALITY_PRESETS = {
         pixelRatioCap: 1.25,
         bloomEnabled: true,
     },
+    // Sits between low and high across every instance count and shadow/
+    // pixel-ratio setting — a genuine middle tier, not just an alias for
+    // one of the other two. Bloom stays on (it's cheap relative to
+    // instance counts, see 'low's own comment on why it cuts bloom but
+    // this tier doesn't need to).
+    medium: {
+        grassCount: 500000,
+        treeCount: 480,
+        pineTreeCount: 12,
+        rockCount: 650,
+        fernClusterCount: 26,
+        mossCount: 4800,
+        dustCount: 1800,
+        fireflyCount: 700,
+        rainCount: 22000,
+        rainSplashCount: 220,
+        windLeafCount: 130,
+        shadowMapSize: 768,
+        pixelRatioCap: 1.1,
+        bloomEnabled: true,
+    },
     low: {
         grassCount: 140000,
         treeCount: 260,
@@ -76,7 +97,7 @@ export const QUALITY_PRESETS = {
 export function getQualityLevel() {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored === 'high' || stored === 'low') return stored;
+        if (stored === 'high' || stored === 'medium' || stored === 'low') return stored;
     } catch (e) { /* localStorage unavailable (private browsing, etc.) — fall through to default */ }
     return 'high';
 }
@@ -92,7 +113,7 @@ export function resolveQualityPreset() {
 // for why a reload is the deliberate, simpler approach here rather than
 // live scene rebuilding.
 export function setQualityLevel(level) {
-    if (level !== 'high' && level !== 'low') return;
+    if (level !== 'high' && level !== 'medium' && level !== 'low') return;
     try { localStorage.setItem(STORAGE_KEY, level); } catch (e) { /* private browsing etc. — setting won't persist, but still apply for this session via reload */ }
     location.reload();
 }

@@ -78,7 +78,14 @@ export function setRockModifier(key, value) {
     location.reload();
 }
 
+// Unlike setRockModifier, this does NOT reload itself — water modifiers are
+// live (no reload needed) and reloading unconditionally would blow away the
+// live update path for no reason, plus silently discard the defaults this
+// returns before the caller ever gets to use them. The caller (core/input.js)
+// is responsible for pushing the returned defaults into state.modifiers, the
+// slider DOM, and the live water uniforms, and for reloading only if a
+// baked (non-live) rock setting actually needs to be re-applied.
 export function resetModifiers() {
     try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* no-op */ }
-    location.reload();
+    return { ...DEFAULT_MODIFIERS };
 }

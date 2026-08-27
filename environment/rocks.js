@@ -142,7 +142,16 @@ function fbm3D(x, y, z, freq, roughness, lacunarity, octaves, seed) {
 // `noiseScale`/`disp` are similarly multiplied by state.modifiers.
 // rockRoughness at build time rather than edited directly here.
 const ROCK_TYPES = [
-    { name: 'granite',   base: 0x5c6061, accent: 0x323536, noiseScale: 0.75, roughness: 0.35, lacunarity: 1.7, octaves: 3, disp: 0.32, flatShaded: false, detail: 16 },
+    // 'granite' retuned to the exact params from ocean-water.html's sibling
+    // rock-generator demo screenshot (base color 5C6061 matches, so this
+    // slot got the update rather than adding a 7th type): noiseScale 1.5
+    // (Frequency), roughness 0.55, lacunarity 2.2, octaves 5 (Detail), disp
+    // 0.4 (Strength), accent 424546 (Crevice Color), flatShaded true (Flat
+    // Shading on). detail dropped 16->12 to match the flat-shaded baseline
+    // (see the flatShaded-vs-smooth detail split documented above) — the
+    // demo's own Geometry Detail 100 is a single-live-mesh number, not
+    // something 1,100 InstancedMesh instances can afford (see file header).
+    { name: 'granite',   base: 0x5c6061, accent: 0x424546, noiseScale: 1.5,  roughness: 0.55, lacunarity: 2.2, octaves: 5, disp: 0.4,  flatShaded: true,  detail: 12 },
     { name: 'sandstone', base: 0x8b7355, accent: 0x5c4033, noiseScale: 0.55, roughness: 0.3,  lacunarity: 1.6, octaves: 2, disp: 0.26, flatShaded: false, detail: 16 },
     { name: 'basalt',    base: 0x4a4a4a, accent: 0x212121, noiseScale: 1.0,  roughness: 0.35, lacunarity: 1.8, octaves: 3, disp: 0.38, flatShaded: true,  detail: 12 },
     { name: 'redrock',   base: 0xa86f58, accent: 0x693724, noiseScale: 0.65, roughness: 0.3,  lacunarity: 1.6, octaves: 2, disp: 0.3,  flatShaded: false, detail: 16 },

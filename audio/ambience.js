@@ -36,7 +36,15 @@ export function createAmbientAudio(state) {
     state.windAudio = safeHowl(SOUNDS.wind, { loop: true, volume: 0 });
     state.waterAudio = safeHowl(SOUNDS.water, { loop: true, volume: 0 });
     state.rainAudio = safeHowl(SOUNDS.rain, { loop: true, volume: 0 });
-    state.stepAudio = safeHowl(SOUNDS.footstep, { volume: 0.25, rate: 1.1, pool: 5 });
+    state.stepAudio = safeHowl(SOUNDS.footstep, { volume: 0.25 * (state.settings ? state.settings.sfxVolume : 1.0), rate: 1.1, pool: 5 });
+}
+
+// stepAudio's volume is only ever set once at creation above, never
+// per-frame — so unlike the ambient loops (setAmbientVolume, below), the
+// SFX volume setting just needs to re-apply that same base (0.25) whenever
+// the slider changes, not on every frame.
+export function setSfxVolume(state, value) {
+    if (state.stepAudio) state.stepAudio.volume(0.25 * value);
 }
 
 function safePlay(howl) {
@@ -72,4 +80,20 @@ export function pauseAmbientAudio(state) {
 export function setMasterVolume(state, value) {
     state.masterVolume = value;
     Howler.volume(value);
+}
+
+// Ambience volume (day/night/wind/rain/water) is a SEPARATE multiplier on
+// top of master, not routed through Howler's global gain the way master is
+// — because unlike master (which should hit everything, including one-shot
+// SFX), this one only applies to the looping ambience layer, so it has to
+// multiply into each Howl's own already-dynamic per-frame target rather
+// than replace it outright. Centralized here as a single helper — call
+// sites (atmosphere/day-night-cycle.js, core/player-controller.js's swim
+// water-audio swell) pass their already-computed target value through this
+// instead of calling howl.volume(x) directly, so a future new ambient
+// sound just needs one extra call through here to inherit the setting
+// automatically, same "one choke point, not six individually-multiplied
+// call sites" reasoning as setMasterVolume's own comment above.
+export function setAmbientVolume(state, howl, target) {
+    howl.volume(target * (state.settings ? state.settings.ambienceVolume : 1.0));
 }

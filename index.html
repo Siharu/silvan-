@@ -76,6 +76,111 @@
             z-index: 10;
             pointer-events: none;
         }
+
+        /* Mobile touch controls (core/touch-controls.js) — joystick
+           bottom-left, drag-to-look zone covering the right two-thirds of
+           the screen, action buttons bottom-right, pause button top-right.
+           z-index 12: above .hud-layer (10) so the joystick/buttons are
+           always reachable over HUD text, below .autosave-indicator (15)
+           and .pause-layer (20) so those still overlay correctly. */
+        .touch-controls {
+            position: fixed;
+            inset: 0;
+            z-index: 12;
+        }
+        .touch-look-zone {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 65%;
+            height: 100%;
+            touch-action: none;
+        }
+        .touch-joystick-zone {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 45%;
+            height: 55%;
+            touch-action: none;
+        }
+        .touch-joystick-base {
+            position: absolute;
+            left: 2.2rem;
+            bottom: 2.2rem;
+            width: 8.5rem;
+            height: 8.5rem;
+            border-radius: 50%;
+            background: rgba(20, 24, 32, 0.35);
+            border: 1px solid rgba(255,255,255,0.18);
+            backdrop-filter: blur(2px);
+        }
+        .touch-joystick-knob {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 3.4rem;
+            height: 3.4rem;
+            margin: -1.7rem 0 0 -1.7rem;
+            border-radius: 50%;
+            background: rgba(238, 241, 246, 0.28);
+            border: 1px solid rgba(255,255,255,0.35);
+            transition: background 0.15s ease;
+        }
+        .touch-joystick-base.active .touch-joystick-knob {
+            background: rgba(169, 196, 255, 0.4);
+        }
+        .touch-action-buttons {
+            position: absolute;
+            right: 1.5rem;
+            bottom: 2.2rem;
+            display: flex;
+            align-items: flex-end;
+            gap: 0.9rem;
+        }
+        .touch-action-btn {
+            width: 4.2rem;
+            height: 4.2rem;
+            border-radius: 50%;
+            background: rgba(20, 24, 32, 0.4);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.85);
+            font-size: 0.62rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            backdrop-filter: blur(2px);
+            user-select: none;
+            touch-action: none;
+        }
+        .touch-action-btn:active, .touch-action-btn.active {
+            background: rgba(169, 196, 255, 0.3);
+            border-color: rgba(210, 225, 255, 0.5);
+        }
+        .touch-action-btn-primary {
+            width: 4.8rem;
+            height: 4.8rem;
+            font-size: 0.68rem;
+        }
+        .touch-action-btn-small {
+            width: 3.4rem;
+            height: 3.4rem;
+            font-size: 0.56rem;
+            align-self: flex-start;
+            margin-bottom: 0.7rem;
+        }
+        .touch-pause-btn {
+            position: absolute;
+            top: 1.6rem;
+            right: 1.6rem;
+            width: 2.6rem;
+            height: 2.6rem;
+            border-radius: 4px;
+            background: rgba(20, 24, 32, 0.4);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.85);
+            font-size: 1.1rem;
+            line-height: 1;
+        }
         .hidden {
             opacity: 0;
             pointer-events: none;
@@ -409,6 +514,22 @@
             width: 100%;
             accent-color: #a9c4ff;
         }
+        /* Shared between the pause panel and the title-screen tabbed panel
+           (.tab-panel inherits .pause-settings label's styling too — see
+           the tabs-panel CSS block below) — one checkbox row style for
+           both "Invert Y Axis" instances rather than two copies. */
+        .settings-checkbox-row {
+            display: flex !important;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .settings-checkbox-row input[type="checkbox"] {
+            accent-color: #a9c4ff;
+            width: 14px;
+            height: 14px;
+            margin: 0;
+        }
         .quality-toggle-row {
             display: flex;
             align-items: center;
@@ -603,6 +724,22 @@
         .control-chip:hover {
             border-color: rgba(210, 225, 255, 0.3);
             background: rgba(255,255,255,0.05);
+        }
+        /* .control-chip is now a <button> (core/input.js builds the
+           keybind rows dynamically from core/keybinds.js's ACTION_LABELS,
+           replacing what used to be a static list) — reset default button
+           chrome so it still reads as the same chip it always was. */
+        button.control-chip {
+            width: 100%;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .control-chip.listening {
+            border-color: rgba(255, 210, 140, 0.6);
+            background: rgba(255, 210, 140, 0.08);
+        }
+        .control-chip.listening .control-key {
+            color: #ffd28c;
         }
         .control-key {
             font-size: 0.7rem;
@@ -991,6 +1128,7 @@
             <div class="title-panel tabs-panel" id="title-settings-panel">
                 <div class="tabs-header" id="title-settings-tabs">
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
+                    <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
                     <button class="tab-btn" data-tab="modifiers" type="button">Modifiers</button>
                     <button class="tab-btn" data-tab="controls" type="button">Controls</button>
@@ -1001,6 +1139,7 @@
                     <label style="margin-top: 0;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
                     <div class="quality-toggle-row" id="title-quality-row">
                         <button id="title-quality-high-btn" class="quality-toggle-btn">High</button>
+                        <button id="title-quality-med-btn" class="quality-toggle-btn">Medium</button>
                         <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
                     </div>
 
@@ -1009,11 +1148,36 @@
                         <button id="title-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
                         <button id="title-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
                     </div>
+
+                    <label style="margin-top: 0.7rem;" for="title-draw-distance-slider">Tree Draw Distance</label>
+                    <input type="range" id="title-draw-distance-slider" min="60" max="300" step="10" value="150">
+
+                    <label for="title-fog-density-slider">Fog Density</label>
+                    <input type="range" id="title-fog-density-slider" min="0.3" max="2" step="0.05" value="1">
+                </div>
+
+                <div class="tab-panel" data-tab-panel="camera">
+                    <label style="margin-top: 0;" for="title-fov-slider">Field of View</label>
+                    <input type="range" id="title-fov-slider" min="60" max="100" step="1" value="75">
+
+                    <label for="title-sensitivity-slider">Mouse Sensitivity</label>
+                    <input type="range" id="title-sensitivity-slider" min="0.3" max="2.5" step="0.05" value="1">
+
+                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
+                        <input type="checkbox" id="title-invert-y-checkbox">
+                        Invert Y Axis
+                    </label>
                 </div>
 
                 <div class="tab-panel" data-tab-panel="audio">
-                    <label style="margin-top: 0;" for="title-volume-slider">Volume</label>
+                    <label style="margin-top: 0;" for="title-volume-slider">Master Volume</label>
                     <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
+
+                    <label for="title-ambience-volume-slider">Ambience Volume</label>
+                    <input type="range" id="title-ambience-volume-slider" min="0" max="1" step="0.01" value="1">
+
+                    <label for="title-sfx-volume-slider">SFX Volume</label>
+                    <input type="range" id="title-sfx-volume-slider" min="0" max="1" step="0.01" value="1">
                 </div>
 
                 <div class="tab-panel" data-tab-panel="modifiers">
@@ -1046,12 +1210,14 @@
                     <button id="title-help-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false" style="display: none;">
                         Help <span class="settings-help-caret">▾</span>
                     </button>
-                    <div class="title-controls open" id="title-controls-panel" style="margin-top: 0;">
-                        <div class="control-chip"><span class="control-key">W A S D</span><span class="control-label">Move</span></div>
-                        <div class="control-chip"><span class="control-key">Mouse</span><span class="control-label">Look</span></div>
-                        <div class="control-chip"><span class="control-key">Shift</span><span class="control-label">Run</span></div>
-                        <div class="control-chip"><span class="control-key">R</span><span class="control-label">Rest (fast time)</span></div>
+                    <div class="title-controls open" id="title-keybind-list" style="margin-top: 0;"></div>
+                    <div class="quality-toggle-row" style="margin-top: 0.7rem;">
+                        <button id="title-keybind-reset-btn" class="quality-toggle-btn">Reset to Defaults</button>
                     </div>
+                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
+                        <input type="checkbox" id="title-force-touch-checkbox">
+                        Show Touch Controls <span class="quality-reload-note">(applies on reload)</span>
+                    </label>
                 </div>
 
                 <div class="tab-panel" data-tab-panel="save">
@@ -1083,8 +1249,31 @@
         <div id="time-display" class="font-mono font-bold">TIME: 08:39</div>
         <div id="day-display">DAY: 1</div>
         <div id="weather-display" class="text-blue-300">WEATHER: CLEAR</div>
-        <div class="mt-4 text-[11px] text-gray-400">ESC TO PAUSE</div>
-        <div class="text-[11px] text-gray-400">HOLD 'R' TO REST</div>
+        <div class="mt-4 text-[11px] text-gray-400" id="hud-pause-hint">ESC TO PAUSE</div>
+        <div class="text-[11px] text-gray-400" id="hud-rest-hint">HOLD 'R' TO REST</div>
+    </div>
+
+    <!-- Mobile touch controls — core/touch-controls.js shows/hides this
+         whole block based on touch-capability detection (or the manual
+         override in Settings > Controls, see core/settings.js's
+         forceTouchControls). Movement joystick fakes the exact same
+         state.keys.w/a/s/d booleans the WASD keydown listener sets in
+         core/input.js, and the look-drag zone calls the same rotation math
+         core/input.js's mousemove handler uses — so core/player-controller.js
+         needed zero changes to support touch at all. -->
+    <div id="touch-controls" class="touch-controls hidden">
+        <div id="touch-look-zone" class="touch-look-zone"></div>
+        <div id="touch-joystick-zone" class="touch-joystick-zone">
+            <div id="touch-joystick-base" class="touch-joystick-base">
+                <div id="touch-joystick-knob" class="touch-joystick-knob"></div>
+            </div>
+        </div>
+        <div class="touch-action-buttons">
+            <button id="touch-rest-btn" class="touch-action-btn touch-action-btn-small" type="button">Rest</button>
+            <button id="touch-sprint-btn" class="touch-action-btn" type="button">Sprint</button>
+            <button id="touch-interact-btn" class="touch-action-btn touch-action-btn-primary" type="button">Interact</button>
+        </div>
+        <button id="touch-pause-btn" class="touch-pause-btn" type="button" aria-label="Pause">☰</button>
     </div>
 
     <!-- Flashes briefly exactly when core/save-system.js's writeLocalSave()
@@ -1111,23 +1300,70 @@
             <button id="pause-resume-btn" class="pause-btn">Resume</button>
             <button id="pause-settings-btn" class="pause-btn">Settings</button>
             <div id="pause-settings" class="pause-settings">
-                <label for="pause-volume-slider">Volume</label>
-                <input type="range" id="pause-volume-slider" min="0" max="1" step="0.01" value="1">
-                <label style="margin-top: 1rem;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
-                <div class="quality-toggle-row">
-                    <button id="pause-quality-high-btn" class="quality-toggle-btn">High</button>
-                    <button id="pause-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                <div class="tabs-header" id="pause-settings-tabs">
+                    <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
+                    <button class="tab-btn" data-tab="camera" type="button">Camera</button>
+                    <button class="tab-btn" data-tab="audio" type="button">Audio</button>
+                    <button class="tab-btn" data-tab="controls" type="button">Controls</button>
+                    <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
-                <label style="margin-top: 1rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
-                <div class="quality-toggle-row">
-                    <button id="pause-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
-                    <button id="pause-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
+
+                <div class="tab-panel active" data-tab-panel="graphics">
+                    <label style="margin-top: 0;">Graphics <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row">
+                        <button id="pause-quality-high-btn" class="quality-toggle-btn">High</button>
+                        <button id="pause-quality-med-btn" class="quality-toggle-btn">Medium</button>
+                        <button id="pause-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
+                    </div>
+                    <label style="margin-top: 0.7rem;" for="pause-draw-distance-slider">Tree Draw Distance</label>
+                    <input type="range" id="pause-draw-distance-slider" min="60" max="300" step="10" value="150">
+                    <label for="pause-fog-density-slider">Fog Density</label>
+                    <input type="range" id="pause-fog-density-slider" min="0.3" max="2" step="0.05" value="1">
+                    <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row">
+                        <button id="pause-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
+                        <button id="pause-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
+                    </div>
                 </div>
-                <label style="margin-top: 1rem;">Save Data</label>
-                <div class="quality-toggle-row">
-                    <button id="pause-export-save-btn" class="quality-toggle-btn">Export Save</button>
+
+                <div class="tab-panel" data-tab-panel="camera">
+                    <label style="margin-top: 0;" for="pause-fov-slider">Field of View</label>
+                    <input type="range" id="pause-fov-slider" min="60" max="100" step="1" value="75">
+                    <label for="pause-sensitivity-slider">Mouse Sensitivity</label>
+                    <input type="range" id="pause-sensitivity-slider" min="0.3" max="2.5" step="0.05" value="1">
+                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
+                        <input type="checkbox" id="pause-invert-y-checkbox">
+                        Invert Y Axis
+                    </label>
                 </div>
-                <div class="save-status" id="pause-save-status"></div>
+
+                <div class="tab-panel" data-tab-panel="audio">
+                    <label style="margin-top: 0;" for="pause-volume-slider">Master Volume</label>
+                    <input type="range" id="pause-volume-slider" min="0" max="1" step="0.01" value="1">
+                    <label for="pause-ambience-volume-slider">Ambience Volume</label>
+                    <input type="range" id="pause-ambience-volume-slider" min="0" max="1" step="0.01" value="1">
+                    <label for="pause-sfx-volume-slider">SFX Volume</label>
+                    <input type="range" id="pause-sfx-volume-slider" min="0" max="1" step="0.01" value="1">
+                </div>
+
+                <div class="tab-panel" data-tab-panel="controls">
+                    <div class="title-controls open" id="pause-keybind-list" style="margin-top: 0;"></div>
+                    <div class="quality-toggle-row" style="margin-top: 0.7rem;">
+                        <button id="pause-keybind-reset-btn" class="quality-toggle-btn">Reset to Defaults</button>
+                    </div>
+                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
+                        <input type="checkbox" id="pause-force-touch-checkbox">
+                        Show Touch Controls <span class="quality-reload-note">(applies on reload)</span>
+                    </label>
+                </div>
+
+                <div class="tab-panel" data-tab-panel="save">
+                    <label style="margin-top: 0;">Save Data</label>
+                    <div class="quality-toggle-row">
+                        <button id="pause-export-save-btn" class="quality-toggle-btn">Export Save</button>
+                    </div>
+                    <div class="save-status" id="pause-save-status"></div>
+                </div>
             </div>
             <button id="pause-quit-btn" class="pause-btn">Quit to Title</button>
         </div>
@@ -1763,24 +1999,32 @@
     })();
     </script>
 
-    <!-- Settings tab switching — purely a visibility toggle on the
-         .tab-panel wrappers built above. Doesn't touch any control's own
-         id/listener, so core/input.js's quality/view-mode/modifiers/save
-         wiring keeps working completely unmodified underneath it. -->
+    <!-- Settings tab switching — purely a visibility toggle on each panel's
+         own .tab-panel wrappers. Doesn't touch any control's own id/
+         listener, so core/input.js's quality/view-mode/modifiers/save/
+         camera/audio wiring keeps working completely unmodified underneath
+         it. Runs for both the title screen's tabs and the pause menu's —
+         same #ID-settings-tabs -> #ID-settings .tab-panel convention for
+         both, scoped per-instance so switching tabs in one panel never
+         touches the other's. -->
     <script>
     (function () {
-        const tabsHeader = document.getElementById('title-settings-tabs');
-        if (!tabsHeader) return;
-        const tabBtns = Array.from(tabsHeader.querySelectorAll('.tab-btn'));
-        const tabPanels = Array.from(document.querySelectorAll('#title-settings-panel .tab-panel'));
+        function wireTabGroup(tabsHeaderId, panelScopeSelector) {
+            const tabsHeader = document.getElementById(tabsHeaderId);
+            if (!tabsHeader) return;
+            const tabBtns = Array.from(tabsHeader.querySelectorAll('.tab-btn'));
+            const tabPanels = Array.from(document.querySelectorAll(panelScopeSelector + ' .tab-panel'));
 
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const target = btn.dataset.tab;
-                tabBtns.forEach(b => b.classList.toggle('active', b === btn));
-                tabPanels.forEach(p => p.classList.toggle('active', p.dataset.tabPanel === target));
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const target = btn.dataset.tab;
+                    tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+                    tabPanels.forEach(p => p.classList.toggle('active', p.dataset.tabPanel === target));
+                });
             });
-        });
+        }
+        wireTabGroup('title-settings-tabs', '#title-settings-panel');
+        wireTabGroup('pause-settings-tabs', '#pause-settings');
     })();
     </script>
 

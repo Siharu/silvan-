@@ -10,9 +10,27 @@ import * as THREE from 'three';
 import { DAY_LENGTH_MS } from '../core/world-state.js';
 import { getElevation } from '../environment/terrain.js';
 import { updateWindLeaves } from '../fx/wind-leaves.js';
+import { setAmbientVolume } from '../audio/ambience.js';
 import { updateRadioTower, updateTowerCutscene } from '../environment/radio-tower.js';
 
 
+
+// Wave-height modifier + storm reactivity applied continuously (core/
+// modifiers.js's waterWaveHeight/waterStormReactivity, both live-editable
+// in Settings > Modifiers) rather than only when a slider moves, so wave
+// height keeps rising and falling smoothly as rain intensity itself
+// changes. Scales each Gerstner wave's steepness relative to the
+// material's own baseSteepness (see environment/water-shader.js), never an
+// absolute value, so the lake and ocean presets keep their own distinct
+// calm-vs-choppy character rather than converging on one number.
+function applyWaveHeightModifier(state, mat) {
+    if (!mat.userData.baseSteepness || !state.modifiers) return;
+    const stormBoost = 1 + state.currentRainIntensity * (state.modifiers.waterStormReactivity - 1);
+    const mult = state.modifiers.waterWaveHeight * stormBoost;
+    mat.userData.baseSteepness.forEach((base, i) => {
+        mat.uniforms.u_waves.value[i].z = base * mult;
+    });
+}
 
 export function updateAtmosphere(state, delta) {
     state.timeMultiplier = state.keys.r ? 50 : 1;
@@ -27,7 +45,12 @@ export function updateAtmosphere(state, delta) {
         // sky — previously rain intensity was the only weather variable, so
         // every "not clear" moment read as an overcast rain prelude and nights/
         // days that weren't raining all defaulted to the same muted grey.
-        state.targetCloudiness = Math.random();
+        // Math.random() alone averages 0.5 cloudiness, so the sky read as
+        // overcast about as often as not. Squaring skews the distribution
+        // toward clear (mostly 0.0-0.4, with real overcast/storm days still
+        // possible but rarer) — matches how an actual sky spends most of its
+        // time mild/clear with occasional heavy cloud, not a coin flip.
+        state.targetCloudiness = Math.random() * Math.random();
         state.targetRainIntensity = (state.targetCloudiness > 0.5 && Math.random() > 0.35)
             ? Math.random() * state.targetCloudiness
             : 0.0;
@@ -145,10 +168,18 @@ export function updateAtmosphere(state, delta) {
         // opacity fades thin wisps down further so a barely-cloudy sky doesn't
         // still read as a hazy film over everything.
         state.cloudMat.uniforms.uCoverage.value = state.currentCloudiness;
-        // Capped at 0.8 rather than a fully opaque 1.0 at max cloudiness —
-        // a totally solid cloud shell at night left nothing of the sky or
-        // stars visible behind it at all (see cloudC above).
-        state.cloudMat.uniforms.opacity.value = 0.35 + state.currentCloudiness * 0.45;
+        // Floor dropped 0.35->0.15 — at low cloudiness the old floor still
+        // painted a faint haze over the whole dome even when coverage said
+        // "basically clear". Capped at 0.8 rather than a fully opaque 1.0 at
+        // max cloudiness — a totally solid cloud shell at night left nothing
+        // of the sky or stars visible behind it at all (see cloudC above).
+        state.cloudMat.uniforms.opacity.value = 0.15 + state.currentCloudiness * 0.65;
+        // uTime was never being fed to this material — cloudMat is a plain
+        // ShaderMaterial (not compiled via onBeforeCompile), so the generic
+        // userData.shader traverse loop above skips it entirely and its fbm
+        // sampling was frozen at uTime=0 forever. This is what made the
+        // clouds static instead of drifting.
+        state.cloudMat.uniforms.uTime.value = ts;
     }
 
     const ts = performance.now() * 0.001;
@@ -161,7 +192,21 @@ export function updateAtmosphere(state, delta) {
     // uniforms aren't populated yet. Without this guard that one frame
     // throws and, since traverse doesn't catch, permanently breaks every
     // later call to this function too.
-    state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader && c.material.userData.shader.uniforms.uTime) c.material.userData.shader.uniforms.uTime.value = ts; });
+    state.scene.traverse((c) => {
+        if (!c.material || !c.material.userData || !c.material.userData.shader) return;
+        const u = c.material.userData.shader.uniforms;
+        if (u.uTime) u.uTime.value = ts;
+        // Same guard reasoning as uTime above — generic so any material
+        // (e.g. the forest LOD imposter swap in environment/forest.js)
+        // just has to declare this uniform to get it fed, no per-material
+        // wiring here.
+        if (u.uCameraPos) u.uCameraPos.value.copy(state.camera.position);
+        // Live draw-distance setting (core/settings.js) — same generic
+        // pattern as uTime/uCameraPos above, so environment/forest.js's
+        // tree LOD switch materials just have to declare this uniform to
+        // pick it up, no per-material wiring here either.
+        if (u.uSwitchDist && state.settings) u.uSwitchDist.value = state.settings.drawDistance;
+    });
     if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
         state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
         state.rainMaterial.color.set(new THREE.Color(0xffffff).lerp(new THREE.Color(0x334466), 1 - dayBlend));
@@ -176,41 +221,34 @@ export function updateAtmosphere(state, delta) {
         state.rainSplashMesh.visible = state.currentRainIntensity > 0.15; // match the CLEAR/LIGHT RAIN threshold above
     }
 
-    // Feed the water shader its fake-reflection sun/moon glint direction &
-    // strength. Fades with cloud cover — previously this only depended on
-    // sun height (sy), so a bright glint showed through even on overcast/
-    // rainy skies where there's no direct sun to actually reflect.
+    // Both the lake and ocean now share environment/water-shader.js's
+    // Gerstner shader (Calm Lake / Ocean Breeze presets) instead of the old
+    // per-material sun+moon Blinn-Phong setups, so they only take a single
+    // blended light direction (u_lightDir) and a sky color for the fresnel
+    // mix (u_skyColor), fed the same way for both. u_time isn't reached by
+    // the generic scene.traverse loop above (that one only looks for
+    // `uTime`, this shader's uniform is named `u_time`), so it's set here.
+    const lightDir = sy >= 0
+        ? state.sunLight.position.clone().normalize()
+        : state.moonLight.position.clone().normalize();
+    const ts2 = performance.now() * 0.001;
     if (state.waterMaterial && state.waterMaterial.userData && state.waterMaterial.userData.shader) {
         const wU = state.waterMaterial.userData.shader.uniforms;
-        wU.uSunDir.value.copy(state.sunLight.position).normalize();
-        wU.uMoonDir.value.copy(state.moonLight.position).normalize();
-        wU.uSunStrength.value = Math.max(0, sy) * (1.0 - cloudCover);
-        wU.uMoonStrength.value = Math.max(0, -sy) * (1.0 - cloudCover * 0.7); // moon still dimly visible through thin cloud
-        wU.uSkyColor.value.copy(topC);
-        wU.uRainIntensity.value = state.currentRainIntensity;
-        wU.uStormIntensity.value = Math.min(1.0, state.currentRainIntensity * 1.6); // drives wave chop/whitecaps, separate curve from the rain-ring fade
-        wU.uTime.value = performance.now() * 0.001;
+        wU.u_lightDir.value.copy(lightDir);
+        wU.u_skyColor.value.copy(topC);
+        wU.u_time.value = ts2;
+        applyWaveHeightModifier(state, state.waterMaterial);
     }
-
-    // Same sun/moon glint feed as the lake's waterMaterial block above, for
-    // the ocean visible past the mountain backdrop (environment/ocean.js).
-    // uHorizonColor now tracks botC (the same horizon color driving the sky
-    // dome and fog) each frame — it used to be a fixed dusk tint set once at
-    // shader-compile time, which meant the ocean's own internal haze
-    // gradient permanently disagreed with the actual sky color that
-    // fx/dynamic-fog.js blends toward further out, seaming right where one
-    // handed off to the other. uDeepColor stays closer to fixed (deep water
-    // reads dark regardless of time of day) but still darkens under storms,
-    // same as the lake.
     if (state.oceanMaterial && state.oceanMaterial.userData && state.oceanMaterial.userData.shader) {
         const oU = state.oceanMaterial.userData.shader.uniforms;
-        oU.uSunDir.value.copy(state.sunLight.position).normalize();
-        oU.uMoonDir.value.copy(state.moonLight.position).normalize();
-        oU.uSunStrength.value = Math.max(0, sy) * (1.0 - cloudCover);
-        oU.uMoonStrength.value = Math.max(0, -sy) * (1.0 - cloudCover * 0.7);
-        oU.uHorizonColor.value.copy(botC);
-        oU.uDeepColor.value.set(0x061a24).lerp(new THREE.Color(0x040d13), state.currentRainIntensity * 0.5);
-        oU.uStormIntensity.value = Math.min(1.0, state.currentRainIntensity * 1.6); // same curve as the lake's chop/whitecaps
+        oU.u_lightDir.value.copy(lightDir);
+        // Ocean's fresnel/horizon mix reads off botC (the sky's horizon
+        // color, same one dynamic-fog.js's own blend converges on further
+        // out) rather than topC, so the water's edge doesn't seam against
+        // the actual skyline color behind it.
+        oU.u_skyColor.value.copy(botC);
+        oU.u_time.value = ts2;
+        applyWaveHeightModifier(state, state.oceanMaterial);
     }
 
     // Update puddle shader uniforms and opacity based on rain intensity
@@ -246,18 +284,18 @@ export function updateAtmosphere(state, delta) {
     }
 
     if (state.isPlaying) { 
-        state.dayAmbientAudio.volume(dayBlend * 0.45);
-        state.nightAmbientAudio.volume((1 - dayBlend) * 0.35);
+        setAmbientVolume(state, state.dayAmbientAudio, dayBlend * 0.45);
+        setAmbientVolume(state, state.nightAmbientAudio, (1 - dayBlend) * 0.35);
         // Subtle always-on breeze that swells with weather; gets an extra
         // kick past the heavy-rain gust threshold so the audio matches the
         // wind-blown leaves kicking in visually (fx/wind-leaves.js).
         const gust = Math.max(0, state.currentRainIntensity - 0.6) / 0.4;
-        state.windAudio.volume(0.08 + state.currentRainIntensity * 0.07 + gust * 0.25);
-        state.rainAudio.volume(0.35 * state.currentRainIntensity); 
+        setAmbientVolume(state, state.windAudio, 0.08 + state.currentRainIntensity * 0.07 + gust * 0.25);
+        setAmbientVolume(state, state.rainAudio, 0.35 * state.currentRainIntensity);
 
         // Fade water ambience in as the state.player nears the lake shoreline elevation
         const playerGroundY = getElevation(state.player.position.x, state.player.position.z);
         const waterProximity = Math.max(0, 1.0 - Math.abs(playerGroundY - 1.6) / 20.0);
-        state.waterAudio.volume(waterProximity * 0.4);
+        setAmbientVolume(state, state.waterAudio, waterProximity * 0.4);
     }
 }
