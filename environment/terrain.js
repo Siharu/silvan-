@@ -99,16 +99,32 @@ export function getElevation(x, z) {
 }
 
 
-export function createTerrain(state) {
+// Was a single unbroken synchronous loop over all ~130k vertices
+// (361x360 plane), each calling getElevation() — itself several layered
+// noise() lookups. Unlike grass/forest (already chunked, see their own
+// comments), this ran as one uninterrupted block with no yield inside it,
+// making it the single biggest unbroken freeze in the whole load — even
+// though main.js wraps the call in an afterStep(), that only yields
+// *after* the entire loop finished. Chunked the same way grass does:
+// yield to the browser (and the loading-screen iframe) periodically
+// instead of computing all 130k elevations back to back.
+export async function createTerrain(state, onProgress) {
     const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 360, 360);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;
+    const YIELD_EVERY = 8000;
     for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i);
         const z = pos.getZ(i);
         pos.setY(i, getElevation(x, z));
+
+        if (i > 0 && i % YIELD_EVERY === 0) {
+            if (onProgress) onProgress(i / pos.count);
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
     }
+    if (onProgress) onProgress(1);
     geo.computeVertexNormals();
 
     // Was 0x141a0f — near-black. This is the base under every grass
@@ -132,4 +148,3 @@ export function createTerrain(state) {
     terrain.receiveShadow = true;
     state.scene.add(terrain);
 }
-

@@ -297,11 +297,20 @@ async function init() {
 
     createSky(state);
     await afterStep();
-    createTerrain(state);
+    // Now chunked internally (see terrain.js) — was the single biggest
+    // unbroken synchronous block in the whole load (~130k vertex elevation
+    // lookups with zero yields inside the loop itself).
+    await createTerrain(state, reportLoadProgress);
     await afterStep();
+    // Each of these four was previously back-to-back with no yield between
+    // them, only after the whole group — individually fast, but stacked
+    // they could still add up to a noticeable stall before the next paint.
     createOcean(state);
+    await nextFrame();
     createLake(state);
+    await nextFrame();
     createMountainBoundary(state); // was defined but never called anywhere — the painted mountain-ring backdrop (and its assets/textures/mountains/*.png) has never actually been rendering
+    await nextFrame();
     createDistantIslands(state);
     await afterStep();
     // Grass is a single 1.1M-instance loop (see core/quality.js — "the
@@ -313,6 +322,7 @@ async function init() {
     await createGrass(state, reportLoadProgress);
     await afterStep();
     createFlowers(state);
+    await nextFrame();
     createRocks(state);
     await afterStep();
     createPuddles(state);
@@ -325,16 +335,25 @@ async function init() {
     createDetailedPineTrees(state, state.quality.pineTreeCount);
     await afterStep();
     createFerns(state);
+    await nextFrame();
     createMossClusters(state);
     await afterStep();
     createRainSystem(state);
+    await nextFrame();
     createRainSplashes(state);
     await afterStep();
     createFireflies(state);
+    await nextFrame();
     createDustParticles(state);
     await afterStep();
     createWindLeaves(state);
+    await nextFrame();
     spawnDemoAnimals(state);
+    await nextFrame();
+    // Heaviest of this trio (procedural lattice/strut geometry plus a
+    // findTowerAnchor() search that samples getElevation() ~1,200 times) —
+    // gets its own yield on both sides now instead of being sandwiched
+    // between the other two with no breathing room.
     createRadioTower(state);
     await afterStep();
 
