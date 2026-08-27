@@ -160,6 +160,13 @@ export function updateAtmosphere(state, delta) {
     fogC.lerp(new THREE.Color(0x2a3038), state.currentRainIntensity * 0.6);
     topC.lerp(new THREE.Color(0x3a4048), state.currentRainIntensity * 0.7);
     
+    // Declared here (not further down where it's used for updateWindLeaves/
+    // updateRadioTower) because the cloudMat block right below also reads
+    // it — it was previously declared after that block, which threw a
+    // ReferenceError (TDZ: used before its own `const` initializer) on
+    // every single frame once cloudMat existed.
+    const ts = performance.now() * 0.001;
+
     state.scene.fog.color.copy(fogC); state.skyMat.uniforms.topColor.value.copy(topC); state.skyMat.uniforms.bottomColor.value.copy(botC);
     if(state.cloudMat) {
         cloudC.lerp(new THREE.Color(0x2a2a2a), state.currentRainIntensity * 0.8);
@@ -182,7 +189,6 @@ export function updateAtmosphere(state, delta) {
         state.cloudMat.uniforms.uTime.value = ts;
     }
 
-    const ts = performance.now() * 0.001;
     updateWindLeaves(state, ts);
     updateRadioTower(state, ts, sy < 0);
     updateTowerCutscene(state, delta / 1000);
