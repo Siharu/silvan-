@@ -26,9 +26,19 @@ const CALM_LAKE_PRESET = {
     surfaceColor: '#7cd9fd',
     foamColor: '#ffffff',
     colorOffset: 0.853,
-    colorMultiplier: 0.1,
+    // Was colorMultiplier 0.1 / opacity 0.1 — at head-on viewing angles
+    // (fresnel≈0) alpha collapses straight to u_opacity (see
+    // water-shader.js's `alpha = mix(u_opacity, 1.0, fresnel)`), so almost
+    // the entire lake surface you actually look at read as ~90% see-through
+    // to the terrain underneath, only opaquing up near the fresnel-heavy
+    // shoreline. Only ocean.js's preset (opacity 0.95) was ever solid.
+    // colorMultiplier bumped alongside it so the depth/surface color blend
+    // (mixStrength, same formula) isn't washed out even once alpha is
+    // fixed — 0.1 was compressing almost the whole depth range into a
+    // single flat shade.
+    colorMultiplier: 0.45,
     foamThreshold: 3,
-    opacity: 0.1,
+    opacity: 0.62,
     waves: [
         { dir: 45,  steep: 0.05, len: 15 },
         { dir: 120, steep: 0.03, len: 8 },

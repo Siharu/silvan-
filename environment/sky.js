@@ -42,7 +42,9 @@ export function createSky(state) {
     skyMesh.layers.enable(BACKGROUND_LAYER); // part of the backdrop other materials fog toward, see fx/dynamic-fog.js
     state.scene.add(skyMesh);
 
-    const cloudGeo = new THREE.SphereGeometry(1100, 64, 32);
+    const cloudSegs = state.quality?.cloudSegments ?? 64;
+    const cloudOctaves = state.quality?.cloudOctaves ?? 4;
+    const cloudGeo = new THREE.SphereGeometry(1100, cloudSegs, Math.max(16, Math.round(cloudSegs / 2)));
     state.cloudMat = new THREE.ShaderMaterial({
         uniforms: {
             uTime: { value: 0 },
@@ -88,7 +90,15 @@ export function createSky(state) {
             float fbm(vec3 p) {
                 float f = 0.0;
                 float amp = 0.5;
-                for(int i=0; i<4; i++) {
+                // Octave count now comes from state.quality.cloudOctaves
+                // (core/quality.js already defined this per-tier — High 4,
+                // Medium 3, Low 2 — but this shader ignored it and always
+                // ran the full 4-octave loop regardless of quality preset,
+                // on every fragment across the whole visible cloud dome).
+                // Baked in as a compile-time constant here (not a uniform
+                // loop bound) since some mobile GLSL ES compilers require
+                // for-loop trip counts to be constant expressions.
+                for(int i=0; i<${cloudOctaves}; i++) {
                     f += amp * noise(p);
                     p *= 2.0;
                     amp *= 0.5;
@@ -238,4 +248,3 @@ export function createSky(state) {
     state.starMesh.layers.enable(BACKGROUND_LAYER);
     state.scene.add(state.starMesh);
 }
-
