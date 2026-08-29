@@ -25,7 +25,9 @@ import { createTerrain } from './environment/terrain.js';
 import { createSky } from './environment/sky.js';
 import { createLake } from './environment/lake.js';
 import { createOcean } from './environment/ocean.js';
-import { createMountainBoundary } from './environment/mountain-boundary.js';
+// createMountainBoundary import removed — see the removed call in the
+// init sequence below for why (island now visually fades into open ocean
+// at the edge instead of a painted mountain ring).
 import { createDistantIslands } from './environment/distant-islands.js';
 import { createGrass } from './environment/grass.js';
 import { createFlowers } from './environment/flowers.js';
@@ -313,7 +315,18 @@ async function init() {
     await nextFrame();
     createLake(state);
     await nextFrame();
-    createMountainBoundary(state); // was defined but never called anywhere — the painted mountain-ring backdrop (and its assets/textures/mountains/*.png) has never actually been rendering
+    // createMountainBoundary(state) removed — painted mountain ring worked
+    // against the "small island in a vast, empty ocean" feeling: it put a
+    // visible wall of peaks close around the coastline instead of letting
+    // the water actually read as endless. The ocean disc (environment/
+    // ocean.js) already extends well past where the mountain ring used to
+    // sit and dynamic-fogs into the real sky at the horizon (see its own
+    // comment) — with the mountains gone, that horizon blend is now what
+    // the player actually sees past the coastline, which is the "there's
+    // more out there" read this was going for. environment/distant-islands.js
+    // (specks of land far out on the water) is still in the init sequence
+    // below and reinforces the same idea. mountain-boundary.js itself is
+    // untouched, just no longer called, in case this ever needs revisiting.
     await nextFrame();
     createDistantIslands(state);
     await afterStep();

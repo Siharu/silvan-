@@ -1,16 +1,18 @@
-// A vast ocean filling the gap between the coastline cliffs and the painted
-// mountain backdrop. Uses the same shared Gerstner shader as the lake (see
-// environment/water-shader.js), tuned to the reference demo's "Ocean
-// Breeze" preset with the darker custom surface/foam colors from Image 2 —
-// see /mnt/user-data/uploads/ocean-water.html.
+// A vast ocean surrounding the island coastline. Uses the same shared
+// Gerstner shader as the lake (see environment/water-shader.js), tuned to
+// the reference demo's "Ocean Breeze" preset with the darker custom
+// surface/foam colors from Image 2 — see /mnt/user-data/uploads/ocean-water.html.
 //
 // environment/terrain.js drops the seafloor below OCEAN_LEVEL past the
 // coastline so this shows through naturally, and — critically —
 // fx/dynamic-fog.js's per-pixel background-texture fog is still wired in via
-// addDynamicFog() below, so the horizon still melts into the actual sky/
-// mountain color on screen instead of hard-cutting to a flat fog color.
-// That dynamic horizon blend is the single biggest thing that sells "endless
-// sea" over "big blue floor with an edge" and is preserved exactly as it was.
+// addDynamicFog() below, so the horizon still melts into the actual sky
+// color on screen instead of hard-cutting to a flat fog color. That dynamic
+// horizon blend is the single biggest thing that sells "endless sea" over
+// "big blue floor with an edge", and matters even more now that
+// mountain-boundary.js's painted ring isn't there to cap the view — this
+// water is the entire read past the coastline now, so the horizon has to
+// actually disappear into sky rather than hit a visible far edge.
 
 import * as THREE from 'three';
 import { WORLD_SIZE, OCEAN_LEVEL } from '../core/world-state.js';
@@ -53,7 +55,14 @@ export function createOcean(state) {
     // wasting the radial segment budget on the island's own interior, which
     // the ocean is never seen under.
     const innerRadius = 120;
-    const outerRadius = WORLD_SIZE * 0.72; // comfortably past the mountain-boundary far ring
+    // Was WORLD_SIZE * 0.72 ("comfortably past the mountain-boundary far
+    // ring") — that ring is gone now, so nothing caps how far this needs to
+    // reach. Pushed out further (kept under the camera's far plane at 1500,
+    // see main.js's PerspectiveCamera — 1150*1.2=1380 stays clear of it) so
+    // there's real distance to cross before fog/horizon blend takes over,
+    // reinforcing "vast ocean" rather than a disc that happens to end just
+    // past where the old backdrop used to be.
+    const outerRadius = WORLD_SIZE * 1.2;
     const geo = new THREE.RingGeometry(innerRadius, outerRadius, 128, 48);
     geo.rotateX(-Math.PI / 2);
 

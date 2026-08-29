@@ -115,12 +115,23 @@ export const waterFragmentShader = `
         diff = diff * 0.5 + 0.5;
 
         vec3 halfwayDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(normal, halfwayDir), 0.0), 128.0);
+        float spec = pow(max(dot(normal, halfwayDir), 0.0), 60.0);
 
-        float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
-        albedo = mix(albedo, u_skyColor, fresnel * 0.8);
+        float NdotV = max(dot(normal, viewDir), 0.0);
+        // Was pow(1.0-NdotV, 5.0) with no floor — that goes to exactly 0 at
+        // head-on viewing angles, so nearly all normal play (looking down
+        // at water in front of you, not along the shoreline at a grazing
+        // angle) got essentially zero sky reflection mixed in. Real water
+        // always has *some* reflectivity even straight-on — that baseline
+        // is what actually reads as "water" instead of tinted glass. This
+        // is the Schlick fresnel approximation with F0=0.06 (typical for
+        // water) as a floor, ramping up to full reflectivity at grazing
+        // angles same as before.
+        float F0 = 0.06;
+        float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0);
+        albedo = mix(albedo, u_skyColor, fresnel);
 
-        vec3 finalColor = albedo * (diff * 0.8 + 0.2) + vec3(1.0) * spec * 0.6;
+        vec3 finalColor = albedo * (diff * 0.8 + 0.2) + vec3(1.0) * spec * 0.9;
 
         float alpha = mix(u_opacity, 1.0, fresnel);
         alpha = max(alpha, foamMix);

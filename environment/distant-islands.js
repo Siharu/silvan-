@@ -13,12 +13,15 @@
 // and under cloud cover exactly like the mountain backdrop does, instead of
 // reading as a fixed painted sticker regardless of time of day.
 //
-// Placed in the open-water gap between the coastline (BASE_BOUNDARY_RADIUS,
-// ~575) and mountain-boundary.js's near foothill ring (WORLD_SIZE * 0.54,
-// ~621) — the actual visible strip of ocean before the painted mountain
-// wall occludes anything further out. Random per reload (Math.random(),
-// same convention environment/pine-trees.js and rocks.js already use for
-// placement — this isn't meant to be a stable seed players can memorize).
+// Placed across the open water between the coastline (BASE_BOUNDARY_RADIUS,
+// ~575) and most of the way out to the ocean disc's own outer edge
+// (environment/ocean.js, WORLD_SIZE*1.2) — now that mountain-boundary.js's
+// painted ring is gone, this is the entire visible stretch of sea, not just
+// a narrow strip before a backdrop wall, so islets are scattered much
+// further out to actually fill it and sell the "vast ocean, more land out
+// there" read. Random per reload (Math.random(), same convention
+// environment/pine-trees.js and rocks.js already use for placement — this
+// isn't meant to be a stable seed players can memorize).
 
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
@@ -26,9 +29,9 @@ import { OCEAN_LEVEL } from '../core/world-state.js';
 import { islandRadiusAt } from './terrain.js';
 import { BACKGROUND_LAYER } from '../fx/dynamic-fog.js';
 
-const ISLAND_COUNT = 10;
+const ISLAND_COUNT = 18; // was 10 — the placement band widened a lot below (see outerR), 10 islets would now read as sparse/empty across most of the open water
 const INNER_MARGIN = 25; // stay this far outside the coastline so islands never poke up out of water that's actually walkable/visible up close
-const OUTER_MARGIN = 20; // stay this far inside the near mountain ring so nothing clips through the painted foothills
+const OUTER_MARGIN = 20; // stay this far inside the ocean disc's own outer edge (environment/ocean.js) so nothing pokes past where the water mesh itself ends
 
 // Cheap hash-based jitter — same sin-scramble trick as rocks.js's hash3,
 // just 1D-in/1D-out since an islet's silhouette only needs per-angle radius
@@ -80,8 +83,8 @@ export function createDistantIslands(state) {
         // mountain ring at a tight cove.
         const coastR = islandRadiusAt(angle);
         const innerR = coastR + INNER_MARGIN;
-        const outerR = WORLD_SIZE * 0.54 - OUTER_MARGIN;
-        if (outerR <= innerR) continue; // this angle's coastline already reaches past the mountain ring (a deep headland) — no room for an islet here, skip rather than force an overlap
+        const outerR = WORLD_SIZE * 1.05 - OUTER_MARGIN; // was WORLD_SIZE*0.54 — see file header, widened now the mountain ring isn't capping visibility
+        if (outerR <= innerR) continue; // this angle's coastline already reaches past the ocean's usable band (a deep headland) — no room for an islet here, skip rather than force an overlap
         const dist = innerR + Math.random() * (outerR - innerR);
 
         const seed = i * 91.7 + 13.3;
