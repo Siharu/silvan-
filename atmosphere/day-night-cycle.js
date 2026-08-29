@@ -22,9 +22,23 @@ import { updateRadioTower, updateTowerCutscene } from '../environment/radio-towe
 // (computed once) with a handful of reusable scratch Colors that get
 // overwritten via .copy()+.lerp() each frame instead of re-allocated.
 const REF = {
-    skyDay: new THREE.Color(0x5a6a7a), skyNight: new THREE.Color(0x0a0f1c),
-    horDay: new THREE.Color(0x8a9aa8), horSunset: new THREE.Color(0xa86c42), horNight: new THREE.Color(0x040810),
-    skyClearTop: new THREE.Color(0x3f7fc9), skyClearHor: new THREE.Color(0xcfe8f5),
+    skyDay: new THREE.Color(0x5a6a7a), skyNight: new THREE.Color(0x0a1428),
+    horDay: new THREE.Color(0x8a9aa8), horSunset: new THREE.Color(0xa86c42), horNight: new THREE.Color(0x1a2b4c),
+    // skyClearTop/skyClearHor and horNight retuned against the reference
+    // cinematic_day_night_cycle.html draft — the old horNight (0x040810,
+    // nearly pure black) was a real contributor to "nighttime too dark":
+    // the horizon glow at night stayed almost invisible no matter how much
+    // hemiLight/moonLight intensity got pushed, because the sky color
+    // itself had nowhere to go. 0x1a2b4c gives night an actual visible
+    // deep-blue horizon instead of crushing to black.
+    skyClearTop: new THREE.Color(0x2b73d9), skyClearHor: new THREE.Color(0x78a8f0),
+    // New: a real sunset peak color the twilight window blooms through at
+    // its midpoint (see the two-stage lerp below), instead of the old
+    // direct night->day fade which never actually produced a visible
+    // orange/purple sunset, just a duller version of whichever end it was
+    // closer to.
+    skySunsetPeakBot: new THREE.Color(0xff8c66), horSunsetPeak: new THREE.Color(0xe8714c),
+    sunColorDay: new THREE.Color(0xffffff), sunColorSunset: new THREE.Color(0xffaa66),
     cloudTwilightA: new THREE.Color(0x222233), cloudTwilightB: new THREE.Color(0x887777), cloudTwilightC: new THREE.Color(0xa0a5ab),
     fogClear: new THREE.Color(0x9dc3e0), fogCloudy: new THREE.Color(0x607080),
     cloudClear: new THREE.Color(0xffffff), cloudOvercastDay: new THREE.Color(0x9098a0),
@@ -36,7 +50,7 @@ const REF = {
 // nothing outside this function holds onto these between frames (they're
 // copied into real scene uniforms via .copy() before the frame ends).
 const _topC = new THREE.Color(), _botC = new THREE.Color(), _fogC = new THREE.Color(), _cloudC = new THREE.Color();
-const _rainColor = new THREE.Color();
+const _rainColor = new THREE.Color(), _sunC = new THREE.Color(), _hemiC = new THREE.Color(), _hemiGroundC = new THREE.Color();
 
 
 
@@ -145,45 +159,57 @@ export function updateAtmosphere(state, delta) {
     // this day-night logic itself.
     state.sunGlowFactor = Math.max(0, sy) * (1.0 - cloudCover);
 
-    const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
-    // Sun peak trimmed from 1.5 -> 1.1 (was clipping white against the old
-    // 0.85 exposure); moon peak raised 0.5 -> 0.85 and hemi light floors at
-    // 0.55 at night instead of sitting flat at 1.15 all the time, so night
-    // reads dim-but-visible instead of crushed-black. Sun/hemi day peaks
-    // nudged up again (1.1->1.25, 0.7->0.85 range) alongside main.js's
-    // exposure bump to 0.95 — still comfortably under ACES's clipping
-    // point at this exposure, this time actually giving midday its
-    // brightness back instead of just trimming to fix the clip.
-    // Bumped again (1.25->1.6, hemi 0.6/0.85->0.75/1.1) — even after the
-    // previous rounds of tuning (see comment above), daytime still read
-    // dim. useLegacyLights keeps these as simple linear multipliers
-    // (no physically-correct candela conversion), and ACESFilmicToneMapping
-    // compresses everything toward its shoulder rather than clipping, so
-    // there's real headroom left before hitting the 0.95 exposure's actual
-    // clip point — this was undershooting that headroom, not sitting at it.
-    state.sunLight.intensity = Math.max(0, sy) * 1.6;
-    state.moonLight.intensity = Math.max(0, -sy) * 0.85;
-    if (state.hemiLight) state.hemiLight.intensity = 0.75 + dayBlend * 1.1;
+    const dayBlend = Math.max(0, Math.min(1, sy * 3.0 + 0.5));
+    // Sun/moon/hemi retuned against the tested reference draft
+    // (cinematic_day_night_cycle.html) rather than another guess — sun
+    // 1.6->2.5, moon 0.85->1.5. hemi's range actually comes DOWN (0.75-1.85
+    // -> 0.45-1.0): with the sun/moon carrying more of the load directly,
+    // and skyNight/horNight no longer crushing to near-black (see REF
+    // above), a lower ambient floor reads as moodier/more "cinematic"
+    // instead of just flatly bright everywhere. Hemi's color itself is now
+    // also tinted per-frame below (blue-ish at night, neutral in day)
+    // instead of staying fixed at its main.js construction-time color.
+    state.sunLight.intensity = Math.max(0, sy) * 2.5;
+    state.moonLight.intensity = Math.max(0, -sy) * 1.5;
+    if (state.hemiLight) {
+        state.hemiLight.intensity = 0.45 + dayBlend * 0.55;
+        state.hemiLight.color.copy(_hemiC.setHSL(0.6, 0.5, 0.5 + dayBlend * 0.3));
+        state.hemiLight.groundColor.copy(_hemiGroundC.setHSL(0.3, 0.4, 0.2 + dayBlend * 0.1));
+    }
 
     const skyDay = REF.skyDay, skyNight = REF.skyNight;
-    const horDay = REF.horDay, horSunset = REF.horSunset, horNight = REF.horNight;
-    // True clear-sky colors — previously daytime always used the muted
-    // skyDay/horDay pair above regardless of weather, so even "CLEAR" read as
-    // overcast. Now clear skies lerp toward vivid blue and only settle into
-    // the grey/muted look as currentCloudiness climbs.
+    const horDay = REF.horDay, horNight = REF.horNight;
     const skyClearTop = REF.skyClearTop, skyClearHor = REF.skyClearHor;
-    let topC, botC, fogC, cloudC;
-    if (sy > -0.2 && sy < 0.2) {
-        const t = (sy + 0.2) / 0.4;
+    let topC, botC, fogC, cloudC, sunC;
+    // Widened from (-0.2, 0.2) to (-0.2, 0.25) and now blooms through an
+    // actual sunset peak color at the midpoint (skySunsetPeakBot/
+    // horSunsetPeak) via a proper two-stage lerp — night->peak, then
+    // peak->day — instead of the old single lerp straight from night to
+    // day/overcast-day, which never produced a real visible sunset color,
+    // just whichever endpoint the moment happened to be closer to. topC
+    // still lerps straight across (matches the reference draft: the sky's
+    // zenith doesn't bloom orange the way the horizon does).
+    if (sy > -0.2 && sy < 0.25) {
+        const t = (sy + 0.2) / 0.45;
         topC = _topC.copy(skyNight).lerp(skyDay, t);
-        botC = _botC.copy(horNight).lerp(horSunset, t<0.5?t*2:1).lerp(horDay, t>0.5?(t-0.5)*2:0);
-        fogC = _fogC.copy(horNight).lerp(horSunset, t);
+        if (t < 0.5) {
+            const t2 = t * 2;
+            botC = _botC.copy(horNight).lerp(REF.skySunsetPeakBot, t2);
+            fogC = _fogC.copy(horNight).lerp(REF.horSunsetPeak, t2);
+            sunC = _sunC.copy(REF.sunColorSunset);
+        } else {
+            const t2 = (t - 0.5) * 2;
+            botC = _botC.copy(REF.skySunsetPeakBot).lerp(horDay, t2);
+            fogC = _fogC.copy(REF.horSunsetPeak).lerp(horDay, t2);
+            sunC = _sunC.copy(REF.sunColorSunset).lerp(REF.sunColorDay, t2);
+        }
         cloudC = _cloudC.copy(REF.cloudTwilightA).lerp(REF.cloudTwilightB, t<0.5?t*2:1).lerp(REF.cloudTwilightC, t>0.5?(t-0.5)*2:0);
-    } else if (sy >= 0.2) {
+    } else if (sy >= 0.25) {
         topC = _topC.copy(skyClearTop).lerp(skyDay, state.currentCloudiness);
         botC = _botC.copy(skyClearHor).lerp(horDay, state.currentCloudiness);
         fogC = _fogC.copy(REF.fogClear).lerp(REF.fogCloudy, state.currentCloudiness);
         cloudC = _cloudC.copy(REF.cloudClear).lerp(REF.cloudOvercastDay, state.currentCloudiness);
+        sunC = _sunC.copy(REF.sunColorDay);
     } else {
         // Was pure near-black (0x111125) with opacity climbing to a full
         // 1.0 at max cloudiness — since the cloud shell sits in front of
@@ -196,7 +222,9 @@ export function updateAtmosphere(state, delta) {
         // (see uOpacity below) so a hint of the sky/stars still shows
         // through even at full overcast.
         topC = _topC.copy(skyNight); botC = _botC.copy(horNight); fogC = _fogC.copy(horNight); cloudC = _cloudC.copy(REF.cloudNight);
+        sunC = _sunC.copy(REF.sunColorSunset); // irrelevant, sun is down
     }
+    state.sunLight.color.copy(sunC);
     
     // Darken the atmosphere when it's raining
     fogC.lerp(REF.rainFogTint, state.currentRainIntensity * 0.6);
