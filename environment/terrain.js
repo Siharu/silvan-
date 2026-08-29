@@ -4,7 +4,7 @@
 // place things on/at the ground height.
 
 import * as THREE from 'three';
-import { WORLD_SIZE, OCEAN_LEVEL } from '../core/world-state.js';
+import { WORLD_SIZE, OCEAN_LEVEL, GROVE_CENTER, GROVE_FLATTEN_RADIUS, GROVE_BLEND_RADIUS, GROVE_TARGET_ELEVATION } from '../core/world-state.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 
 export function hash(x, y) {
@@ -95,7 +95,27 @@ export function getElevation(x, z) {
         y = y * (1 - dropT) + (OCEAN_LEVEL - 60) * dropT;
     }
 
+    // The grove: a deliberately flattened clearing (see GROVE_CENTER,
+    // world-state.js) so it can host a dense, walkable stand of trees
+    // instead of the bumpy noise terrain everywhere else — that bumpiness
+    // is fine for open ground but reads as broken/unintentional under a
+    // tightly packed grove of trunks. Fully flat within GROVE_FLATTEN_RADIUS,
+    // smoothstepped back to the normal computed height by GROVE_BLEND_RADIUS
+    // so it doesn't create a hard, unnatural rim.
+    const groveDist = Math.hypot(x - GROVE_CENTER.x, z - GROVE_CENTER.z);
+    if (groveDist < GROVE_BLEND_RADIUS) {
+        const flatT = groveDist <= GROVE_FLATTEN_RADIUS
+            ? 1
+            : 1 - smoothstep01((groveDist - GROVE_FLATTEN_RADIUS) / (GROVE_BLEND_RADIUS - GROVE_FLATTEN_RADIUS));
+        y = y * (1 - flatT) + GROVE_TARGET_ELEVATION * flatT;
+    }
+
     return y;
+}
+
+function smoothstep01(t) {
+    t = Math.min(1, Math.max(0, t));
+    return t * t * (3 - 2 * t);
 }
 
 

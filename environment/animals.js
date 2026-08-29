@@ -353,6 +353,7 @@ export function updateInteractPrompt(state) {
 // until it clears the same y > ~2 dry-land threshold grass/flowers/
 // forest already use (see grass.js/flowers.js/forest.js) puts them
 // somewhere actually visible instead.
+import { GROVE_CENTER } from '../core/world-state.js';
 export function findDryAnchor() {
     for (let d = 20; d <= WORLD_SIZE * 0.5; d += 5) {
         const y = getElevation(d, 0);
@@ -365,7 +366,14 @@ export function spawnDemoAnimals(state) {
     state.demoAnimals = [];
     const names = WANDER_NAMES;
     const radius = 6;
-    const anchor = findDryAnchor();
+    // Now anchored at the flattened, tree-packed grove (GROVE_CENTER) rather
+    // than findDryAnchor()'s "first dry patch walking out from the lake" —
+    // that spot was never guaranteed flat or wooded, just the first bit of
+    // land that happened to clear the y>3 threshold. The grove is a fixed,
+    // deliberately flat clearing (see terrain.js's getElevation and
+    // forest.js's density boost), so animals reliably spawn somewhere that
+    // actually reads as "their home" instead of wherever the noise landed.
+    const anchor = GROVE_CENTER;
     names.forEach((name, i) => {
         const angle = (i / names.length) * Math.PI * 2;
         const x = anchor.x + Math.cos(angle) * radius;

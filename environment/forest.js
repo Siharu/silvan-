@@ -21,7 +21,7 @@
 // generic feed in atmosphere/day-night-cycle.js, drives both.
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from '../core/world-state.js';
+import { WORLD_SIZE, GROVE_CENTER, GROVE_BLEND_RADIUS } from '../core/world-state.js';
 import { getElevation, noise } from './terrain.js';
 import { addDynamicFog } from '../fx/dynamic-fog.js';
 
@@ -223,6 +223,18 @@ export async function generateFractalForest(state, onProgress) {
             z = Math.sin(theta) * r;
             y = getElevation(x, z);
             density = noise(x * 0.006 + 300, z * 0.006 - 300);
+            // Guarantee-dense the flattened grove (see GROVE_CENTER,
+            // world-state.js) regardless of what the noise field says there
+            // — it's a fixed clearing meant to reliably read as "packed
+            // with trees" every game, not just whenever density noise
+            // happens to peak in that spot. Fades back to the normal noise
+            // density by GROVE_BLEND_RADIUS so the grove's edge doesn't cut
+            // off abruptly.
+            const groveDist = Math.hypot(x - GROVE_CENTER.x, z - GROVE_CENTER.z);
+            if (groveDist < GROVE_BLEND_RADIUS) {
+                const groveT = 1 - Math.min(1, groveDist / GROVE_BLEND_RADIUS);
+                density = Math.max(density, groveT);
+            }
             attempts++;
         } while (Math.random() > density * 1.5 && attempts < 12);
 

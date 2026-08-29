@@ -22,6 +22,20 @@ export const OCEAN_LEVEL = 1.6; // Sea level for environment/ocean.js — same h
 // without the clock feeling like it's stuck or racing.
 export const DAY_LENGTH_MS = 50 * 60 * 1000; // 3,000,000 ms
 
+// A fixed, deliberately flattened clearing packed with extra-dense trees —
+// used as the animal spawn point (environment/animals.js's spawnDemoAnimals)
+// instead of findDryAnchor()'s "first dry patch found walking outward from
+// the lake" spot, which is just wherever the noise happens to clear 160
+// units out along +Z=0 — never guaranteed flat or wooded. Chosen well clear
+// of both the lake basin (centerDist<160, see terrain.js) and the coastal
+// foothills/mountain ring (islandRadiusAt() usually >500 in this direction),
+// and off the +X/z=0 axis findDryAnchor() walks, so it doesn't overlap the
+// player's own default spawn.
+export const GROVE_CENTER = { x: -230, z: 210 };
+export const GROVE_FLATTEN_RADIUS = 45; // fully flat within this radius
+export const GROVE_BLEND_RADIUS = 90; // fades back to normal terrain by this radius
+export const GROVE_TARGET_ELEVATION = 6.5; // flat height, comfortably above the y>3 "dry land" threshold used elsewhere
+
 export function createWorldState() {
     return {
         // --- time / progression ---

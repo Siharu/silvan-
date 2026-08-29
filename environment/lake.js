@@ -26,19 +26,22 @@ const CALM_LAKE_PRESET = {
     surfaceColor: '#7cd9fd',
     foamColor: '#ffffff',
     colorOffset: 0.853,
-    // Was colorMultiplier 0.1 / opacity 0.1 — at head-on viewing angles
-    // (fresnel≈0) alpha collapses straight to u_opacity (see
-    // water-shader.js's `alpha = mix(u_opacity, 1.0, fresnel)`), so almost
-    // the entire lake surface you actually look at read as ~90% see-through
-    // to the terrain underneath, only opaquing up near the fresnel-heavy
-    // shoreline. Only ocean.js's preset (opacity 0.95) was ever solid.
-    // colorMultiplier bumped alongside it so the depth/surface color blend
-    // (mixStrength, same formula) isn't washed out even once alpha is
-    // fixed — 0.1 was compressing almost the whole depth range into a
-    // single flat shade.
-    colorMultiplier: 0.45,
+    // Previous fix (opacity 0.1->0.62) wasn't enough — misread the shader
+    // formula. It's NOT `colorOffset + waveHeight*colorMultiplier`, it's
+    // `(vElevation + colorOffset) * colorMultiplier` (water-shader.js line
+    // ~106). At the old colorMultiplier 0.1, mixStrength on calm water
+    // (vElevation≈0) was (0+0.853)*0.1≈0.085 — smoothstep collapses that
+    // to nearly 0, so the lake was rendering almost pure u_depthColor
+    // (#07182e, near-black navy), not the bright cyan u_surfaceColor —
+    // opaque now, but opaquely dark, which reads just as "invisible" against
+    // equally-dark surrounding ground. 0.45 (my last attempt) only got
+    // mixStrength to ~0.38 — still mostly depthColor. 1.1 puts calm water
+    // at mixStrength≈0.94 (mostly bright surfaceColor), while wave troughs
+    // still pull it toward depthColor for actual depth variation instead of
+    // a flat color.
+    colorMultiplier: 1.1,
     foamThreshold: 3,
-    opacity: 0.62,
+    opacity: 0.7,
     waves: [
         { dir: 45,  steep: 0.05, len: 15 },
         { dir: 120, steep: 0.03, len: 8 },
