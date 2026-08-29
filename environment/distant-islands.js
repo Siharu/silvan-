@@ -83,7 +83,12 @@ export function createDistantIslands(state) {
         // mountain ring at a tight cove.
         const coastR = islandRadiusAt(angle);
         const innerR = coastR + INNER_MARGIN;
-        const outerR = WORLD_SIZE * 1.05 - OUTER_MARGIN; // was WORLD_SIZE*0.54 — see file header, widened now the mountain ring isn't capping visibility
+        // Was WORLD_SIZE*1.05 (1207) — past the sky dome's fixed radius
+        // 1200 and the cloud dome's 1100 (see ocean.js's outerRadius fix,
+        // same underlying mistake: neither dome scales with WORLD_SIZE).
+        // Capped under the ocean's own outerRadius (1000) so islets always
+        // sit on water that's actually there.
+        const outerR = 950 - OUTER_MARGIN;
         if (outerR <= innerR) continue; // this angle's coastline already reaches past the ocean's usable band (a deep headland) — no room for an islet here, skip rather than force an overlap
         const dist = innerR + Math.random() * (outerR - innerR);
 

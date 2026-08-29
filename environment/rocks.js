@@ -257,6 +257,13 @@ export function createRocks(state) {
         const r = 25 + Math.random() * ROCK_FIELD_RADIUS;
         const th = Math.random() * Math.PI * 2;
         const cx = Math.cos(th) * r; const cz = Math.sin(th) * r;
+        // Unlike puddles.js (which checks 1.8<y<15 before placing), this
+        // loop never checked terrain height against the lake at all — with
+        // ROCK_FIELD_RADIUS reaching WORLD_SIZE*0.4 (460) and the lake
+        // basin sitting at centerDist<160 (terrain.js) right in the middle
+        // of that range, whole rock clusters could land inside the lake
+        // basin and end up sitting underwater/half-submerged.
+        if (Math.hypot(cx, cz) < 190) continue;
         const num = 2 + Math.floor(Math.random() * 5);
         // Each cluster rolls one type for every rock in it — clusters read
         // as an outcrop of the same stone rather than a grab-bag of random

@@ -55,14 +55,14 @@ export function createOcean(state) {
     // wasting the radial segment budget on the island's own interior, which
     // the ocean is never seen under.
     const innerRadius = 120;
-    // Was WORLD_SIZE * 0.72 ("comfortably past the mountain-boundary far
-    // ring") — that ring is gone now, so nothing caps how far this needs to
-    // reach. Pushed out further (kept under the camera's far plane at 1500,
-    // see main.js's PerspectiveCamera — 1150*1.2=1380 stays clear of it) so
-    // there's real distance to cross before fog/horizon blend takes over,
-    // reinforcing "vast ocean" rather than a disc that happens to end just
-    // past where the old backdrop used to be.
-    const outerRadius = WORLD_SIZE * 1.2;
+    // Was WORLD_SIZE * 1.4, then 1.2 — both mistakes: environment/sky.js's
+    // dome sits at a fixed radius 1200, and the cloud dome at 1100 (neither
+    // scales with WORLD_SIZE). WORLD_SIZE*1.2 = 1380, which is past BOTH —
+    // part of the ocean disc was extending outside the sky sphere entirely,
+    // producing a visible seam/cutoff right where the sky dome's surface
+    // occluded the farther-out ring of water instead of it fading out via
+    // fog like the rest of the ocean does. Capped well inside both domes.
+    const outerRadius = 1000;
     const geo = new THREE.RingGeometry(innerRadius, outerRadius, 128, 48);
     geo.rotateX(-Math.PI / 2);
 

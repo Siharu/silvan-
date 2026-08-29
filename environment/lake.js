@@ -51,7 +51,20 @@ const CALM_LAKE_PRESET = {
 };
 
 export function createLake(state) {
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 128, 128);
+    // Was a full WORLD_SIZE x WORLD_SIZE (1150x1150) plane — the terrain
+    // only actually carves one lake basin near the origin (terrain.js:
+    // `if (centerDist < 160) y -= ...`), but the water plane blanketed the
+    // *entire* island regardless. Every other spot on the map where the
+    // ordinary hill/valley noise happened to dip below y=1.6 on its own
+    // (unrelated to the lake basin) showed through as fake pond/puddle
+    // water, scattered everywhere instead of just the one real lake — this
+    // was the actual cause of "too many puddles inside the island", not
+    // puddles.js's rain decals. Sized to comfortably cover the basin
+    // (radius 160) plus its shoreline out to ~250, and nothing further.
+    // Denser segments than before despite the smaller area (higher wave
+    // detail) while still working out to fewer total vertices.
+    const LAKE_SIZE = 520;
+    const geo = new THREE.PlaneGeometry(LAKE_SIZE, LAKE_SIZE, 96, 96);
     geo.rotateX(-Math.PI / 2);
 
     state.waterMaterial = createWaterMaterial(CALM_LAKE_PRESET);
