@@ -107,6 +107,8 @@ export function createWorldState() {
         cloudMat: undefined,
         starMesh: undefined,
         starMat: undefined,
+        galaxyMesh: undefined,
+        galaxyMat: undefined,
 
         // --- audio (Howl instances, wired up in audio/ambience.js) ---
         dayAmbientAudio: undefined,

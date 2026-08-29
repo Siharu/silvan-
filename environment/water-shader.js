@@ -76,6 +76,12 @@ export const waterVertexShader = `
         vElevation = p.y * u_elevationScale;
 
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
+
+        // fog_vertex (three's built-in chunk) reads `mvPosition` — normally
+        // supplied by #include <project_vertex>, which this hand-written
+        // shader doesn't use, so it has to be declared here or mvPosition
+        // is an undeclared identifier and the whole shader fails to compile.
+        vec4 mvPosition = viewMatrix * worldPosition;
         #include <fog_vertex>
     }
 `;

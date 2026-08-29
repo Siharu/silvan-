@@ -38,7 +38,7 @@ import { generateFractalForest } from './environment/forest.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
 
 import { createRainSystem, createRainSplashes } from './fx/rain.js';
-import { createFireflies } from './fx/fireflies.js';
+import { createFireflies, updateFireflies } from './fx/fireflies.js';
 import { createDustParticles } from './fx/dust.js';
 import { createProceduralTextures } from './fx/textures.js';
 import { createWindLeaves } from './fx/wind-leaves.js';
@@ -440,6 +440,7 @@ function animate(time) {
     requestAnimationFrame(animate);
     const delta = Math.min(time - state.lastTime, 100); state.lastTime = time;
     updateAtmosphere(state, delta); updatePlayer(state, delta / 1000);
+    updateFireflies(state, time * 0.001);
     updateDemoAnimals(state, delta / 1000);
     updateInteractPrompt(state); // after both updateAtmosphere (tower proximity) and updateDemoAnimals (animal proximity) have set their flags this frame
 

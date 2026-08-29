@@ -352,16 +352,29 @@ export function updateAtmosphere(state, delta) {
         state.puddleMaterial.opacity = Math.min(0.85, state.currentRainIntensity * 1.2);
     }
     
-    // Fireflies hide in heavy rain
-    if (state.fireflyMat) state.fireflyMat.opacity = Math.max(0, 1.0 - dayBlend * 2.2) * (1.0 - state.currentRainIntensity * 0.8);
+    // Fireflies hide in heavy rain. Now a ShaderMaterial (fx/fireflies.js)
+    // so this is a uniform, not a material.opacity property.
+    if (state.fireflyMat) state.fireflyMat.uniforms.uOpacity.value = Math.max(0, 1.0 - dayBlend * 2.2) * (1.0 - state.currentRainIntensity * 0.8);
     
-    // Update Stars
+    // Update Stars + Milky Way band. nightBlend is the same "how dark is it
+    // right now" factor the fireflies/bio-glow below key off of, squared for
+    // the galaxy so its dust band fades in slower than the sky itself darkens
+    // (matches cinematic_day_night_cycle.html's uNightBlend curve) rather
+    // than popping in right at dusk.
+    const nightBlend = Math.max(0, -sy);
     if (state.starMat) {
         const starVisibility = Math.max(0, -sy * 1.5); // Visible only at night
         const weatherClearance = 1.0 - (state.currentRainIntensity * 1.2); // Hidden by rain
         state.starMat.uniforms.uOpacity.value = Math.max(0, starVisibility * weatherClearance);
         state.starMat.uniforms.uTime.value = ts;
     }
+    if (state.galaxyMat) {
+        const weatherClearance = 1.0 - (state.currentRainIntensity * 1.2);
+        state.galaxyMat.uniforms.uNightBlend.value = Math.pow(nightBlend, 2.0) * Math.max(0, weatherClearance);
+        state.galaxyMat.uniforms.uTime.value = ts;
+    }
+    if (state.starMesh) state.starMesh.rotation.y += (delta / 1000) * 0.005;
+    if (state.galaxyMesh) state.galaxyMesh.rotation.y += (delta / 1000) * 0.005;
 
     // Update Dust
     if (state.dustMat) {
