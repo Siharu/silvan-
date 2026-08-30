@@ -5,7 +5,8 @@
 
 import * as THREE from 'three';
 import { WORLD_SIZE, OCEAN_LEVEL, GROVE_CENTER, GROVE_FLATTEN_RADIUS, GROVE_BLEND_RADIUS, GROVE_TARGET_ELEVATION } from '../core/world-state.js';
-import { addDynamicFog } from '../fx/dynamic-fog.js';
+// addDynamicFog import removed — dynamic fog itself was removed for
+// performance, see main.js.
 
 export function hash(x, y) {
     let dot = x * 12.9898 + y * 78.233;
@@ -159,11 +160,11 @@ export async function createTerrain(state, onProgress) {
         roughness: 1.0, 
         metalness: 0.0
     });
-    // The ground stretches all the way to the boundary, so this is one of
-    // the two materials (alongside forest/rocks) that most needs to melt
-    // into the mountain backdrop rather than fog to a flat color — see
-    // fx/dynamic-fog.js.
-    addDynamicFog(mat, state.backgroundRenderTarget.texture);
+    // Dynamic per-fragment fog (fx/dynamic-fog.js) removed for
+    // performance — it required a full extra scene render every frame.
+    // Falls back to the built-in flat-color fog (scene.fog.color, kept in
+    // sync every frame by atmosphere/day-night-cycle.js) instead of
+    // melting toward the actual sky/mountain backdrop behind it.
     const terrain = new THREE.Mesh(geo, mat);
     terrain.receiveShadow = true;
     state.scene.add(terrain);

@@ -87,14 +87,9 @@ export function createWorldState() {
         scene: undefined,
         camera: undefined,
         renderer: undefined,
-        composer: undefined,
-        bloomPass: undefined,
-
-        // Offscreen target the sky/mountain backdrop renders into each
-        // frame, so terrain/forest/pines/rocks can fog toward the actual
-        // sky/mountain color behind them instead of a flat fog color — see
-        // fx/dynamic-fog.js.
-        backgroundRenderTarget: undefined,
+        // composer/bloomPass/backgroundRenderTarget removed along with
+        // UnrealBloomPass, god-rays, and dynamic-fog — all removed for
+        // performance, see main.js.
 
         // --- lighting / sky ---
         sunLight: undefined,
@@ -133,6 +128,7 @@ export function createWorldState() {
         // --- terrain dressing ---
         grassMesh: undefined,
         grassMat: undefined,
+        grassHeightMap: undefined,
         puddleMesh: undefined,
         puddleMaterial: undefined,
         waterMesh: undefined,

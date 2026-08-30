@@ -11,109 +11,111 @@ import { getElevation } from '../environment/terrain.js';
 
 export function createRainSystem(state) {
     const count = state.quality.rainCount;
-    // Extremely narrow and long geometry for realistic fast-moving streaks
-    const geo = new THREE.PlaneGeometry(0.015, 3.5);
-    state.rainMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xe6f0fa, // Soft bright bluish-white
-        transparent: true, 
-        opacity: 0.15, 
-        depthWrite: false, 
-        blending: THREE.AdditiveBlending, 
-        side: THREE.DoubleSide 
-    });
-    
-    state.rainMaterial.onBeforeCompile = (shader) => {
-        shader.uniforms.uTime = { value: 0 };
-        shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
-        state.rainMaterial.userData.shader = shader;
-        
-        // --- Vertex Shader ---
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <common>',
-            `\n#include <common>\nuniform float uTime;\nuniform vec3 uCameraPos;\nvarying vec2 vRainUv;\nvarying float vRainWorldY;\n`
-        );
 
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <project_vertex>',
-            `
-            vRainUv = uv; 
-            vRainWorldY = 999.0;
-            
-            #ifdef USE_INSTANCING
-                mat4 m = instanceMatrix;
-                vec3 iPos = vec3(m[3][0], m[3][1], m[3][2]);
-                
-                // Keep rain clustered tightly around state.camera for density
-                float spread = 90.0; float hS = spread / 2.0;
-                float nX = uCameraPos.x + mod(iPos.x - uCameraPos.x + hS, spread) - hS;
-                float nZ = uCameraPos.z + mod(iPos.z - uCameraPos.z + hS, spread) - hS;
-                float dH = 80.0; float spd = 180.0; // Very fast fall speed
-                
-                // Introduce varied falling speeds for depth
-                float speedVar = spd * (0.8 + fract(iPos.x * 13.37)*0.6);
-                float cY = iPos.y - (uTime * speedVar);
-                float nY = uCameraPos.y + mod(cY - uCameraPos.y + dH*0.5, dH) - dH*0.5;
-                
-                vec3 centerWorld = vec3(nX, nY, nZ);
-                
-                // Realistic slight wind slant
-                vec3 rainDir = normalize(vec3(-0.1, -1.0, 0.05));
-                
-                vec3 toCamera = normalize(uCameraPos - centerWorld);
-                
-                // Cylindrical billboarding ensures lines always face state.camera
-                vec3 right = cross(rainDir, toCamera);
-                if(length(right) < 0.001) right = vec3(1.0, 0.0, 0.0);
-                right = normalize(right);
-                
-                vec3 finalWorld = centerWorld + right * transformed.x + rainDir * transformed.y;
-                vRainWorldY = finalWorld.y;
-                
-                vec4 mvPosition = viewMatrix * vec4(finalWorld, 1.0);
-            #else
-                vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
-            #endif
-            gl_Position = projectionMatrix * mvPosition;
-            `
-        );
-
-        // --- Fragment Shader ---
-        shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <common>',
-            `\n#include <common>\nvarying vec2 vRainUv;\nvarying float vRainWorldY;\n`
-        );
-
-        shader.fragmentShader = shader.fragmentShader.replace(
-            'vec4 diffuseColor = vec4( diffuse, opacity );',
-            `
-            // Cut the streak off at the water surface instead of letting it pass through
-            if (vRainWorldY < ${WATER_LEVEL.toFixed(2)}) discard;
-            // Fade the last stretch just above the surface so it reads as "hitting" rather than clipping
-            float surfaceFade = smoothstep(${WATER_LEVEL.toFixed(2)}, ${(WATER_LEVEL + 1.2).toFixed(2)}, vRainWorldY);
-
-            // Pure straight streaks, mimicking state.camera motion blur of a fast droplet
-            float dist = abs(vRainUv.x - 0.5) * 2.0; // 0 at center, 1 at edges
-            float xFade = 1.0 - smoothstep(0.0, 1.0, dist);
-            
-            // Fade out the tail (top of the quad). vRainUv.y goes 0(bottom) to 1(top)
-            float tailDrop = 1.0 - vRainUv.y;
-            
-            // Linear fade + a bit of exponential trail (no more teardrop shapes)
-            float alphaMask = xFade * pow(tailDrop, 1.2) * surfaceFade;
-            
-            vec4 diffuseColor = vec4(diffuse, opacity * alphaMask);
-            `
-        );
-    };
-    state.rainMesh = new THREE.InstancedMesh(geo, state.rainMaterial, count);
-    state.rainMesh.frustumCulled = false;
-    const dummy = new THREE.Object3D();
+    // Points-based rain, ported from "Cheap, Beautiful Rain in Three.js"
+    // (Peter Adams, Antaeus AR) — replaces the old InstancedMesh of
+    // per-streak plane geometry (2 triangles + a full billboard-orientation
+    // matrix multiply per instance, per vertex, per frame) with a single
+    // THREE.Points draw call. Each drop is one GPU point sprite; the
+    // streak shape/motion-blur look comes entirely from the rainDrop
+    // texture's alpha (fx/textures.js) sampled in the fragment shader,
+    // not from actual elongated geometry. Falling is done by wrapping
+    // gl_Position-space... actually here it's done the article's way: each
+    // point's world Y wraps every frame in the vertex shader based on
+    // uTime, so drops "fall forever" with zero CPU-side position writes —
+    // the only per-frame JS cost is updating uTime/uCameraPos uniforms.
+    const positions = new Float32Array(count * 3);
+    const seeds = new Float32Array(count); // per-drop fall-speed/x-offset variation
+    const spread = 90.0;
+    const dropHeight = 80.0;
     for (let i = 0; i < count; i++) {
-        // Initialize positions within the local cluster
-        dummy.position.set((Math.random()-0.5)*90, (Math.random()-0.5)*80, (Math.random()-0.5)*90);
-        dummy.updateMatrix();
-        state.rainMesh.setMatrixAt(i, dummy.matrix);
+        positions[i * 3] = (Math.random() - 0.5) * spread;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * dropHeight;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
+        seeds[i] = Math.random();
     }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+
+    state.rainMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            uTime: { value: 0 },
+            uCameraPos: { value: new THREE.Vector3() },
+            uColor: { value: new THREE.Color(0xe6f0fa) },
+            uOpacity: { value: 0.15 },
+            uSpread: { value: spread },
+            uDropHeight: { value: dropHeight },
+            uTex: { value: null }, // set below once state.globalTextures exists
+            // How compressed the streak's UVs get at the extreme — 1.0 is
+            // no squash, lower values flatten it toward a round dot. Tuned
+            // so straight-up/down looks like fast droplets, not smeared
+            // lines, matching the article's minAngleUvSquash/sizeScale.
+            uUvSquash: { value: 1.0 },
+            uSizeScale: { value: 1.0 }
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: `
+            uniform float uTime;
+            uniform vec3 uCameraPos;
+            uniform float uSpread;
+            uniform float uDropHeight;
+            uniform float uSizeScale;
+            attribute float aSeed;
+            varying float vY;
+            void main() {
+                // Wrap XZ around the camera so the rain volume always
+                // surrounds the player without ever needing to reposition
+                // 45,000 individual drops from JS.
+                float hS = uSpread * 0.5;
+                float x = uCameraPos.x + mod(position.x - uCameraPos.x + hS, uSpread) - hS;
+                float z = uCameraPos.z + mod(position.z - uCameraPos.z + hS, uSpread) - hS;
+
+                // Fall speed varies per-drop via aSeed so the rain doesn't
+                // read as a uniform sheet. Wraps vertically the same way,
+                // centered on the camera, so drops "fall forever" — no
+                // respawn logic needed on the CPU side.
+                float speed = 55.0 + aSeed * 35.0;
+                float hD = uDropHeight * 0.5;
+                float y = uCameraPos.y + mod(position.y - uTime * speed - uCameraPos.y + hD, uDropHeight) - hD;
+                vY = y;
+
+                vec4 mvPosition = modelViewMatrix * vec4(x, y, z, 1.0);
+                gl_Position = projectionMatrix * mvPosition;
+                gl_PointSize = (400.0 * uSizeScale) / -mvPosition.z;
+            }
+        `,
+        fragmentShader: `
+            uniform vec3 uColor;
+            uniform float uOpacity;
+            uniform sampler2D uTex;
+            uniform float uUvSquash;
+            varying float vY;
+            void main() {
+                vec2 uv = gl_PointCoord;
+                // Vertically squash UVs around center to avoid the long
+                // line look when looking straight up/down — points have
+                // no real geometry to foreshorten against the camera the
+                // way actual billboarded quads would.
+                uv.x = 0.5 + (uv.x - 0.5) * uUvSquash;
+                float mask = texture2D(uTex, uv).r;
+
+                // Cut the streak off at the water surface instead of
+                // letting it pass through (same behavior as the old
+                // geometry-based rain).
+                if (vY < ${WATER_LEVEL.toFixed(2)}) discard;
+                float surfaceFade = smoothstep(${WATER_LEVEL.toFixed(2)}, ${(WATER_LEVEL + 1.2).toFixed(2)}, vY);
+
+                gl_FragColor = vec4(uColor, mask * uOpacity * surfaceFade);
+            }
+        `
+    });
+
+    state.rainMesh = new THREE.Points(geo, state.rainMaterial);
+    state.rainMesh.frustumCulled = false;
+    state.rainMaterial.uniforms.uTex.value = state.globalTextures.rainDrop;
     state.scene.add(state.rainMesh);
 }
 

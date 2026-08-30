@@ -24,7 +24,7 @@
 import * as THREE from 'three';
 import { WATER_LEVEL } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
-import { addDynamicFog } from '../fx/dynamic-fog.js';
+// addDynamicFog import removed — dynamic fog itself was removed for performance, see main.js.
 
 let cachedLeafTexture = null;
 
@@ -208,7 +208,7 @@ export function createFerns(state) {
             transformed.x += flutter * 0.5;`
         );
     };
-    addDynamicFog(leafMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(leafMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     const stemMat = new THREE.MeshStandardMaterial({ color: 0x3a2c1a, roughness: 0.8 });
     stemMat.onBeforeCompile = (shader) => {
@@ -227,7 +227,7 @@ export function createFerns(state) {
             transformed.z += cos(uTime * 1.2) * swayAmount;`
         );
     };
-    addDynamicFog(stemMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(stemMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     const leafGeo = buildLeafGeometry();
     const totalLeaves = CLUSTER_COUNT * frondsPerCluster * leavesPerFrond * 2;
@@ -324,7 +324,7 @@ export function createMossClusters(state) {
     const SHORE_MAX = 240; // slightly wider than the fern annulus so moss forms a looser halo around the fern clusters
     const mGeo = new THREE.TetrahedronGeometry(0.28, 1);
     const mMat = new THREE.MeshStandardMaterial({ roughness: 1.0, metalness: 0.0 });
-    addDynamicFog(mMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(mMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     const mossMesh = new THREE.InstancedMesh(mGeo, mMat, mossCount);
     mossMesh.receiveShadow = true;

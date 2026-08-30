@@ -16,7 +16,7 @@
 
 import * as THREE from 'three';
 import { WORLD_SIZE, OCEAN_LEVEL } from '../core/world-state.js';
-import { addDynamicFog } from '../fx/dynamic-fog.js';
+// addDynamicFog import removed — dynamic fog itself was removed for performance, see main.js.
 import { createWaterMaterial } from './water-shader.js';
 
 // Values below came from a hand-tuned JSON preset (not the reference
@@ -72,7 +72,7 @@ export function createOcean(state) {
     // hard-cutting to flat fog — see fx/dynamic-fog.js. Relies on the
     // #include <fog_vertex>/<fog_fragment> markers water-shader.js's shaders
     // carry for exactly this reason.
-    addDynamicFog(state.oceanMaterial, state.backgroundRenderTarget.texture);
+    // addDynamicFog(state.oceanMaterial, ...) removed — dynamic fog removed for performance, see main.js.
 
     state.oceanMesh = new THREE.Mesh(geo, state.oceanMaterial);
     state.oceanMesh.position.y = OCEAN_LEVEL;

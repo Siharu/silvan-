@@ -11,7 +11,8 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { WORLD_SIZE, WATER_LEVEL } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
-import { addDynamicFog } from '../fx/dynamic-fog.js';
+// addDynamicFog import removed — dynamic fog itself was removed for
+// performance, see main.js.
 
 export const PINE_TREE_COUNT = 16;
 
@@ -200,13 +201,8 @@ function buildDetailedPineTree(treeHeight = 25) {
 // each onto state.colliders.
 export function createDetailedPineTrees(state, count = PINE_TREE_COUNT) {
     // BARK_MATERIAL/NEEDLE_MATERIAL are module-level constants (shared
-    // across every pine instance), created at import time before
-    // state.backgroundRenderTarget exists — so this wiring happens here on
-    // first (only) call instead of at module scope. Pines are the sparse
-    // landmark trees placed nearest the boundary, so this matters as much
-    // as the fractal forest's trunk/leaf materials for hiding the edge.
-    addDynamicFog(BARK_MATERIAL, state.backgroundRenderTarget.texture);
-    addDynamicFog(NEEDLE_MATERIAL, state.backgroundRenderTarget.texture);
+    // across every pine instance) — dynamic fog removed for performance
+    // (see main.js), materials now use the built-in flat-color fog.
 
     const placed = [];
     const minSpacing = 60;

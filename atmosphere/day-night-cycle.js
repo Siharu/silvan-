@@ -51,6 +51,7 @@ const REF = {
 // copied into real scene uniforms via .copy() before the frame ends).
 const _topC = new THREE.Color(), _botC = new THREE.Color(), _fogC = new THREE.Color(), _cloudC = new THREE.Color();
 const _rainColor = new THREE.Color(), _sunC = new THREE.Color(), _hemiC = new THREE.Color(), _hemiGroundC = new THREE.Color();
+const _camDirScratch = new THREE.Vector3();
 
 
 
@@ -148,15 +149,9 @@ export function updateAtmosphere(state, delta) {
         state.moonGlowSprite.material.opacity = Math.max(0, -sy + 0.2) * (1.0 - cloudCover * 0.85);
     }
 
-    // Sun glow factor — how strongly the volumetric god-rays pass
-    // (fx/god-rays.js) should read this frame. Same day/cloud fade the old
-    // sprite-based ray burst used (Math.max(0, sy) * (1.0 - cloudCover)),
-    // kept here since it's genuinely the same "is the sun up and not
-    // covered" math — the pass itself only handles the screen-space/
-    // occlusion side, not weather. main.js's animate() reads this each
-    // frame and feeds it into state.godRaysPass.intensity alongside
-    // state.sunSprite's position, rather than the pass duplicating any of
-    // this day-night logic itself.
+    // Sun glow factor — used to be read by the god-rays pass (removed for
+    // performance, see main.js). Kept computed here since sunSprite's own
+    // opacity fade below still wants the same day/cloud math.
     state.sunGlowFactor = Math.max(0, sy) * (1.0 - cloudCover);
 
     const dayBlend = Math.max(0, Math.min(1, sy * 3.0 + 0.5));
@@ -175,6 +170,17 @@ export function updateAtmosphere(state, delta) {
         state.hemiLight.intensity = 0.45 + dayBlend * 0.55;
         state.hemiLight.color.copy(_hemiC.setHSL(0.6, 0.5, 0.5 + dayBlend * 0.3));
         state.hemiLight.groundColor.copy(_hemiGroundC.setHSL(0.3, 0.4, 0.2 + dayBlend * 0.1));
+    }
+
+    // Grass (environment/grass.js) is a raw ShaderMaterial with no built-in
+    // scene-light lookup — cheaper than giving ~250k blade-verts a full PBR
+    // lighting path, but it means day/night response has to be fed in
+    // manually like this instead of coming for free. Tints toward cool
+    // blue at night (roughly following hemiLight's own hue swing above)
+    // and floors ambient at 0.35 rather than going fully black.
+    if (state.grassMat) {
+        state.grassMat.uniforms.uAmbient.value = 0.35 + dayBlend * 0.75;
+        state.grassMat.uniforms.uLightColor.value.setHSL(0.6, 0.25 * (1 - dayBlend), 0.9);
     }
 
     const skyDay = REF.skyDay, skyNight = REF.skyNight;
@@ -294,19 +300,34 @@ export function updateAtmosphere(state, delta) {
         // further on top since an overcast sky reads flatter/greyer.
         if (u.uBrightness) u.uBrightness.value = (0.35 + dayBlend * 0.65) * (1 - cloudCover * 0.3);
     });
-    if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
-        state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
-        state.rainMaterial.color.set(_rainColor.copy(REF.rainDayColor).lerp(REF.rainNightColor, 1 - dayBlend));
-        
-        state.rainMaterial.opacity = 0.15 * Math.min(1.0, state.currentRainIntensity * 2.0);
-        // Was a hardcoded 45000 — that happens to equal High quality's
-        // rainCount (core/quality.js), so it silently only worked right at
-        // High. On Medium/Low it asked InstancedMesh for more instances
-        // than were ever allocated (rainCount 22000/10000), so this either
-        // clamped to whatever the GPU buffer actually held or rendered
-        // nothing once currentRainIntensity climbed — either way, far
-        // less rain than intended outside the High preset.
-        state.rainMesh.count = Math.max(0, Math.min(state.quality.rainCount, Math.floor(state.quality.rainCount * state.currentRainIntensity)));
+    // Rain material is now a plain ShaderMaterial (fx/rain.js, Points-based
+    // rewrite) — uniforms live directly on state.rainMaterial.uniforms, not
+    // behind userData.shader like the onBeforeCompile-patched materials
+    // elsewhere in this function.
+    if (state.rainMaterial) {
+        const u = state.rainMaterial.uniforms;
+        u.uCameraPos.value.copy(state.camera.position);
+        u.uColor.value.copy(_rainColor.copy(REF.rainDayColor).lerp(REF.rainNightColor, 1 - dayBlend));
+        u.uOpacity.value = 0.15 * Math.min(1.0, state.currentRainIntensity * 2.0);
+        u.uTime.value = ts;
+
+        // UV-squash so rain doesn't read as long smeared lines when
+        // looking straight up/down — points have no real geometry to
+        // foreshorten against the camera the way billboarded quads would.
+        // Ported from "Cheap, Beautiful Rain in Three.js" (Peter Adams,
+        // Antaeus AR): compress the texture's UVs and shrink point size
+        // as the camera's look direction approaches vertical.
+        const camDir = state.camera.getWorldDirection(_camDirScratch);
+        const verticalFacing = Math.abs(camDir.y);
+        u.uUvSquash.value = THREE.MathUtils.lerp(1.0, 0.15, verticalFacing);
+        u.uSizeScale.value = THREE.MathUtils.lerp(1.0, 0.4, verticalFacing);
+
+        // setDrawRange replaces the old InstancedMesh .count trick — same
+        // idea (only draw a fraction of the allocated drops based on rain
+        // intensity), just via BufferGeometry's draw range since Points
+        // has no per-instance count property.
+        const activeCount = Math.max(0, Math.min(state.quality.rainCount, Math.floor(state.quality.rainCount * state.currentRainIntensity)));
+        state.rainMesh.geometry.setDrawRange(0, activeCount);
         state.rainMesh.visible = state.currentRainIntensity > 0.01;
     }
 
@@ -353,8 +374,11 @@ export function updateAtmosphere(state, delta) {
     }
     
     // Fireflies hide in heavy rain. Now a ShaderMaterial (fx/fireflies.js)
-    // so this is a uniform, not a material.opacity property.
-    if (state.fireflyMat) state.fireflyMat.uniforms.uOpacity.value = Math.max(0, 1.0 - dayBlend * 2.2) * (1.0 - state.currentRainIntensity * 0.8);
+    // so this is a uniform, not a material.opacity property. Curve matches
+    // cinematic_day_night_cycle.html: (-sy + 0.2) * 2.0 rather than the
+    // dayBlend-based one used before — fireflies now switch on slightly
+    // earlier in the evening instead of waiting for full dayBlend falloff.
+    if (state.fireflyMat) state.fireflyMat.uniforms.uOpacity.value = Math.max(0, Math.min(1, (-sy + 0.2) * 2.0)) * (1.0 - state.currentRainIntensity * 0.8);
     
     // Update Stars + Milky Way band. nightBlend is the same "how dark is it
     // right now" factor the fireflies/bio-glow below key off of, squared for

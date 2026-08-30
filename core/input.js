@@ -634,5 +634,5 @@ export function setupInput(state) {
 
 export function onWindowResize(state) {
     state.camera.aspect = window.innerWidth / window.innerHeight; state.camera.updateProjectionMatrix();
-    state.renderer.setSize(window.innerWidth, window.innerHeight); state.composer.setSize(window.innerWidth, window.innerHeight);
+    state.renderer.setSize(window.innerWidth, window.innerHeight);
 }

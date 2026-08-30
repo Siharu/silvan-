@@ -161,6 +161,55 @@ export function createProceduralTextures() {
     const flowerTex = new THREE.CanvasTexture(fCanvas);
     flowerTex.colorSpace = THREE.SRGBColorSpace;
 
-    return { leaf: leafTex, moon: moonTex, moonGlow: moonGlowTex, sun: sunTex, sunRays: sunRayTex, flower: flowerTex };
+    // Raindrop streak — a soft-edged vertical blurred line, used as the
+    // alpha mask for the new Points-based rain system (fx/rain.js, ported
+    // from "Cheap, Beautiful Rain in Three.js": a THREE.Points cloud with
+    // this texture doing the streak/motion-blur shape, instead of the old
+    // per-instance geometry quads). Canvas's own shadowBlur does the
+    // blurring so there's no need for a real multi-pass GPU blur — same
+    // "bake it into a 5kb PNG" trick the article uses, just generated at
+    // runtime instead of shipped as an asset.
+    const rainCanvas = document.createElement('canvas');
+    rainCanvas.width = 64; rainCanvas.height = 256;
+    const rCtx = rainCanvas.getContext('2d');
+    rCtx.strokeStyle = 'rgba(255,255,255,1.0)';
+    rCtx.lineWidth = 3;
+    rCtx.lineCap = 'round';
+    rCtx.shadowColor = 'rgba(255,255,255,1.0)';
+    rCtx.shadowBlur = 8;
+    rCtx.beginPath();
+    rCtx.moveTo(32, 40);
+    rCtx.lineTo(32, 216);
+    rCtx.stroke();
+    // Second, brighter/thinner pass down the core so the streak has a
+    // hot center instead of reading as a uniform blurred bar.
+    rCtx.lineWidth = 1;
+    rCtx.shadowBlur = 3;
+    rCtx.stroke();
+    const rainTex = new THREE.CanvasTexture(rainCanvas);
+    rainTex.colorSpace = THREE.SRGBColorSpace;
+
+    // Tileable-ish RGB noise for the new grass system (environment/grass.js
+    // — "Making Grass with Triangles in GLSL using Three.js", Peter Adams,
+    // Antaeus AR). Used twice per the article: R channel for bald-patch
+    // variation, G+B channels for per-blade wind bend direction/angle.
+    // A static baked texture sampled+scrolled in the shader instead of
+    // running an actual noise function per-vertex every frame.
+    const noiseCanvas = document.createElement('canvas');
+    noiseCanvas.width = 128; noiseCanvas.height = 128;
+    const nCtx = noiseCanvas.getContext('2d');
+    const nImg = nCtx.createImageData(128, 128);
+    for (let i = 0; i < nImg.data.length; i += 4) {
+        nImg.data[i] = Math.random() * 255;
+        nImg.data[i + 1] = Math.random() * 255;
+        nImg.data[i + 2] = Math.random() * 255;
+        nImg.data[i + 3] = 255;
+    }
+    nCtx.putImageData(nImg, 0, 0);
+    const grassNoiseTex = new THREE.CanvasTexture(noiseCanvas);
+    grassNoiseTex.wrapS = THREE.RepeatWrapping;
+    grassNoiseTex.wrapT = THREE.RepeatWrapping;
+
+    return { leaf: leafTex, moon: moonTex, moonGlow: moonGlowTex, sun: sunTex, sunRays: sunRayTex, flower: flowerTex, rainDrop: rainTex, grassNoise: grassNoiseTex };
 }
 

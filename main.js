@@ -6,10 +6,6 @@
 // createRainSystem -> createRainSplashes -> createFireflies -> createDustParticles.
 
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { createGodRaysPass } from './fx/god-rays.js';
 
 import { createWorldState } from './core/world-state.js';
 import { resolveQualityPreset, QUALITY_PRESETS } from './core/quality.js';
@@ -29,7 +25,7 @@ import { createOcean } from './environment/ocean.js';
 // init sequence below for why (island now visually fades into open ocean
 // at the edge instead of a painted mountain ring).
 import { createDistantIslands } from './environment/distant-islands.js';
-import { createGrass } from './environment/grass.js';
+import { createGrass, updateGrass } from './environment/grass.js';
 import { createFlowers } from './environment/flowers.js';
 import { createRocks } from './environment/rocks.js';
 import { createFerns, createMossClusters } from './environment/foliage.js';
@@ -47,7 +43,6 @@ import { createRadioTower } from './environment/radio-tower.js';
 
 import { createAmbientAudio } from './audio/ambience.js';
 import { updateAtmosphere } from './atmosphere/day-night-cycle.js';
-import { createBackgroundRenderTarget, resizeBackgroundRenderTarget, renderBackgroundPass } from './fx/dynamic-fog.js';
 
 const state = createWorldState();
 state.viewMode = getViewMode(); // 'firstperson' | 'topdown' — see core/view-mode.js
@@ -214,8 +209,12 @@ async function init() {
     state.renderer.useLegacyLights = true;
     state.renderer.setSize(window.innerWidth, window.innerHeight);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.quality.pixelRatioCap));
-    state.renderer.shadowMap.enabled = true;
-    state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Shadow mapping removed for performance — was a 1024x1024 (High) PCF
+    // soft-shadow map re-rendered from the sun's POV every single frame, on
+    // top of the main scene render. terrain/forest/rocks/grass still read
+    // fine off hemiLight + sunLight/moonLight's direct lighting alone;
+    // this only removes cast/received shadow detail, not lighting itself.
+    state.renderer.shadowMap.enabled = false;
     state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     // Was 1.08 with sunLight peaking at 1.5 + hemi at 1.15 constant — the two
     // stacked pushed midday well past ACES's shoulder into a blown-white sky
@@ -233,37 +232,12 @@ async function init() {
     state.renderer.toneMappingExposure = 1.15;
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
 
-    // Offscreen target the sky/mountain backdrop renders into each frame —
-    // see fx/dynamic-fog.js. Created before any of the create*() calls
-    // below so terrain/forest/pines/rocks/grass can wire their materials to
-    // state.backgroundRenderTarget.texture as they're built.
-    state.backgroundRenderTarget = createBackgroundRenderTarget();
-
-    const renderScene = new RenderPass(state.scene, state.camera);
-    state.composer = new EffectComposer(state.renderer);
-    state.composer.addPass(renderScene);
-    if (state.quality.bloomEnabled) {
-        // Optimized: Half-resolution bloom pass for better performance
-        // threshold was 0.3 — since sky.js's cloud/horizon color is pure
-        // white (0xffffff, already max luminance), almost the entire sky
-        // cleared that bar and bloomed, washing the whole frame out to
-        // white instead of just glowing the sun disc/water glints like
-        // intended. Raised so only genuinely bright highlights bloom.
-        state.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 1.0, 0.5, 0.8);
-        state.bloomPass.threshold = 0.88;
-        state.bloomPass.strength = 0.4;
-        state.bloomPass.radius = 0.4;
-        state.composer.addPass(state.bloomPass);
-    }
-
-    // Screen-space volumetric god rays (fx/god-rays.js) — replaces the old
-    // sprite-based ray texture. Added after bloom so the rays themselves
-    // can still catch a touch of bloom glow at their brightest, same as
-    // everything else in frame. state.sunGlowFactor/state.sunSprite are fed
-    // into it every frame from animate() below, driven by
-    // atmosphere/day-night-cycle.js's actual sun math.
-    state.godRaysPass = createGodRaysPass(state.renderer, state.scene, state.camera);
-    state.composer.addPass(state.godRaysPass);
+    // EffectComposer/UnrealBloomPass, the screen-space god-rays pass
+    // (fx/god-rays.js — up to 96 raymarch samples/frame), and the offscreen
+    // dynamic-fog background capture (fx/dynamic-fog.js — a full second
+    // scene render every frame) have all been removed for performance.
+    // animate() below now calls state.renderer.render() directly instead
+    // of going through a composer.
 
     // Ambient fill light — intensity now modulated per-frame in
     // atmosphere/day-night-cycle.js (day/night instead of a flat 1.15) so
@@ -271,29 +245,9 @@ async function init() {
     state.hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 1.15);
     state.scene.add(state.hemiLight);
 
+    // castShadow/shadow.* removed along with renderer.shadowMap.enabled
+    // above — no shadow map to configure now.
     state.sunLight = new THREE.DirectionalLight(0xffedc9, 1.25);
-    state.sunLight.castShadow = true;
-    // Optimized: Reduced shadow map resolution
-    state.sunLight.shadow.mapSize.width = state.quality.shadowMapSize;
-    state.sunLight.shadow.mapSize.height = state.quality.shadowMapSize;
-    state.sunLight.shadow.camera.near = 10;
-    state.sunLight.shadow.camera.far = 1000;
-    const d = 620;
-    state.sunLight.shadow.camera.left = -d;
-    state.sunLight.shadow.camera.right = d;
-    state.sunLight.shadow.camera.top = d;
-    // Was `state.sunLight.shadow.bottom` — DirectionalLightShadow has no
-    // `.bottom` property; that's on `.camera`. The typo silently created a
-    // stray property and left shadow.camera.bottom at THREE's default (-5),
-    // while left/right/top were correctly set to the full ±620 extent. That
-    // lopsided orthographic shadow frustum (effectively 5 units tall on one
-    // side vs. 1240 on the other/across) meant almost every fragment on the
-    // ground sampled outside the light's actual shadow coverage and came
-    // back reading as fully shadowed — this is why the sky (a self-lit
-    // shader material, untouched by shadows) looked correctly bright while
-    // terrain/grass/trees rendered near-black regardless of time of day.
-    state.sunLight.shadow.camera.bottom = -d;
-    state.sunLight.shadow.bias = -0.0001;
     state.scene.add(state.sunLight);
 
     state.moonLight = new THREE.DirectionalLight(0x7799ff, 0.3);
@@ -393,7 +347,7 @@ async function init() {
 
     createAmbientAudio(state);
 
-    window.addEventListener('resize', () => { onWindowResize(state); resizeBackgroundRenderTarget(state.backgroundRenderTarget); });
+    window.addEventListener('resize', () => onWindowResize(state));
 
     // Last-chance save: if the tab is closing mid-play, this is the only
     // hook that reliably still gets to run. Not a substitute for the
@@ -441,6 +395,7 @@ function animate(time) {
     const delta = Math.min(time - state.lastTime, 100); state.lastTime = time;
     updateAtmosphere(state, delta); updatePlayer(state, delta / 1000);
     updateFireflies(state, time * 0.001);
+    updateGrass(state, time * 0.001);
     updateDemoAnimals(state, delta / 1000);
     updateInteractPrompt(state); // after both updateAtmosphere (tower proximity) and updateDemoAnimals (animal proximity) have set their flags this frame
 
@@ -455,14 +410,5 @@ function animate(time) {
         }
     }
 
-    renderBackgroundPass(state, state.backgroundRenderTarget); // capture sky/mountain backdrop before the main pass below so this frame's dynamic fog (fx/dynamic-fog.js) reads current colors, not last frame's
-    // Feed the god-rays pass this frame's sun position/strength —
-    // day-night-cycle.js computed sunSprite's position and sunGlowFactor
-    // just above (via updateAtmosphere), the pass itself only owns the
-    // screen-space occlusion/radial-blur side, not any day-night logic.
-    if (state.godRaysPass && state.sunSprite) {
-        state.godRaysPass.sunWorldPosition.copy(state.sunSprite.position);
-        state.godRaysPass.intensity = state.sunGlowFactor || 0;
-    }
-    state.composer.render();
+    state.renderer.render(state.scene, state.camera);
 }

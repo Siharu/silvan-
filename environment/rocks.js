@@ -59,7 +59,7 @@
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
 import { getElevation } from './terrain.js';
-import { addDynamicFog } from '../fx/dynamic-fog.js';
+// addDynamicFog import removed — dynamic fog itself was removed for performance, see main.js.
 import { ROCK_DETAIL_PRESETS } from '../core/modifiers.js';
 
 // Deterministic 3D hash -> [0,1). Same sin-based approach the old code used
@@ -239,7 +239,7 @@ export function createRocks(state) {
         roughness: 0.9,
         metalness: 0.1
     });
-    addDynamicFog(rockMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(rockMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     // Instances-per-variant capacity, sized with headroom since assignment
     // is now per-cluster (a whole outcrop shares one type — see below) not

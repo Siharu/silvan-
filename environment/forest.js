@@ -23,7 +23,7 @@
 import * as THREE from 'three';
 import { WORLD_SIZE, GROVE_CENTER, GROVE_BLEND_RADIUS } from '../core/world-state.js';
 import { getElevation, noise } from './terrain.js';
-import { addDynamicFog } from '../fx/dynamic-fog.js';
+// addDynamicFog import removed — dynamic fog itself was removed for performance, see main.js.
 
 // Beyond this distance, full-detail trees collapse and their billboard
 // imposter takes over. Tuned to sit past where the branch/leaf silhouette
@@ -132,7 +132,7 @@ function createTreeImposters(state, treeInstances) {
             'vec4 diffuseColor = vec4( diffuse, opacity * vFadeAlpha );'
         );
     };
-    addDynamicFog(imposterMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(imposterMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     const imposterMesh = new THREE.InstancedMesh(cardGeo, imposterMat, treeInstances.length);
     imposterMesh.castShadow = false; // billboards casting shadows would just be a rotating flat shadow card — not worth it at a distance where the imposter itself is barely resolvable
@@ -366,7 +366,7 @@ export async function generateFractalForest(state, onProgress) {
     // color behind them instead of a flat fog tint (fx/dynamic-fog.js).
     // Called after the bark/moss onBeforeCompile above so it wraps rather
     // than replaces it.
-    addDynamicFog(trunkMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(trunkMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     const branchMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, state.branchMatrices.length);
     branchMesh.castShadow = true; branchMesh.receiveShadow = true;
@@ -406,7 +406,7 @@ export async function generateFractalForest(state, onProgress) {
             ${collapseVertexGLSL('distance(vLeafWorldPos, uCameraPos) > uSwitchDist')}`
         );
     };
-    addDynamicFog(leafMat, state.backgroundRenderTarget.texture);
+    // addDynamicFog(leafMat, ...) removed — dynamic fog removed for performance, see main.js.
 
     const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, state.leafMatrices.length);
     // Optimized: Disabled leaf shadows. Overlapping transparent shadows on millions of instances causes severe overdraw

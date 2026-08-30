@@ -38,7 +38,7 @@ export function createFireflies(state) {
         uniforms: {
             uTime: { value: 0 },
             uOpacity: { value: 0 },
-            uColor: { value: new THREE.Color(0xccff00) }
+            uColor: { value: new THREE.Color(0xaaff00) }
         },
         transparent: true,
         depthWrite: false,
@@ -49,7 +49,7 @@ export function createFireflies(state) {
             void main() {
                 vPhase = aPhase;
                 vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                gl_PointSize = (60.0 / -mvPosition.z);
+                gl_PointSize = (40.0 / -mvPosition.z);
                 gl_Position = projectionMatrix * mvPosition;
             }
         `,
@@ -64,12 +64,13 @@ export function createFireflies(state) {
 
                 // Individual pulse per firefly, layered on top of the
                 // day/rain-driven uOpacity from day-night-cycle.js.
-                float pulse = sin(uTime * 2.5 + vPhase) * 0.5 + 0.5;
-                float alpha = smoothstep(0.5, 0.05, dist) * pulse * uOpacity;
+                float pulse = sin(uTime * 3.0 + vPhase) * 0.5 + 0.5;
+                float alpha = smoothstep(0.5, 0.0, dist) * pulse * uOpacity;
 
-                // Boosted past 1.0 so UnrealBloomPass's threshold (main.js)
-                // actually catches these as glowing points, not flat dots.
-                gl_FragColor = vec4(uColor * 2.2, alpha);
+                // Bright near-white core fading to uColor at the edge —
+                // reads as a glowing point rather than a flat colored dot.
+                vec3 finalColor = mix(uColor, vec3(1.0), smoothstep(0.2, 0.0, dist));
+                gl_FragColor = vec4(finalColor, alpha);
             }
         `
     });
@@ -79,18 +80,21 @@ export function createFireflies(state) {
 }
 
 // Called every frame from main.js's animate() loop. Drifts each firefly in
-// a small wandering loop (same per-particle sin/cos pattern as the
-// reference draft) and keeps them from dipping below the water surface.
+// a wandering loop — speeds ported straight from
+// cinematic_day_night_cycle.html's updateAtmosphere() firefly block, which
+// is noticeably faster/more erratic than the original pass here (0.05/
+// 0.02/0.05 vs. the old 0.015/0.008/0.015) and reads as actual insects
+// darting around rather than slow-drifting motes.
 export function updateFireflies(state, ts) {
     if (!state.fireflyMesh) return;
     state.fireflyMat.uniforms.uTime.value = ts;
 
     const positions = state.fireflyMesh.geometry.attributes.position.array;
-    const floor = WATER_LEVEL + 0.35;
+    const floor = WATER_LEVEL + 0.5;
     for (let i = 0; i < positions.length; i += 3) {
-        positions[i] += Math.sin(ts * 0.6 + i) * 0.015;
-        positions[i + 1] += Math.cos(ts * 0.9 + i) * 0.008;
-        positions[i + 2] += Math.sin(ts * 0.72 + i) * 0.015;
+        positions[i] += Math.sin(ts * 1.0 + i) * 0.05;
+        positions[i + 1] += Math.cos(ts * 1.5 + i) * 0.02;
+        positions[i + 2] += Math.sin(ts * 1.2 + i) * 0.05;
         if (positions[i + 1] < floor) positions[i + 1] = floor;
     }
     state.fireflyMesh.geometry.attributes.position.needsUpdate = true;
