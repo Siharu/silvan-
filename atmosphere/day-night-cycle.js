@@ -63,13 +63,11 @@ const _camDirScratch = new THREE.Vector3();
 // material's own baseSteepness (see environment/water-shader.js), never an
 // absolute value, so the lake and ocean presets keep their own distinct
 // calm-vs-choppy character rather than converging on one number.
-function applyWaveHeightModifier(state, mat) {
-    if (!mat.userData.baseSteepness || !state.modifiers) return;
+function applyWaveDistortionModifier(state, water) {
+    if (water.userData.baseDistortionScale === undefined || !state.modifiers) return;
     const stormBoost = 1 + state.currentRainIntensity * (state.modifiers.waterStormReactivity - 1);
     const mult = state.modifiers.waterWaveHeight * stormBoost;
-    mat.userData.baseSteepness.forEach((base, i) => {
-        mat.uniforms.u_waves.value[i].z = base * mult;
-    });
+    water.material.uniforms.distortionScale.value = water.userData.baseDistortionScale * mult;
 }
 
 export function updateAtmosphere(state, delta) {
@@ -336,35 +334,36 @@ export function updateAtmosphere(state, delta) {
         state.rainSplashMesh.visible = state.currentRainIntensity > 0.15; // match the CLEAR/LIGHT RAIN threshold above
     }
 
-    // Both the lake and ocean now share environment/water-shader.js's
-    // Gerstner shader (Calm Lake / Ocean Breeze presets) instead of the old
-    // per-material sun+moon Blinn-Phong setups, so they only take a single
-    // blended light direction (u_lightDir) and a sky color for the fresnel
-    // mix (u_skyColor), fed the same way for both. u_time isn't reached by
-    // the generic scene.traverse loop above (that one only looks for
-    // `uTime`, this shader's uniform is named `u_time`), so it's set here.
+    // Real-time reflective water (environment/water-reflective.js,
+    // THREE.Water) — replaces the old shared Gerstner shader's
+    // u_lightDir/u_skyColor uniform feed entirely. THREE.Water reflects
+    // the actual scene (including the real sun/moon sprites and sky dome)
+    // rather than reading a fed-in sky-color uniform, so there's no
+    // sky-color mixing to drive here anymore — instead it needs its own
+    // sunDirection/sunColor (which sun or moon light source is currently
+    // "the" light, matching the reference file's day_night_cycle.html
+    // logic exactly: reflect the moon and tint bluer once the sun sets)
+    // and the standard `time` uniform driving its normal-map scroll.
     const lightDir = sy >= 0
         ? state.sunLight.position.clone().normalize()
         : state.moonLight.position.clone().normalize();
     const ts2 = performance.now() * 0.001;
-    if (state.waterMaterial && state.waterMaterial.userData && state.waterMaterial.userData.shader) {
-        const wU = state.waterMaterial.userData.shader.uniforms;
-        wU.u_lightDir.value.copy(lightDir);
-        wU.u_skyColor.value.copy(topC);
-        wU.u_time.value = ts2;
-        applyWaveHeightModifier(state, state.waterMaterial);
+    for (const water of [state.waterMesh, state.oceanMesh]) {
+        if (!water || !water.material || !water.material.uniforms) continue;
+        const u = water.material.uniforms;
+        // waterWaveSpeed is read straight from state.modifiers every frame
+        // (same as height/storm-reactivity below) rather than needing a
+        // slider-input handler to push a one-off value — THREE.Water has
+        // no dedicated "speed" uniform of its own, only `time` scrolling
+        // the normal map, so speed is simulated by scaling how fast this
+        // module's own clock advances that uniform.
+        const speedMult = (state.modifiers && state.modifiers.waterWaveSpeed) || 1;
+        u.time.value = ts2 * speedMult;
+        u.sunDirection.value.copy(lightDir);
+        u.sunColor.value.copy(sy >= 0 ? water.userData.sunColorDay : water.userData.sunColorNight);
+        applyWaveDistortionModifier(state, water);
     }
-    if (state.oceanMaterial && state.oceanMaterial.userData && state.oceanMaterial.userData.shader) {
-        const oU = state.oceanMaterial.userData.shader.uniforms;
-        oU.u_lightDir.value.copy(lightDir);
-        // Ocean's fresnel/horizon mix reads off botC (the sky's horizon
-        // color, same one dynamic-fog.js's own blend converges on further
-        // out) rather than topC, so the water's edge doesn't seam against
-        // the actual skyline color behind it.
-        oU.u_skyColor.value.copy(botC);
-        oU.u_time.value = ts2;
-        applyWaveHeightModifier(state, state.oceanMaterial);
-    }
+
 
     // Update puddle shader uniforms and opacity based on rain intensity
     if (state.puddleMaterial && state.puddleMaterial.userData && state.puddleMaterial.userData.shader) {

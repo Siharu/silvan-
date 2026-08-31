@@ -394,35 +394,20 @@ export function setupInput(state) {
     if (waveSpeedSlider) waveSpeedSlider.value = currentModifiers.waterWaveSpeed;
     if (stormReactivitySlider) stormReactivitySlider.value = currentModifiers.waterStormReactivity;
 
-    // Rewired for environment/water-shader.js's Gerstner shader — the old
-    // uWaveHeightMult/uWaveSpeedMult/uStormReactivityMult uniforms belonged
-    // to a since-replaced shader and no longer exist on either material,
-    // which left these three sliders silently inert. Height/speed now
-    // scale each material's own baseSteepness/baseSpeed (see
-    // environment/water-shader.js's createWaterMaterial) rather than
-    // setting an absolute value, so the lake and ocean keep their distinct
-    // calm-vs-choppy character instead of both landing on whatever number
-    // the slider shows. Storm reactivity no longer has a literal "storm"
-    // shader mode to hook into, so it's repurposed as how much extra wave
-    // height rain adds on top of the height slider — applied continuously
-    // every frame in atmosphere/day-night-cycle.js's water uniform feed
-    // (reads state.modifiers directly), not here, so it stays live as rain
-    // intensity changes rather than only updating when a slider moves.
-    function applyLiveWaterUniform(kind, mult) {
-        for (const mat of [state.waterMaterial, state.oceanMaterial]) {
-            if (!mat || !mat.uniforms || !mat.userData) continue;
-            if (kind === 'speed' && mat.userData.baseSpeed !== undefined) {
-                mat.uniforms.u_speed.value = mat.userData.baseSpeed * mult;
-            }
-        }
-    }
+    // Height/storm-reactivity scale distortionScale live via
+    // atmosphere/day-night-cycle.js's per-frame water-uniform feed (reads
+    // state.modifiers directly, same as before) — see
+    // applyWaveDistortionModifier there. Wave *speed* is likewise read
+    // directly from state.modifiers.waterWaveSpeed every frame now (scales
+    // how fast THREE.Water's own `time` uniform advances), so there's
+    // nothing left for these slider listeners to push immediately — the
+    // next animation frame picks up the new value on its own, same as
+    // height/storm already did.
     if (waveHeightSlider) waveHeightSlider.addEventListener('input', (e) => {
         state.modifiers = setWaterModifier('waterWaveHeight', parseFloat(e.target.value));
     });
     if (waveSpeedSlider) waveSpeedSlider.addEventListener('input', (e) => {
-        const v = parseFloat(e.target.value);
-        state.modifiers = setWaterModifier('waterWaveSpeed', v);
-        applyLiveWaterUniform('speed', v);
+        state.modifiers = setWaterModifier('waterWaveSpeed', parseFloat(e.target.value));
     });
     if (stormReactivitySlider) stormReactivitySlider.addEventListener('input', (e) => {
         state.modifiers = setWaterModifier('waterStormReactivity', parseFloat(e.target.value));

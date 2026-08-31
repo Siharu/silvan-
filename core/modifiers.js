@@ -6,11 +6,11 @@
 // rather than inventing a new one — same localStorage-namespace-plus-
 // defaults shape, same distinction between "live" and "reload to apply."
 //
-// WATER modifiers apply live: wave height/speed/storm-reactivity are just
-// uniform multipliers (uWaveHeightMult etc., read every frame in the
-// vertex shader), so a slider can update state.waterMaterial/oceanMaterial
-// uniforms directly with zero rebuild cost — see core/input.js's water
-// slider handlers.
+// WATER modifiers apply live: wave height/speed/storm-reactivity are read
+// directly from state.modifiers every frame (see
+// atmosphere/day-night-cycle.js's water-uniform feed) and mapped onto
+// THREE.Water's distortionScale/time uniforms (environment/water-reflective.js)
+// with zero rebuild cost.
 //
 // ROCK modifiers do NOT apply live, same reasoning as core/quality.js:
 // detail/roughness are baked into InstancedMesh geometry at creation time

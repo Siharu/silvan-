@@ -115,6 +115,7 @@ export async function createGrass(state, onProgress) {
             uPlayerPosition: { value: new THREE.Vector3() },
             uHeightMap: { value: heightMap },
             uNoiseTexture: { value: state.globalTextures.grassNoise },
+            uDiffuseMap: { value: state.globalTextures.grassDiffuse },
             uPatchSize: { value: patchSize },
             uBladeWidth: { value: 0.05 },
             uMaxBladeHeight: { value: 1.7 },
@@ -122,6 +123,7 @@ export async function createGrass(state, onProgress) {
             uWindSpeed: { value: 0.35 },
             uWindNoiseScale: { value: 0.9 },
             uMaxBendAngle: { value: 18.0 },
+            uBaldPatchModifier: { value: 1.4 },
             uWorldMin: { value: -halfWorld },
             uWorldMax: { value: halfWorld },
             // Day/night response — grass has no scene-light lookup of its
@@ -140,6 +142,7 @@ export async function createGrass(state, onProgress) {
             uniform vec3 uPlayerPosition;
             uniform sampler2D uHeightMap;
             uniform sampler2D uNoiseTexture;
+            uniform sampler2D uDiffuseMap;
             uniform float uPatchSize;
             uniform float uBladeWidth;
             uniform float uMaxBladeHeight;
@@ -147,6 +150,7 @@ export async function createGrass(state, onProgress) {
             uniform float uWindSpeed;
             uniform float uWindNoiseScale;
             uniform float uMaxBendAngle;
+            uniform float uBaldPatchModifier;
             uniform float uWorldMin;
             uniform float uWorldMax;
             varying vec3 vColor;
@@ -196,7 +200,7 @@ export async function createGrass(state, onProgress) {
                 // Per-blade height variation from the noise texture +
                 // outright randomness so the patch doesn't look uniform.
                 vec3 heightNoise = texture2D(uNoiseTexture, hUv * 40.0).rgb;
-                float heightModifier = uMaxBladeHeight * (0.35 + heightNoise.r * 0.5 + randSeed(hUv) * 0.25);
+                float heightModifier = uMaxBladeHeight * (0.35 + heightNoise.g * 0.5 + randSeed(hUv) * 0.25);
 
                 // Fade blades short near the player so grass doesn't
                 // constantly block the view directly in front of the
@@ -212,6 +216,16 @@ export async function createGrass(state, onProgress) {
                 float edgeZ = abs(origin.z) / halfPatch;
                 float edgeFactor = 1.0 - smoothstep(0.75, 1.0, max(edgeX, edgeZ));
                 heightModifier *= edgeFactor;
+
+                // Bald patches — the article's real technique: the noise
+                // texture's R channel carves random clearings out of the
+                // grass (scaled up toward the patch edges) so it reads as
+                // clumps of wild growth rather than a uniform tuft field.
+                // Previously this R channel got folded into the general
+                // height-variation formula above instead, which is why the
+                // patch looked flat/uniform rather than patchy.
+                float baldPatchOffset = heightNoise.r * (uBaldPatchModifier * (1.0 - edgeFactor));
+                heightModifier = max(0.0, heightModifier - baldPatchOffset);
 
                 float widthFactor = (color.r > 0.05) ? 1.0 : (color.b > 0.05) ? -1.0 : 0.0;
                 float width = uBladeWidth * mix(0.6, 1.0, heightNoise.g);
@@ -236,7 +250,9 @@ export async function createGrass(state, onProgress) {
                 tipOffset = bendMatrix * tipOffset;
                 transformed = basePos + tipOffset;
 
-                vColor = mix(vec3(0.10, 0.16, 0.05), vec3(0.30, 0.55, 0.14), color.g) * mix(0.85, 1.15, heightNoise.b);
+                vColor = texture2D(uDiffuseMap, hUv * 12.0).rgb * mix(0.55, 1.0, color.g);
+                vec3 colorNoise = texture2D(uNoiseTexture, hUv * 6.0 + uTime * 0.02).rgb;
+                vColor *= mix(vec3(1.0), colorNoise, 0.35);
                 vShade = mix(0.35, 1.0, color.g);
 
                 vec4 modelPosition = modelMatrix * vec4(transformed, 1.0);

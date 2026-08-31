@@ -35,6 +35,7 @@ export const QUALITY_PRESETS = {
         rainSplashCount: 400,
         windLeafCount: 220,
         pixelRatioCap: 1.25,
+        waterReflectionRes: 1024,
     },
     // Sits between low and high across every instance count and shadow/
     // pixel-ratio setting — a genuine middle tier, not just an alias for
@@ -55,6 +56,7 @@ export const QUALITY_PRESETS = {
         rainSplashCount: 220,
         windLeafCount: 130,
         pixelRatioCap: 1.1,
+        waterReflectionRes: 512,
     },
     low: {
         grassCount: 60000,
@@ -70,6 +72,7 @@ export const QUALITY_PRESETS = {
         rainSplashCount: 100,
         windLeafCount: 60,
         pixelRatioCap: 1.0,
+        waterReflectionRes: 256,
     },
     // Top-down mode used to just force QUALITY_PRESETS.low outright — same
     // instance counts as low-end-device mode, but it ALSO turned off bloom
@@ -95,6 +98,7 @@ export const QUALITY_PRESETS = {
         rainSplashCount: 100,
         windLeafCount: 60,
         pixelRatioCap: 1.0,
+        waterReflectionRes: 256,
     },
 };
 

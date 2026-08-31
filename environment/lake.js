@@ -1,54 +1,15 @@
-// Inland lake water plane. Uses the shared Gerstner shader in
-// environment/water-shader.js, tuned to the reference demo's "Calm Lake"
-// preset — see /mnt/user-data/uploads/ocean-water.html (Image 1: Time Speed
-// 0.5, Wave Height Scale 1, Wave 2 dir 120/steepness 0.03/wavelength 8,
-// matching that preset's defaults exactly).
+// Inland lake water plane. Uses THREE.Water (see
+// environment/water-reflective.js) for real-time reflection — replaces the
+// old custom Gerstner shader entirely (see water-reflective.js's header
+// comment for why).
 //
-// Sun/moon direction and sky color are fed live each frame from
-// atmosphere/day-night-cycle.js via state.waterMaterial.userData.shader.
+// Sun/moon direction and color are fed live each frame from
+// atmosphere/day-night-cycle.js via state.waterMesh.userData/.material.
 
 import * as THREE from 'three';
 import { WORLD_SIZE } from '../core/world-state.js';
-import { createWaterMaterial } from './water-shader.js';
+import { createReflectiveWater } from './water-reflective.js';
 import { getElevation } from './terrain.js';
-
-// Values from a hand-tuned JSON preset (water-style.json). skyColor isn't
-// part of this shape: it's not a static preset value at all, it's fed live
-// every frame from the actual sky gradient (u_skyColor, see
-// atmosphere/day-night-cycle.js's updateAtmosphere) so the horizon fresnel
-// always matches whatever's really behind it — a fixed skyColor here would
-// just be overwritten the next frame, so it's intentionally left out
-// rather than silently ignored.
-const CALM_LAKE_PRESET = {
-    speed: 0.2552,
-    elevationScale: 1.3601,
-    depthColor: '#07182e',
-    surfaceColor: '#7cd9fd',
-    foamColor: '#ffffff',
-    colorOffset: 0.853,
-    // Previous fix (opacity 0.1->0.62) wasn't enough — misread the shader
-    // formula. It's NOT `colorOffset + waveHeight*colorMultiplier`, it's
-    // `(vElevation + colorOffset) * colorMultiplier` (water-shader.js line
-    // ~106). At the old colorMultiplier 0.1, mixStrength on calm water
-    // (vElevation≈0) was (0+0.853)*0.1≈0.085 — smoothstep collapses that
-    // to nearly 0, so the lake was rendering almost pure u_depthColor
-    // (#07182e, near-black navy), not the bright cyan u_surfaceColor —
-    // opaque now, but opaquely dark, which reads just as "invisible" against
-    // equally-dark surrounding ground. 0.45 (my last attempt) only got
-    // mixStrength to ~0.38 — still mostly depthColor. 1.1 puts calm water
-    // at mixStrength≈0.94 (mostly bright surfaceColor), while wave troughs
-    // still pull it toward depthColor for actual depth variation instead of
-    // a flat color.
-    colorMultiplier: 1.1,
-    foamThreshold: 3,
-    opacity: 0.7,
-    waves: [
-        { dir: 45,  steep: 0.05, len: 15 },
-        { dir: 120, steep: 0.03, len: 8 },
-        { dir: 200, steep: 0.01, len: 3 },
-        { dir: 0,   steep: 0,    len: 1 }
-    ]
-};
 
 export function createLake(state) {
     // Was a full WORLD_SIZE x WORLD_SIZE (1150x1150) plane — the terrain
@@ -61,16 +22,23 @@ export function createLake(state) {
     // was the actual cause of "too many puddles inside the island", not
     // puddles.js's rain decals. Sized to comfortably cover the basin
     // (radius 160) plus its shoreline out to ~250, and nothing further.
-    // Denser segments than before despite the smaller area (higher wave
-    // detail) while still working out to fewer total vertices.
     const LAKE_SIZE = 520;
+    // Deliberately NOT pre-rotated (no geo.rotateX call) — THREE.Water's
+    // own constructor expects an unrotated geometry and applies the -90°
+    // X rotation itself on the returned mesh object (see
+    // water-reflective.js). See ocean.js for the same note.
     const geo = new THREE.PlaneGeometry(LAKE_SIZE, LAKE_SIZE, 96, 96);
-    geo.rotateX(-Math.PI / 2);
 
-    state.waterMaterial = createWaterMaterial(CALM_LAKE_PRESET);
-    state.waterMesh = new THREE.Mesh(geo, state.waterMaterial);
-    state.waterMesh.position.y = 1.6; // Water surface level
-    state.scene.add(state.waterMesh);
+    state.waterMesh = createReflectiveWater(state, {
+        geometry: geo,
+        y: 1.6, // Water surface level
+        waterColor: 0x0c3b2e,
+        distortionScale: 1.6,
+        baseSize: 2.2,
+        sunColorDay: 0xffffff,
+        sunColorNight: 0x7c93ff,
+    });
+    state.waterMaterial = state.waterMesh.material;
 
     // Add stylized Lily Pads to the lake
     const lilyCount = 500;

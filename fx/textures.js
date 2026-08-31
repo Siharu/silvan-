@@ -163,28 +163,34 @@ export function createProceduralTextures() {
 
     // Raindrop streak — a soft-edged vertical blurred line, used as the
     // alpha mask for the new Points-based rain system (fx/rain.js, ported
-    // from "Cheap, Beautiful Rain in Three.js": a THREE.Points cloud with
-    // this texture doing the streak/motion-blur shape, instead of the old
-    // per-instance geometry quads). Canvas's own shadowBlur does the
-    // blurring so there's no need for a real multi-pass GPU blur — same
-    // "bake it into a 5kb PNG" trick the article uses, just generated at
-    // runtime instead of shipped as an asset.
+    // from "Cheap, Beautiful Rain in Three.js"). The article's own asset is
+    // explicitly square ("a 512x512, mostly empty PNG of a blurred line")
+    // — that matters because THREE.Points always samples this via
+    // gl_PointCoord, which is always a square 0..1x0..1 UV space
+    // regardless of the source texture's own aspect ratio. A non-square
+    // source (this used to be 64x256) gets stretched to fit that square
+    // footprint, visibly warping the drop shape. Square canvas + generous
+    // empty padding around the line, matching the article's real asset,
+    // fixes that. Canvas's own shadowBlur does the blurring so there's no
+    // need for a real multi-pass GPU blur — same "bake it into a PNG"
+    // trick the article uses, just generated at runtime instead of
+    // shipped as an asset.
     const rainCanvas = document.createElement('canvas');
-    rainCanvas.width = 64; rainCanvas.height = 256;
+    rainCanvas.width = 128; rainCanvas.height = 128;
     const rainCtx = rainCanvas.getContext('2d');
     rainCtx.strokeStyle = 'rgba(255,255,255,1.0)';
-    rainCtx.lineWidth = 3;
+    rainCtx.lineWidth = 4;
     rainCtx.lineCap = 'round';
     rainCtx.shadowColor = 'rgba(255,255,255,1.0)';
-    rainCtx.shadowBlur = 8;
+    rainCtx.shadowBlur = 10;
     rainCtx.beginPath();
-    rainCtx.moveTo(32, 40);
-    rainCtx.lineTo(32, 216);
+    rainCtx.moveTo(64, 28);
+    rainCtx.lineTo(64, 100);
     rainCtx.stroke();
     // Second, brighter/thinner pass down the core so the streak has a
     // hot center instead of reading as a uniform blurred bar.
-    rainCtx.lineWidth = 1;
-    rainCtx.shadowBlur = 3;
+    rainCtx.lineWidth = 1.5;
+    rainCtx.shadowBlur = 4;
     rainCtx.stroke();
     const rainTex = new THREE.CanvasTexture(rainCanvas);
     rainTex.colorSpace = THREE.SRGBColorSpace;
@@ -210,6 +216,43 @@ export function createProceduralTextures() {
     grassNoiseTex.wrapS = THREE.RepeatWrapping;
     grassNoiseTex.wrapT = THREE.RepeatWrapping;
 
-    return { leaf: leafTex, moon: moonTex, moonGlow: moonGlowTex, sun: sunTex, sunRays: sunRayTex, flower: flowerTex, rainDrop: rainTex, grassNoise: grassNoiseTex };
+    // Grass diffuse map — the article samples a photographed grass texture
+    // to color/define individual blades instead of a flat shader gradient;
+    // painted procedurally here (streaky vertical blade strokes over a
+    // mottled green base) to match the rest of this file's hand-drawn
+    // texture approach rather than shipping a photo asset.
+    const grassDiffCanvas = document.createElement('canvas');
+    grassDiffCanvas.width = 128; grassDiffCanvas.height = 128;
+    const gdCtx = grassDiffCanvas.getContext('2d');
+    gdCtx.fillStyle = '#2c4a18';
+    gdCtx.fillRect(0, 0, 128, 128);
+    // Mottled base blotches
+    for (let i = 0; i < 90; i++) {
+        const x = Math.random() * 128, y = Math.random() * 128;
+        const r = 6 + Math.random() * 14;
+        const shade = 0.7 + Math.random() * 0.6;
+        gdCtx.fillStyle = `rgba(${Math.round(40 * shade)},${Math.round(90 * shade)},${Math.round(28 * shade)},0.35)`;
+        gdCtx.beginPath(); gdCtx.arc(x, y, r, 0, Math.PI * 2); gdCtx.fill();
+    }
+    // Individual blade streaks — short near-vertical strokes so the tiled
+    // result reads as fibrous grass rather than a smooth color field.
+    for (let i = 0; i < 500; i++) {
+        const x = Math.random() * 128, y = Math.random() * 128;
+        const h = 4 + Math.random() * 10;
+        const lean = (Math.random() - 0.5) * 3;
+        const g = 70 + Math.random() * 110;
+        gdCtx.strokeStyle = `rgba(${Math.round(g * 0.35)},${Math.round(g)},${Math.round(g * 0.28)},${0.35 + Math.random() * 0.4})`;
+        gdCtx.lineWidth = 0.8 + Math.random() * 1.1;
+        gdCtx.beginPath();
+        gdCtx.moveTo(x, y);
+        gdCtx.lineTo(x + lean, y - h);
+        gdCtx.stroke();
+    }
+    const grassDiffuseTex = new THREE.CanvasTexture(grassDiffCanvas);
+    grassDiffuseTex.wrapS = THREE.RepeatWrapping;
+    grassDiffuseTex.wrapT = THREE.RepeatWrapping;
+    grassDiffuseTex.colorSpace = THREE.SRGBColorSpace;
+
+    return { leaf: leafTex, moon: moonTex, moonGlow: moonGlowTex, sun: sunTex, sunRays: sunRayTex, flower: flowerTex, rainDrop: rainTex, grassNoise: grassNoiseTex, grassDiffuse: grassDiffuseTex };
 }
 
