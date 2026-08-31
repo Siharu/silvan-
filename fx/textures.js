@@ -171,21 +171,21 @@ export function createProceduralTextures() {
     // runtime instead of shipped as an asset.
     const rainCanvas = document.createElement('canvas');
     rainCanvas.width = 64; rainCanvas.height = 256;
-    const rCtx = rainCanvas.getContext('2d');
-    rCtx.strokeStyle = 'rgba(255,255,255,1.0)';
-    rCtx.lineWidth = 3;
-    rCtx.lineCap = 'round';
-    rCtx.shadowColor = 'rgba(255,255,255,1.0)';
-    rCtx.shadowBlur = 8;
-    rCtx.beginPath();
-    rCtx.moveTo(32, 40);
-    rCtx.lineTo(32, 216);
-    rCtx.stroke();
+    const rainCtx = rainCanvas.getContext('2d');
+    rainCtx.strokeStyle = 'rgba(255,255,255,1.0)';
+    rainCtx.lineWidth = 3;
+    rainCtx.lineCap = 'round';
+    rainCtx.shadowColor = 'rgba(255,255,255,1.0)';
+    rainCtx.shadowBlur = 8;
+    rainCtx.beginPath();
+    rainCtx.moveTo(32, 40);
+    rainCtx.lineTo(32, 216);
+    rainCtx.stroke();
     // Second, brighter/thinner pass down the core so the streak has a
     // hot center instead of reading as a uniform blurred bar.
-    rCtx.lineWidth = 1;
-    rCtx.shadowBlur = 3;
-    rCtx.stroke();
+    rainCtx.lineWidth = 1;
+    rainCtx.shadowBlur = 3;
+    rainCtx.stroke();
     const rainTex = new THREE.CanvasTexture(rainCanvas);
     rainTex.colorSpace = THREE.SRGBColorSpace;
 
