@@ -19,6 +19,7 @@ import { updatePlayer } from './core/player-controller.js';
 import { getElevation } from './environment/terrain.js';
 import { createTerrain } from './environment/terrain.js';
 import { createSky } from './environment/sky.js';
+import { createMoon } from './environment/moon.js';
 import { createLake } from './environment/lake.js';
 import { createOcean } from './environment/ocean.js';
 // createMountainBoundary import removed — see the removed call in the
@@ -209,12 +210,15 @@ async function init() {
     state.renderer.useLegacyLights = true;
     state.renderer.setSize(window.innerWidth, window.innerHeight);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, state.quality.pixelRatioCap));
-    // Shadow mapping removed for performance — was a 1024x1024 (High) PCF
-    // soft-shadow map re-rendered from the sun's POV every single frame, on
-    // top of the main scene render. terrain/forest/rocks/grass still read
-    // fine off hemiLight + sunLight/moonLight's direct lighting alone;
-    // this only removes cast/received shadow detail, not lighting itself.
-    state.renderer.shadowMap.enabled = false;
+    // Shadow mapping re-enabled (day_night_cycle.html reference port) —
+    // PCFSoftShadowMap re-rendered from sun/moon POV every frame, on top
+    // of the main scene render. This is the single most expensive line in
+    // this file on integrated GPUs (Intel UHD reported ~12fps even before
+    // this). Flagged for removal once the full port is done and it's time
+    // to trim back down, per plan — see shadow.mapSize below for the first
+    // knob to turn if this needs to stay.
+    state.renderer.shadowMap.enabled = true;
+    state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     // Was 1.08 with sunLight peaking at 1.5 + hemi at 1.15 constant — the two
     // stacked pushed midday well past ACES's shoulder into a blown-white sky
@@ -245,18 +249,45 @@ async function init() {
     state.hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 1.15);
     state.scene.add(state.hemiLight);
 
-    // castShadow/shadow.* removed along with renderer.shadowMap.enabled
-    // above — no shadow map to configure now.
+    // Shadow camera configuration ported from day_night_cycle.html's
+    // sunLight/moonLight setup (2048 there — halved to 1024 here since
+    // our scene has far more shadow-casting geometry per frame: ~780
+    // fractal trees + rocks + grass + ferns/moss vs. that demo's single
+    // terrain mesh). d=600 covers the world radius our lights actually
+    // need to reach (world-state.js WORLD_SIZE-scaled), vs. the demo's
+    // d=4000 for its much larger 16000-unit terrain.
     state.sunLight = new THREE.DirectionalLight(0xffedc9, 1.25);
+    state.sunLight.castShadow = true;
+    state.sunLight.shadow.mapSize.width = 1024;
+    state.sunLight.shadow.mapSize.height = 1024;
+    state.sunLight.shadow.camera.near = 10;
+    state.sunLight.shadow.camera.far = 2000;
+    state.sunLight.shadow.camera.left = -600;
+    state.sunLight.shadow.camera.right = 600;
+    state.sunLight.shadow.camera.top = 600;
+    state.sunLight.shadow.camera.bottom = -600;
+    state.sunLight.shadow.bias = -0.001;
     state.scene.add(state.sunLight);
 
     state.moonLight = new THREE.DirectionalLight(0x7799ff, 0.3);
+    state.moonLight.castShadow = true;
+    state.moonLight.shadow.mapSize.width = 1024;
+    state.moonLight.shadow.mapSize.height = 1024;
+    state.moonLight.shadow.camera.near = 10;
+    state.moonLight.shadow.camera.far = 2000;
+    state.moonLight.shadow.camera.left = -600;
+    state.moonLight.shadow.camera.right = 600;
+    state.moonLight.shadow.camera.top = 600;
+    state.moonLight.shadow.camera.bottom = -600;
+    state.moonLight.shadow.bias = -0.001;
     state.scene.add(state.moonLight);
 
     reportLoadProgress(); // 0% — as soon as the scene/renderer above exist, before the first heavy step
 
     createSky(state);
     await afterStep();
+
+    createMoon(state);
     // Now chunked internally (see terrain.js) — was the single biggest
     // unbroken synchronous block in the whole load (~130k vertex elevation
     // lookups with zero yields inside the loop itself).

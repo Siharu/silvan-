@@ -12,6 +12,7 @@ import { getElevation } from '../environment/terrain.js';
 import { updateWindLeaves } from '../fx/wind-leaves.js';
 import { setAmbientVolume } from '../audio/ambience.js';
 import { updateRadioTower, updateTowerCutscene } from '../environment/radio-tower.js';
+import { MOON_DISTANCE } from '../environment/moon.js';
 
 // Every one of these used to be a fresh `new THREE.Color(...)` allocated
 // inside updateAtmosphere() below, every single frame, forever — 15+
@@ -126,6 +127,13 @@ export function updateAtmosphere(state, delta) {
     state.sunLight.position.set(sx * 600, sy * 600, -200);
     state.moonLight.position.set(-sx * 600, -sy * 600, 200);
     if(state.moonSprite) { state.moonSprite.position.set(-sx*550, -sy*550, 200); state.moonSprite.material.opacity = Math.max(0, -sy + 0.3); }
+    // Visual moon mesh (environment/moon.js) — mirrors moonLight's
+    // direction but pushed to a fixed larger distance so it reads as a
+    // distant sphere rather than sitting at gameplay-light range.
+    if (state.moonMesh) {
+        state.moonMesh.position.set(-sx * MOON_DISTANCE, -sy * MOON_DISTANCE, 300);
+        state.moonMesh.visible = sy < 0.15; // hide once sun's well up, same threshold feel as moonLight fading in
+    }
 
     // Cloud cover drives how much the sun/moon sprites and the water's
     // specular glint (environment/lake.js) fade out — computed once here so
@@ -162,13 +170,24 @@ export function updateAtmosphere(state, delta) {
     // instead of just flatly bright everywhere. Hemi's color itself is now
     // also tinted per-frame below (blue-ish at night, neutral in day)
     // instead of staying fixed at its main.js construction-time color.
-    state.sunLight.intensity = Math.max(0, sy) * 2.5;
-    state.moonLight.intensity = Math.max(0, -sy) * 1.5;
+    // Math.pow(.., 0.3) curve ported from day_night_cycle.html — vs. the
+    // old linear Math.max(0, sy), this holds intensity up much longer as
+    // the sun/moon approach the horizon (near-full brightness until quite
+    // late) instead of fading proportionally the whole descent, then drops
+    // off sharply right at the horizon. Reads as a more "sudden" dusk/dawn.
+    state.sunLight.intensity = Math.pow(Math.max(0, sy), 0.3) * 2.5;
+    state.moonLight.intensity = Math.pow(Math.max(0, -sy), 0.3) * 1.5;
     if (state.hemiLight) {
         state.hemiLight.intensity = 0.45 + dayBlend * 0.55;
         state.hemiLight.color.copy(_hemiC.setHSL(0.6, 0.5, 0.5 + dayBlend * 0.3));
         state.hemiLight.groundColor.copy(_hemiGroundC.setHSL(0.3, 0.4, 0.2 + dayBlend * 0.1));
     }
+    // Exposure swing ported from day_night_cycle.html — was a flat 1.15
+    // constant (main.js) before this. Simple dayBlend lerp between a night
+    // floor and our existing tuned midday ceiling (1.15, not the
+    // reference's 0.8/0.4 — ours is already tuned against 1.15 elsewhere
+    // in this file, see main.js's comment history on this value).
+    state.renderer.toneMappingExposure = 0.55 + dayBlend * 0.6;
 
     // Grass (environment/grass.js) is a raw ShaderMaterial with no built-in
     // scene-light lookup — cheaper than giving ~250k blade-verts a full PBR
