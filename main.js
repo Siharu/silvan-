@@ -52,16 +52,16 @@ state.isPaused = false;
 setupInput(state);
 
 function setLoadingProgress(fraction, label) {
-    const frame = document.getElementById('loading-screen-frame');
-    if (frame && frame.contentWindow && frame.contentWindow.postMessage) {
-        // Contract must match loading-screen.html's listener exactly:
-        // type 'silvan-loading-progress' and percent as 0-100, not the
-        // 'progress'/fraction(0-1) shape this used to send — that mismatch
-        // meant every one of these calls was silently dropped and the
-        // loading screen's bar/text never moved off 0, reading as a blank/
-        // frozen screen during load instead of showing real progress.
-        frame.contentWindow.postMessage({ type: 'silvan-loading-progress', percent: fraction * 100, label }, '*');
-    }
+    // Inline DOM writes now — no iframe, no postMessage contract to keep
+    // in sync across two documents. See index.html's .loading-screen CSS
+    // comment for why the iframe version was replaced.
+    const fill = document.getElementById('loading-screen-fill');
+    const pct = document.getElementById('loading-screen-pct');
+    const labelEl = document.getElementById('loading-screen-label');
+    const percent = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
+    if (fill) fill.style.width = percent + '%';
+    if (pct) pct.textContent = percent + '%';
+    if (labelEl && label) labelEl.textContent = label;
 }
 
 async function afterStep() {
@@ -345,19 +345,29 @@ if (rememberBtn) {
     rememberBtn.addEventListener('click', () => {
         markGameStarted(); // so a later visit's title screen shows "Regain" honestly — this is the real first entry, not a decorative flag
         const loadingScreen = document.getElementById('loading-screen');
-        const loadingFrame = document.getElementById('loading-screen-frame');
-        if (loadingFrame && !loadingFrame.src) loadingFrame.src = 'loading-screen.html';
-        if (loadingScreen) loadingScreen.classList.remove('hidden');
-        // Double-rAF hop BEFORE the heavy synchronous init() work (terrain
-        // heightfield, rock shader builds, tree generation, etc.) — same
-        // pattern startEngine() uses to hide the loading screen at the
-        // end, just needed here too. Without this, classList.remove
-        // above never actually gets painted before init() locks the main
-        // thread, so the whole load looks like a frozen black screen
-        // instead of showing the loading screen while it works.
-        requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (loadingScreen) {
+            // Force-skip the 0.5s opacity fade-in for THIS reveal — the CSS
+            // transition means classList.remove('hidden') doesn't snap
+            // visible, it fades in over 500ms, which used to freeze
+            // near-invisible for the whole load once init()'s heavy
+            // synchronous work locked the main thread a frame or two later.
+            // Disabling the transition for one reflow forces it straight to
+            // opacity:1 immediately; re-enabling it right after (via rAF)
+            // preserves the fade for the fade-OUT startEngine() does at the
+            // end of loading.
+            loadingScreen.style.transition = 'none';
+            loadingScreen.classList.remove('hidden');
+            void loadingScreen.offsetHeight; // force a synchronous reflow so opacity:1 actually applies before...
+            requestAnimationFrame(() => { loadingScreen.style.transition = ''; }); // ...this restores the transition for later toggles
+        }
+        setLoadingProgress(0, 'Entering the Hearth');
+        // Single rAF hop before the heavy synchronous init() work — enough
+        // now that the loading screen is inline markup in this same
+        // document (no iframe navigation or nested document to wait on),
+        // just needs one paint to actually show before the freeze.
+        requestAnimationFrame(() => {
             init();
-        }));
+        });
     });
 } else {
     // No title screen button found (e.g. testing index.html standalone) —

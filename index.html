@@ -279,10 +279,18 @@
             mix-blend-mode: multiply;
         }
 
-        /* Loading screen — see #loading-screen's markup comment for why
-           this is visible-by-default rather than toggled on. Same dark
-           palette as the title screen so there's no jarring flash-of-
-           different-background between "loading" and "here's the title." */
+        /* Loading screen — inline now, not an iframe. The iframe version
+           (src set to loading-screen.html on click) had too many ways to
+           fail silently: async src navigation racing init()'s synchronous
+           freeze, a postMessage contract that had to match exactly on
+           both sides, and a CSS opacity transition that froze mid-fade
+           right as the freeze hit — three independent bugs stacked on
+           each other, all because the loading UI lived in a document
+           separate from the one doing the blocking work. Inline markup in
+           THIS document sidesteps all of it: no navigation to wait on, no
+           cross-document messaging, and the reflow-forcing trick below
+           only has to fight one transition instead of a whole nested
+           document's load lifecycle. */
         .loading-screen {
             position: fixed;
             inset: 0;
@@ -299,11 +307,38 @@
             opacity: 0;
             pointer-events: none;
         }
-        #loading-screen-frame {
-            width: 100%;
+        .loading-screen-title {
+            font-family: 'Cinzel', serif;
+            font-size: clamp(20px, 3vw, 30px);
+            font-weight: 300;
+            letter-spacing: .22em;
+            color: #e3ded2;
+            text-transform: uppercase;
+        }
+        .loading-screen-label {
+            font: 10px/1.8 'Courier New', monospace;
+            letter-spacing: .18em;
+            color: #69757c;
+            text-transform: uppercase;
+            min-height: 14px;
+        }
+        .loading-screen-bar {
+            width: min(390px, 60vw);
+            height: 3px;
+            background: rgba(220, 216, 204, .10);
+            border: 1px solid rgba(220, 216, 204, .16);
+        }
+        .loading-screen-fill {
+            width: 0%;
             height: 100%;
-            border: 0;
-            display: block;
+            background: #c9b57e;
+            box-shadow: 0 0 10px rgba(201, 181, 126, .15);
+            transition: width 0.25s ease-out;
+        }
+        .loading-screen-pct {
+            font: 9px 'Courier New', monospace;
+            letter-spacing: .18em;
+            color: #c6a15b;
         }
 
         /* Autosave HUD indicator — toggled by main.js's flashAutosaveIcon(),
@@ -1094,11 +1129,14 @@
          main.js's startEngine() for the double-rAF hop that guarantees this
          gets a paint before the freeze, rather than racing it. -->
     <div id="loading-screen" class="loading-screen hidden">
-        <!-- src is set (and cleared again once loading finishes) by
-             main.js's startEngine() — left empty here so its own Three.js
-             scene/render loop and moon-run minigame never spin up until
-             the player actually clicks Remember/Regain. See loading-screen.html. -->
-        <iframe id="loading-screen-frame" title="Loading Silvan" src=""></iframe>
+        <!-- Inline markup, driven directly by main.js's setLoadingProgress()
+             via plain DOM writes — no iframe, no postMessage. See the
+             .loading-screen CSS comment above for why the old iframe
+             version was replaced. -->
+        <div class="loading-screen-title">SILVAN</div>
+        <div class="loading-screen-bar"><div id="loading-screen-fill" class="loading-screen-fill"></div></div>
+        <div class="loading-screen-label" id="loading-screen-label">Entering the Hearth</div>
+        <div class="loading-screen-pct" id="loading-screen-pct">0%</div>
     </div>
 
     <div id="canvas-container"></div>
