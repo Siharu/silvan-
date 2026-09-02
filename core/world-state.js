@@ -39,5 +39,11 @@ export function createWorldState() {
 
         quality: null, // assigned by core/quality.js at init
         gameTime: 0.3, // 0..1, matches day_night_cycle.html's default daytime start
+
+        // Populated by environment/pine-trees.js (trunk positions/radii) —
+        // no collision system reads this yet in this rebuild, but the
+        // array needs to exist since that module pushes to it
+        // unconditionally as trees are placed.
+        colliders: [],
     };
 }
