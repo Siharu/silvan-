@@ -61,5 +61,11 @@ export function createWorldState() {
         // first push() call, same reasoning as colliders above.
         leafMatrices: [],
         leafColors: [],
+
+        // Same deal as leafMatrices/leafColors above, but for the branch
+        // (trunk) instances growBranch() pushes on every recursive call —
+        // this was missing, which is what threw the undefined.push() error.
+        branchMatrices: [],
+        branchColors: [],
     };
 }
