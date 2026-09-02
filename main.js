@@ -238,6 +238,8 @@ const rememberBtn = document.getElementById('title-remember-btn');
 if (rememberBtn) {
     rememberBtn.addEventListener('click', () => {
         const loadingScreen = document.getElementById('loading-screen');
+        const loadingFrame = document.getElementById('loading-screen-frame');
+        if (loadingFrame && !loadingFrame.src) loadingFrame.src = 'loading-screen.html';
         if (loadingScreen) loadingScreen.classList.remove('hidden');
         init();
     });
