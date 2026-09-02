@@ -51,6 +51,46 @@ state.isPaused = false;
 // null-guarded so this is safe to call this early).
 setupInput(state);
 
+// Ominous progress labels, same tone/spirit as the old canvas loading
+// screen's poetic state text — cycled by percent threshold rather than
+// literal step names ("Generating forest" etc reads like a debug log,
+// not this game's voice).
+const LOADING_LABELS = [
+    { at: 0, text: 'the hearth is still' },
+    { at: 15, text: 'something is taking root' },
+    { at: 35, text: 'the trees remember first' },
+    { at: 55, text: 'water finds its level' },
+    { at: 75, text: 'small things begin to move' },
+    { at: 92, text: 'you are almost there' },
+    { at: 100, text: 'go on then' },
+];
+function labelForPercent(p) {
+    let l = LOADING_LABELS[0];
+    for (const entry of LOADING_LABELS) { if (p >= entry.at) l = entry; else break; }
+    return l.text;
+}
+
+// Periodic chromatic-split glitch flicker on the loading title, same
+// mechanism/timing family as the title screen's own #title-glitch-fx —
+// keeps the loading screen from reading as a generic clean progress bar.
+let loadingGlitchTimer = null;
+function startLoadingGlitch() {
+    const titleEl = document.getElementById('loading-screen-title');
+    if (!titleEl) return;
+    stopLoadingGlitch();
+    const tick = () => {
+        titleEl.classList.add('flicker');
+        setTimeout(() => titleEl.classList.remove('flicker'), 120 + Math.random() * 100);
+        loadingGlitchTimer = setTimeout(tick, 1800 + Math.random() * 2200);
+    };
+    loadingGlitchTimer = setTimeout(tick, 900);
+}
+function stopLoadingGlitch() {
+    if (loadingGlitchTimer) { clearTimeout(loadingGlitchTimer); loadingGlitchTimer = null; }
+    const titleEl = document.getElementById('loading-screen-title');
+    if (titleEl) titleEl.classList.remove('flicker');
+}
+
 function setLoadingProgress(fraction, label) {
     // Inline DOM writes now — no iframe, no postMessage contract to keep
     // in sync across two documents. See index.html's .loading-screen CSS
@@ -60,8 +100,12 @@ function setLoadingProgress(fraction, label) {
     const labelEl = document.getElementById('loading-screen-label');
     const percent = Math.round(Math.max(0, Math.min(1, fraction)) * 100);
     if (fill) fill.style.width = percent + '%';
-    if (pct) pct.textContent = percent + '%';
-    if (labelEl && label) labelEl.textContent = label;
+    if (pct) pct.textContent = String(percent).padStart(2, '0') + '%';
+    // label param from call sites is now just a threshold nudge, not the
+    // literal displayed text — the atmospheric line is picked from
+    // LOADING_LABELS by percent so it stays in the game's voice
+    // regardless of which internal init() step happens to be running.
+    if (labelEl) labelEl.textContent = labelForPercent(percent);
 }
 
 async function afterStep() {
@@ -312,6 +356,7 @@ function startEngine() {
     requestAnimationFrame(() => requestAnimationFrame(() => {
         if (loadingScreen) loadingScreen.classList.add('hidden');
         if (uiLayer) uiLayer.classList.add('hidden');
+        stopLoadingGlitch();
 
         state.clock.start();
         animate();
@@ -360,7 +405,8 @@ if (rememberBtn) {
             void loadingScreen.offsetHeight; // force a synchronous reflow so opacity:1 actually applies before...
             requestAnimationFrame(() => { loadingScreen.style.transition = ''; }); // ...this restores the transition for later toggles
         }
-        setLoadingProgress(0, 'Entering the Hearth');
+        startLoadingGlitch();
+        setLoadingProgress(0, '');
         // Single rAF hop before the heavy synchronous init() work — enough
         // now that the loading screen is inline markup in this same
         // document (no iframe navigation or nested document to wait on),

@@ -290,7 +290,13 @@
            THIS document sidesteps all of it: no navigation to wait on, no
            cross-document messaging, and the reflow-forcing trick below
            only has to fight one transition instead of a whole nested
-           document's load lifecycle. */
+           document's load lifecycle.
+
+           Visual language matches the title screen's own glitch/analog-
+           horror treatment (see .title-logo.title-glitch above) rather
+           than a generic clean spinner — chromatic-split RGB title text,
+           scanlines, and film grain, all CSS/SVG only so none of it adds
+           network requests or blocks on anything. */
         .loading-screen {
             position: fixed;
             inset: 0;
@@ -302,25 +308,56 @@
             gap: 1.1rem;
             background: #05070c;
             transition: opacity 0.5s ease;
+            overflow: hidden;
         }
         .loading-screen.hidden {
             opacity: 0;
             pointer-events: none;
         }
-        .loading-screen-title {
-            font-family: 'Cinzel', serif;
-            font-size: clamp(20px, 3vw, 30px);
-            font-weight: 300;
-            letter-spacing: .22em;
-            color: #e3ded2;
-            text-transform: uppercase;
+        .loading-screen::before {
+            /* scanlines */
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(0,0,0,.35) 4px, transparent 5px);
+            opacity: .35;
         }
+        .loading-screen::after {
+            /* film grain, same SVG turbulence trick used elsewhere in this project's atmospheric overlays */
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+            opacity: .05;
+            mix-blend-mode: screen;
+        }
+        .loading-screen-title {
+            font-family: 'Silkscreen', 'Cinzel', serif;
+            font-size: clamp(22px, 3.4vw, 34px);
+            letter-spacing: .3em;
+            color: #e3ded2;
+            text-shadow: 0 0 20px rgba(255,255,255,0.25), 0 4px 24px rgba(0,0,0,0.7);
+            text-transform: uppercase;
+            position: relative;
+        }
+        .loading-screen-title::before,
+        .loading-screen-title::after {
+            content: attr(data-text);
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: transparent; pointer-events: none;
+            opacity: 0;
+        }
+        .loading-screen-title.flicker::before { color: #ff3333; z-index: -1; clip-path: inset(15% 0 65% 0); transform: translate(-5px, 2px); opacity: .8; }
+        .loading-screen-title.flicker::after { color: #00ffff; z-index: -2; clip-path: inset(55% 0 15% 0); transform: translate(5px, -2px); opacity: .8; }
         .loading-screen-label {
             font: 10px/1.8 'Courier New', monospace;
-            letter-spacing: .18em;
-            color: #69757c;
+            letter-spacing: .28em;
+            color: #7f8990;
             text-transform: uppercase;
             min-height: 14px;
+            transition: opacity .3s ease;
         }
         .loading-screen-bar {
             width: min(390px, 60vw);
@@ -338,7 +375,7 @@
         .loading-screen-pct {
             font: 9px 'Courier New', monospace;
             letter-spacing: .18em;
-            color: #c6a15b;
+            color: #566168;
         }
 
         /* Autosave HUD indicator — toggled by main.js's flashAutosaveIcon(),
@@ -1132,11 +1169,12 @@
         <!-- Inline markup, driven directly by main.js's setLoadingProgress()
              via plain DOM writes — no iframe, no postMessage. See the
              .loading-screen CSS comment above for why the old iframe
-             version was replaced. -->
-        <div class="loading-screen-title">SILVAN</div>
+             version was replaced, and for the glitch/scanline/grain
+             treatment matching the title screen's own visual language. -->
+        <div class="loading-screen-title" id="loading-screen-title" data-text="SILVAN">SILVAN</div>
         <div class="loading-screen-bar"><div id="loading-screen-fill" class="loading-screen-fill"></div></div>
-        <div class="loading-screen-label" id="loading-screen-label">Entering the Hearth</div>
-        <div class="loading-screen-pct" id="loading-screen-pct">0%</div>
+        <div class="loading-screen-label" id="loading-screen-label">the hearth is still</div>
+        <div class="loading-screen-pct" id="loading-screen-pct">00%</div>
     </div>
 
     <div id="canvas-container"></div>
