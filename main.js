@@ -54,7 +54,13 @@ setupInput(state);
 function setLoadingProgress(fraction, label) {
     const frame = document.getElementById('loading-screen-frame');
     if (frame && frame.contentWindow && frame.contentWindow.postMessage) {
-        frame.contentWindow.postMessage({ type: 'progress', fraction, label }, '*');
+        // Contract must match loading-screen.html's listener exactly:
+        // type 'silvan-loading-progress' and percent as 0-100, not the
+        // 'progress'/fraction(0-1) shape this used to send — that mismatch
+        // meant every one of these calls was silently dropped and the
+        // loading screen's bar/text never moved off 0, reading as a blank/
+        // frozen screen during load instead of showing real progress.
+        frame.contentWindow.postMessage({ type: 'silvan-loading-progress', percent: fraction * 100, label }, '*');
     }
 }
 
