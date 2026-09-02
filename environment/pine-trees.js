@@ -217,6 +217,7 @@ export function createDetailedPineTrees(state, count = PINE_TREE_COUNT) {
         const y = getElevation(x, z, state);
 
         if (y < WATER_LEVEL + 2.5) continue; // keep off the shoreline/lake
+        if (Math.hypot(x - 0, z - 20) < 12) continue; // keep clear of player spawn (0, _, 20)
 
         const tooClose = placed.some(p => (p.x - x) ** 2 + (p.z - z) ** 2 < minSpacing * minSpacing);
         if (tooClose) continue;

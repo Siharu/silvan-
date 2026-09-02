@@ -107,7 +107,18 @@ const waterFragmentShader = `
         diff = diff * 0.5 + 0.5;
         vec3 halfwayDir = normalize(lightDir + viewDir);
         float spec = pow(max(dot(normal, halfwayDir), 0.0), 128.0);
+        // Fresnel clamped to 0.55 max instead of reaching 1.0 — the
+        // uncapped version was tuned for ocean-water.html's orbiting demo
+        // camera, which never held a true grazing angle for long. A
+        // ground-level FPS camera looking toward the horizon across this
+        // huge plane sits at grazing angle almost constantly, so the old
+        // curve pushed alpha/color to near-fully-opaque pale blue-white
+        // across the whole distant view — washing out anything behind it
+        // (reported as a "translucent ghost tower"). Capping the fresnel
+        // contribution keeps the rim-brightening effect close-up without
+        // letting it fully whitewash distant geometry.
         float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
+        fresnel = min(fresnel, 0.55);
         vec3 skyColor = vec3(0.7, 0.8, 0.9);
         albedo = mix(albedo, skyColor, fresnel * 0.8);
         vec3 finalColor = albedo * (diff * 0.8 + 0.2) + vec3(1.0) * spec * 0.6;
@@ -212,7 +223,16 @@ export function createWater(state) {
 
     // --- Outer ocean: Gerstner "Ocean Breeze" preset, unconditional (see
     // module comment for why this doesn't attempt THREE.Water at all) ---
-    const oceanMesh = buildGerstnerMesh(WORLD_SIZE * 6, 256, 'ocean');
+    // Size dropped from WORLD_SIZE*6 (4800) to WORLD_SIZE*2.5 (2000) — at
+    // 4800 units with only 128 segments, quads were ~37 units across
+    // while the Gerstner waves have 3-20 unit wavelengths: catastrophically
+    // under-tessellated relative to the wave math, producing chaotic
+    // per-vertex normals and the dark radiating moire/banding artifact
+    // seen in-game. 2000/160 segments = 12.5 units/quad, still coarse but
+    // no longer badly aliased against the shortest (3-unit) wavelength.
+    // Fog (state.scene.fog, FogExp2) hides the now-closer edge instead of
+    // needing the plane to physically reach the horizon.
+    const oceanMesh = buildGerstnerMesh(WORLD_SIZE * 2.5, 160, 'ocean');
     oceanMesh.position.y = -3;
     state.oceanMesh = oceanMesh;
     state.scene.add(oceanMesh);

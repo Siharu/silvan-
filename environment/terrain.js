@@ -85,6 +85,82 @@ export function createTerrain(state) {
     geo.computeVertexNormals();
 
     const mat = new THREE.MeshStandardMaterial({ color: 0x4a6b3a, roughness: 1.0 });
+    // Cheap fragment-shader detail — no extra geometry (so no extra lag),
+    // just fixing the "flat green plastic hill" look from a single solid
+    // color + coarse-mesh soft normals. Adds: (1) height/slope-based
+    // color blend across dirt/grass/rock bands, (2) a fine noise-based
+    // fake bump so the surface reads as textured instead of billiard-
+    // ball smooth even where the actual mesh is flat.
+    mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 };
+        mat.userData.shader = shader;
+
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <common>',
+            `#include <common>
+            varying vec3 vWorldPosTerrain;
+            varying vec3 vObjectNormalTerrain;`
+        );
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+            vWorldPosTerrain = (modelMatrix * vec4(position, 1.0)).xyz;
+            vObjectNormalTerrain = normal;`
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <common>',
+            `#include <common>
+            varying vec3 vWorldPosTerrain;
+            varying vec3 vObjectNormalTerrain;
+
+            float hashTerrain(vec2 p) {
+                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+            }
+            float noiseTerrain(vec2 p) {
+                vec2 i = floor(p), f = fract(p);
+                float a = hashTerrain(i), b = hashTerrain(i + vec2(1.0, 0.0));
+                float c = hashTerrain(i + vec2(0.0, 1.0)), d = hashTerrain(i + vec2(1.0, 1.0));
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            }`
+        );
+
+        shader.fragmentShader = shader.fragmentShader.replace(
+            'vec4 diffuseColor = vec4( diffuse, opacity );',
+            `
+            vec3 dirtColor = vec3(0.31, 0.24, 0.14);
+            vec3 grassColor = vec3(0.29, 0.42, 0.23);
+            vec3 rockColor = vec3(0.38, 0.37, 0.34);
+
+            float slope = 1.0 - vObjectNormalTerrain.y; // 0 flat, ~1 vertical
+            float heightBand = smoothstep(18.0, 30.0, vWorldPosTerrain.y);
+
+            vec3 albedo = mix(dirtColor, grassColor, smoothstep(0.15, 0.4, 1.0 - slope));
+            albedo = mix(albedo, rockColor, smoothstep(0.35, 0.7, slope));
+            albedo = mix(albedo, rockColor, heightBand * 0.7);
+
+            // Fine noise-based color speckle so the surface doesn't read as
+            // one flat airbrushed color even within a single band.
+            float fine = noiseTerrain(vWorldPosTerrain.xz * 2.2) * 0.5 + noiseTerrain(vWorldPosTerrain.xz * 7.0) * 0.5;
+            albedo *= 0.85 + fine * 0.3;
+
+            vec4 diffuseColor = vec4(albedo, opacity);
+            `
+        );
+
+        // Fake fine bump — perturbs the shading normal with noise instead
+        // of adding real geometry displacement, so it's nearly free.
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <normal_fragment_maps>',
+            `#include <normal_fragment_maps>
+            {
+                float nx = noiseTerrain(vWorldPosTerrain.xz * 5.0 + vec2(13.1, 7.7));
+                float nz = noiseTerrain(vWorldPosTerrain.xz * 5.0 + vec2(91.3, 2.2));
+                normal = normalize(normal + vec3((nx - 0.5) * 0.35, 0.0, (nz - 0.5) * 0.35));
+            }`
+        );
+    };
     state.terrainMesh = new THREE.Mesh(geo, mat);
     state.terrainMesh.receiveShadow = true;
     state.scene.add(state.terrainMesh);

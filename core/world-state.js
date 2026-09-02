@@ -45,5 +45,14 @@ export function createWorldState() {
         // array needs to exist since that module pushes to it
         // unconditionally as trees are placed.
         colliders: [],
+
+        // Populated by environment/forest.js's growBranch() as it walks
+        // each tree's fractal branch structure — every leaf instance's
+        // matrix/color gets pushed here during generateFractalForest(),
+        // then read back out once to build the actual InstancedMesh at
+        // the end of that function. Needs to exist as arrays before that
+        // first push() call, same reasoning as colliders above.
+        leafMatrices: [],
+        leafColors: [],
     };
 }

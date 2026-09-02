@@ -231,6 +231,7 @@ export function createRocks(state) {
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z, state);
         if (y < 1.5) continue; // keep out of the lake
+        if (Math.hypot(x - 0, z - 20) < 12) continue; // keep clear of player spawn (0, _, 20)
 
         const params = { ...ROCK_TYPES[Math.floor(Math.random() * ROCK_TYPES.length)], seed: Math.random() * 100 };
         const rockMesh = buildRockMesh(params);

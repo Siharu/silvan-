@@ -218,6 +218,7 @@ export async function createFerns(state, onProgress) {
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z, state);
         if (y < 1.8) continue; // keep out of the lake, same threshold as flowers.js/grass.js
+        if (Math.hypot(x - 0, z - 20) < 15) continue; // keep clear of the player's spawn point (0, _, 20) — a fern cluster landing right on/inside the camera read as a giant leaf filling the whole screen
 
         const fern = buildFern(state, new THREE.Vector3(x, y, z), 3 + Math.floor(Math.random() * 3));
         state.fernGroup.add(fern);

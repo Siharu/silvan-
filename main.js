@@ -21,6 +21,7 @@ import { createTerrain, getElevation } from './environment/terrain.js';
 import { createGrass, updateGrass } from './environment/grass.js';
 import { createRainSystem, createRainSplashes, updateRain } from './environment/rain.js';
 import { createFerns, updateFoliage } from './environment/foliage.js';
+import { generateFractalForest } from './environment/forest.js';
 import { createRocks } from './environment/rocks.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
 import { createWater, updateWater } from './environment/water.js';
@@ -56,8 +57,12 @@ function setupRenderer() {
     state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     state.renderer.setSize(window.innerWidth, window.innerHeight);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    state.renderer.shadowMap.enabled = true;
-    state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    state.renderer.shadowMap.enabled = false; // was true (PCFSoftShadowMap,
+    // two 2048x2048 maps from sunLight+moonLight) — this was flagged as
+    // the single biggest perf cost multiple times while it was being
+    // added; cutting it now that lag is the actual blocking complaint.
+    // Lighting itself (sunLight/moonLight/hemiLight direct illumination)
+    // is untouched — this only removes cast/received shadow detail.
     state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     state.renderer.toneMappingExposure = 0.8;
     state.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -124,8 +129,14 @@ function setupPlayerController() {
 
     state._updatePlayer = function updatePlayer(delta) {
         const speed = PLAYER_SPEED * (move.run ? RUN_MULT : 1) * delta;
-        const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-        const right = new THREE.Vector3(Math.sin(yaw + Math.PI / 2), 0, Math.cos(yaw + Math.PI / 2));
+        // FIXED: at yaw=0 a Three.js camera looks down -Z by default. The
+        // previous forward=(sin(yaw),cos(yaw)) evaluated to (0,0,1) at
+        // yaw=0 — that's +Z, the OPPOSITE of the camera's actual look
+        // direction — so W was pushing the player backward relative to
+        // view and S forward. Correct forward/right for a -Z-facing
+        // camera: forward=(-sin(yaw),-cos(yaw)), right=(cos(yaw),-sin(yaw)).
+        const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+        const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
 
         const dir = new THREE.Vector3();
         if (move.forward) dir.add(forward);
@@ -164,8 +175,16 @@ async function init() {
     createWater(state);
     await afterStep();
 
-    setLoadingProgress(0.4, 'Planting pines');
-    createDetailedPineTrees(state);
+    setLoadingProgress(0.4, 'Growing the forest');
+    // Swapped pine-trees.js (simple banded-cone silhouettes, no branch
+    // detail — what you saw in the black-spikes screenshot) for the
+    // richer fractal-branch forest.js system, ported from the OLD modular
+    // project (has proper billboard LOD, autumn/green biome color
+    // variety, organic bark). Kept a handful of pine-trees.js's pines
+    // too, just far fewer, as sparse landmark accents rather than the
+    // entire forest.
+    await generateFractalForest(state, (f) => setLoadingProgress(0.4 + f * 0.15, 'Growing the forest'));
+    createDetailedPineTrees(state, 25);
     await afterStep();
 
     setLoadingProgress(0.55, 'Growing ferns');
