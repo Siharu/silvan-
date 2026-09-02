@@ -201,12 +201,16 @@ async function init() {
 
 function startEngine() {
     const loadingScreen = document.getElementById('loading-screen');
-    const titlePanelBackdrop = document.getElementById('title-panel-backdrop');
+    const uiLayer = document.getElementById('ui-layer'); // wraps #pixel-sky canvas +
+    // .title-vignette/.title-scrim + title-content — all sit above
+    // #canvas-container (z-index 10 vs 1). Hiding only title-panel-backdrop/
+    // title-menu (as this used to do) left the vignette/scrim gradients and
+    // the pixel-sky canvas covering the real game canvas the whole time —
+    // that's what was actually showing as "black screen", not a render
+    // failure underneath.
     requestAnimationFrame(() => requestAnimationFrame(() => {
         if (loadingScreen) loadingScreen.classList.add('hidden');
-        if (titlePanelBackdrop) titlePanelBackdrop.style.display = 'none';
-        const titleMenu = document.getElementById('title-menu');
-        if (titleMenu) titleMenu.style.display = 'none';
+        if (uiLayer) uiLayer.classList.add('hidden');
 
         state.clock.start();
         animate();
