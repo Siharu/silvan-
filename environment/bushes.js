@@ -30,6 +30,12 @@ const CLUSTER_COUNT = 700;       // independent bush clumps, noise-scattered
 const UNDERGROWTH_PER_TREE = 3;  // extra small clumps seeded per existing collider
 const SPREAD = WORLD_SIZE * 0.42; // stay inside the island's coastline (see terrain.js's coastStart)
 
+// Bushes are a shoreline/wetland feature, not a whole-island ground cover —
+// only plant within this band above the waterline. Below WATER_LEVEL+2.5
+// is already excluded in plantBushAt (beach/underwater); this caps the
+// upper edge so clumps don't creep inland across the whole map.
+const BUSH_MAX_HEIGHT_ABOVE_WATER = 5.0;
+
 function injectWindShader(shader, uniforms, isBranch) {
     shader.uniforms.time = uniforms.time;
     shader.vertexShader = `uniform float time;\n` + shader.vertexShader;
@@ -142,7 +148,7 @@ export function createBushes(state) {
                     Math.random() * Math.PI,
                     Math.random() * Math.PI * 0.2 - 0.1
                 );
-                const scale = 0.4 + Math.random() * 0.9; // bush-sized leaves, smaller than the source module's tree-canopy scale
+                const scale = 0.14 + Math.random() * 0.22; // shrunk down — was 0.4-0.9, way too large for a bush-scale leaf
                 dummy.scale.set(scale, scale, scale);
                 dummy.updateMatrix();
                 leavesMesh.setMatrixAt(leafIndex, dummy.matrix);
@@ -164,6 +170,7 @@ export function createBushes(state) {
     const plantBushAt = (bx, bz) => {
         const groundY = getElevation(bx, bz, state);
         if (groundY < WATER_LEVEL + 2.5) return; // keep off beach/underwater
+        if (groundY > WATER_LEVEL + BUSH_MAX_HEIGHT_ABOVE_WATER) return; // shoreline band only — don't scatter inland across the whole island
         const clumpHeight = 1.2 + Math.random() * 2.3; // shrub height, not tree height
         const startPos = new THREE.Vector3(bx, groundY, bz);
         const startDir = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1, (Math.random() - 0.5) * 0.5).normalize();
