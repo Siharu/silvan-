@@ -356,7 +356,7 @@ export function updateInteractPrompt(state) {
 import { GROVE_CENTER } from '../core/world-state.js';
 export function findDryAnchor() {
     for (let d = 20; d <= WORLD_SIZE * 0.5; d += 5) {
-        const y = getElevation(d, 0);
+        const y = getElevation(d, 0, state);
         if (y > 3.0) return { x: d, z: 0 };
     }
     return { x: 180, z: 0 }; // fallback, shouldn't be hit
@@ -378,7 +378,7 @@ export function spawnDemoAnimals(state) {
         const angle = (i / names.length) * Math.PI * 2;
         const x = anchor.x + Math.cos(angle) * radius;
         const z = anchor.z + Math.sin(angle) * radius;
-        const y = getElevation(x, z);
+        const y = getElevation(x, z, state);
 
         const rig = buildAnimalRig(name, ANIMAL_CONFIGS[name]);
         rig.root.position.set(x, y, z);
@@ -474,7 +474,7 @@ export function updateDemoAnimals(state, dt) {
                 rig.root.position.z += nz * catchUp * dt;
                 rig.root.rotation.y = Math.atan2(nx, nz);
             }
-            rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z);
+            rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z, state);
             animateAnimalRig(rig, dt, moving ? (distToTarget > 6 ? 'run' : 'walk') : 'idle');
             continue;
         }
@@ -500,7 +500,7 @@ export function updateDemoAnimals(state, dt) {
             rig.root.position.z += nz * rig.speed * dt;
             rig.root.rotation.y = Math.atan2(nx, nz);
         }
-        rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z);
+        rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z, state);
         animateAnimalRig(rig, dt, moving ? 'walk' : 'idle');
 
         const dPlayer = Math.hypot(player.position.x - rig.root.position.x, player.position.z - rig.root.position.z);

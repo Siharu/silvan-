@@ -214,7 +214,7 @@ export function createDetailedPineTrees(state, count = PINE_TREE_COUNT) {
         const theta = Math.random() * Math.PI * 2;
         const x = Math.cos(theta) * r;
         const z = Math.sin(theta) * r;
-        const y = getElevation(x, z);
+        const y = getElevation(x, z, state);
 
         if (y < WATER_LEVEL + 2.5) continue; // keep off the shoreline/lake
 

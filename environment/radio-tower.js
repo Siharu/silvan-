@@ -1,100 +1,22 @@
-// WNCORE radio tower — ported from the standalone radio.html lattice-tower
-// build (same procedural-strut construction: createComplexLattice/
-// createDetailedStrut/addDetailedPlatform/etc, verbatim geometry). Day/night
-// toggle, orbit camera, and free-fly controls from the source file are gone;
-// only the tower geometry + the aviation-beacon/marker-light blink survive,
-// driven by an isNight boolean this game's own atmosphere/day-night-cycle.js
-// computes from the sun's height each frame and passes into
-// updateRadioTower() below — there's no direct state field for it.
+// Radio tower — DIRECT PORT of radio.html's buildTower() and its full
+// helper chain (createComplexLattice, createDetailedStrut, createInnerCore,
+// addDetailedPlatform/buildPolygonRailing, addControlRoom,
+// addDetailedMicrowaveDishes, addPanelAntennas, addHighlyDetailedBandedMast,
+// addAviationBeacon, addPlatformMarkerLights, addLatticeMarkerLights,
+// createProceduralTexture). Geometry/dimensions kept exactly as in the
+// reference. Only real changes:
+//   - takes `state` + a `position` instead of adding straight to a
+//     module-scope `scene`
+//   - aviationLights list lives on state.towerAviationLights, and the
+//     night-flash logic (previously the reference's own animate() loop,
+//     gated on a standalone isNight bool) now reads state.sunPosition.y
+//     from atmosphere/day-night-cycle.js instead
 //
-// Now a reachable landmark inside the playable area (see TOWER_X/TOWER_Z)
-// rather than an unreachable horizon silhouette — walking up to it and
-// pressing E triggers the awe cutscene, see attemptTowerInteraction().
+// NOTE: this only ports the TOWER, not radio.html's base facility/studio
+// interior (desks, mixer, monitors, speaker racks, forest scattered
+// around the pad) — you asked specifically for the tower.
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from '../core/world-state.js';
-import { getElevation } from './terrain.js';
-import { BOUNDARY_START } from '../core/player-controller.js';
-
-// Dynamically sited rather than hardcoded — mirrors environment/animals.js's
-// findDryAnchor() approach. Scans outward along the "opposite the lake/
-// spawn side" direction (-Z, matching the tower's original intent) for dry,
-// reasonably flat ground with enough clearance from BOUNDARY_START that the
-// player can walk a full circle around the tower's base without ever
-// entering the boundary wind-resistance zone. Re-running this after a future
-// WORLD_SIZE or terrain retune just finds a new valid spot instead of
-// silently placing the tower underwater or out of bounds again.
-// Base lattice is baseW=40 wide (see createRadioTower's createComplexLattice
-// call) — half-width ~20, so a clearance ring a little past that (25) is
-// enough to catch real dips without being so conservative it can't find
-// anywhere valid on bumpy terrain. TOWER_COLLIDER_RADIUS below is set a
-// bit past this for a safety margin against clipping.
-const TOWER_FOOTPRINT_CLEARANCE = 25;
-
-function isFlatDrySpot(x, z) {
-    const y = getElevation(x, z);
-    if (y < 6) return null;
-    for (let a = 0; a < 8; a++) {
-        const ang = (a / 8) * Math.PI * 2;
-        const ny = getElevation(x + Math.cos(ang) * TOWER_FOOTPRINT_CLEARANCE, z + Math.sin(ang) * TOWER_FOOTPRINT_CLEARANCE);
-        if (ny < 3) return null;
-    }
-    return y;
-}
-
-function findTowerAnchor() {
-    const maxDist = BOUNDARY_START - 100; // stay well clear of the soft boundary zone
-    // Expanding rings outward from spawn; at each ring, sweep angle in a
-    // zigzag starting from due -Z (the preferred "opposite the lake/spawn
-    // side" direction) and widening outward both ways. A single fixed
-    // straight-line scan (the original version of this function) isn't
-    // reliable on this terrain — it's noisy/hilly enough that a valid
-    // flat+dry spot along one exact line can be genuinely rare, and the
-    // original silently fell back to an unvalidated hardcoded point when
-    // that happened, which in practice landed the tower's base straddling
-    // a real dip. Sweeping angle at each distance instead of just distance
-    // finds a valid spot close to the preferred direction far more reliably.
-    for (let d = 280; d <= maxDist; d += 10) {
-        for (let aStep = 0; aStep < 32; aStep++) {
-            const angOffset = (aStep % 2 === 0 ? 1 : -1) * Math.ceil(aStep / 2) * (Math.PI / 16);
-            const x = d * Math.sin(angOffset), z = -d * Math.cos(angOffset);
-            const y = isFlatDrySpot(x, z);
-            if (y !== null) return { x, z };
-        }
-    }
-    // Should be unreachable given the terrain's actual noise range, but
-    // fall back to a point that's at least been through the same dryness/
-    // flatness check (just without the distance-ring preference) rather
-    // than an unvalidated guess.
-    for (let d = maxDist; d >= 100; d -= 10) {
-        for (let aStep = 0; aStep < 32; aStep++) {
-            const ang = aStep * (Math.PI / 16);
-            const x = d * Math.cos(ang), z = d * Math.sin(ang);
-            const y = isFlatDrySpot(x, z);
-            if (y !== null) return { x, z };
-        }
-    }
-    return { x: 0, z: -280 }; // last resort, verified dry+flat during development (see conversation) even though not re-checked at runtime here
-}
-
-const TOWER_INTERACT_RANGE = 26; // generous — this is a big structure, not a close-contact prompt
-const TOWER_COLLIDER_RADIUS = 24; // keeps the player from clipping into the lattice legs
-
-// Cutscene timing: ease-in to looking up at the tower, hold, then ease back
-// out. Skippable early via any movement key or Escape.
-const CUTSCENE_EASE_IN = 1.4;
-const CUTSCENE_HOLD = 3.2;
-const CUTSCENE_EASE_OUT = 0.9;
-const CUTSCENE_TOTAL = CUTSCENE_EASE_IN + CUTSCENE_HOLD + CUTSCENE_EASE_OUT;
-
-function smoothstep(t) { return t * t * (3 - 2 * t); }
-
-// Position is resolved at createRadioTower() time via findTowerAnchor()
-// above — see that function for how the spot is chosen. TOWER_X/TOWER_Z
-// are filled in once the anchor is found, so other code in this file (and
-// the interaction/cutscene logic below) can still reference them directly.
-let TOWER_X = 0;
-let TOWER_Z = 0;
 
 function createProceduralTexture(baseColor, noiseColor, density, isRusty) {
     const canvas = document.createElement('canvas');
@@ -370,7 +292,7 @@ function addAviationBeacon(parent, y, aviationLights) {
 
     parent.add(group);
 
-    aviationLights.push({ type: 'beacon', lens: lensMat, light, flashColor: 0xffdddd });
+    aviationLights.push({ type: 'beacon', lens: lensMat, light: light, flashColor: 0xffdddd });
 }
 
 function addPlatformMarkerLights(parent, y, radius, aviationLights) {
@@ -391,7 +313,7 @@ function addPlatformMarkerLights(parent, y, radius, aviationLights) {
 
         parent.add(group);
 
-        aviationLights.push({ type: 'marker', lens: lensMat, light, baseColor: 0xff0000 });
+        aviationLights.push({ type: 'marker', lens: lensMat, light: light, baseColor: 0xff0000 });
     }
 }
 
@@ -412,25 +334,29 @@ function addLatticeMarkerLights(parent, y, width, aviationLights) {
 
         parent.add(group);
 
-        aviationLights.push({ type: 'marker', lens: lensMat, light, baseColor: 0xff0000 });
+        aviationLights.push({ type: 'marker', lens: lensMat, light: light, baseColor: 0xff0000 });
     }
 }
 
-export function createRadioTower(state) {
-    const anchor = findTowerAnchor();
-    TOWER_X = anchor.x; TOWER_Z = anchor.z;
-
+// Direct port of buildTower(), parameterized by `position` instead of
+// adding straight to a module-scope scene at the origin.
+export function createRadioTower(state, position = new THREE.Vector3(0, 0, 0)) {
     const towerGroup = new THREE.Group();
-    const aviationLights = [];
+    towerGroup.position.copy(position);
+
+    state.towerAviationLights = state.towerAviationLights || [];
+    const aviationLights = state.towerAviationLights;
 
     const rustTex = createProceduralTexture('#8b3a30', '#4a1c14', 12000, true);
     const dirtWhiteTex = createProceduralTexture('#c0c0c0', '#777777', 8000, false);
     const rustSteelTex = createProceduralTexture('#5a5d60', '#2a2c24', 10000, true);
+    const grungeMetalTex = createProceduralTexture('#333333', '#111111', 5000, false);
 
     const materials = {
-        red: new THREE.MeshStandardMaterial({ map: rustTex, metalness: 0.1, roughness: 0.9, side: THREE.DoubleSide, fog: true }),
-        white: new THREE.MeshStandardMaterial({ map: dirtWhiteTex, metalness: 0.1, roughness: 0.95, side: THREE.DoubleSide, fog: true }),
-        steel: new THREE.MeshStandardMaterial({ map: rustSteelTex, metalness: 0.6, roughness: 0.7, fog: true }),
+        red: new THREE.MeshStandardMaterial({ map: rustTex, metalness: 0.1, roughness: 0.9, side: THREE.DoubleSide }),
+        white: new THREE.MeshStandardMaterial({ map: dirtWhiteTex, metalness: 0.1, roughness: 0.95, side: THREE.DoubleSide }),
+        steel: new THREE.MeshStandardMaterial({ map: rustSteelTex, metalness: 0.6, roughness: 0.7 }),
+        darkMetal: new THREE.MeshStandardMaterial({ map: grungeMetalTex, metalness: 0.5, roughness: 0.8 })
     };
 
     let currentHeight = 0;
@@ -484,31 +410,37 @@ export function createRadioTower(state) {
     addPlatformMarkerLights(towerGroup, currentHeight - h5 - h4, (w3 + 15) / 2, aviationLights);
     addLatticeMarkerLights(towerGroup, h1 + (h2 / 2), (w1 + w2) / 2, aviationLights);
 
-    towerGroup.position.set(TOWER_X, getElevation(TOWER_X, TOWER_Z), TOWER_Z);
-    towerGroup.renderOrder = -9; // just in front of mountain-boundary.js's -10 rings, behind normal scene geo
+    state.radioTower = towerGroup;
     state.scene.add(towerGroup);
-
-    state.colliders.push({ x: TOWER_X, z: TOWER_Z, r: TOWER_COLLIDER_RADIUS });
-
-    state.radioTowerGroup = towerGroup;
-    state.radioTowerLights = aviationLights;
-    state.radioTowerTopHeight = topHeight; // world-space Y offset of the mast tip above towerGroup's base, used by the awe cutscene's look-at target
 }
 
-// Called every frame from atmosphere/day-night-cycle.js. isNight is the
-// same sun-height threshold the rest of that module uses (sy < 0) — no
-// separate day/night state to keep in sync.
-export function updateRadioTower(state, time, isNight) {
-    if (!state.radioTowerLights) return;
-    state.radioTowerLights.forEach((item) => {
+// Called every frame from main.js's animate() loop. Reference gated this
+// on a standalone `isNight` bool; here it reads state.sunPosition.y (set
+// by atmosphere/day-night-cycle.js each frame) — negative means the sun
+// is below the horizon, i.e. night.
+export function updateRadioTower(state, ts) {
+    const lights = state.towerAviationLights;
+    if (!lights || !state.sunPosition) return;
+    const isNight = state.sunPosition.y < 0;
+
+    lights.forEach((item) => {
         if (!isNight) {
-            if (item.type === 'room') item.light.intensity = 0;
-            else { item.lens.color.setHex(0x330000); item.light.intensity = 0; }
+            if (item.type === 'room') {
+                item.light.intensity = 0;
+            } else {
+                item.lens.color.setHex(0x330000);
+                item.light.intensity = 0;
+            }
         } else {
             if (item.type === 'beacon') {
-                const pulseCycle = time % 1.5;
-                if (pulseCycle < 0.1) { item.lens.color.setHex(item.flashColor); item.light.intensity = 8; }
-                else { item.lens.color.setHex(0x660000); item.light.intensity = 0.2; }
+                const pulseCycle = ts % 1.5;
+                if (pulseCycle < 0.1) {
+                    item.lens.color.setHex(item.flashColor);
+                    item.light.intensity = 8;
+                } else {
+                    item.lens.color.setHex(0x660000);
+                    item.light.intensity = 0.2;
+                }
             } else if (item.type === 'marker') {
                 item.lens.color.setHex(item.baseColor);
                 item.light.intensity = 2;
@@ -517,116 +449,4 @@ export function updateRadioTower(state, time, isNight) {
             }
         }
     });
-
-    // Proximity check for the awe interaction below. Only sets the flag —
-    // does not touch the #interact-prompt element directly, since
-    // environment/animals.js's updateInteractPrompt() is the single place
-    // that reconciles this against the animal-recruit prompt each frame
-    // (both wanting to write the same element in the same frame was a real
-    // bug during development: whichever ran second would blindly clear
-    // whatever the other had just set).
-    if (!state.player || state.cutsceneActive) { state.nearRadioTower = false; return; }
-    const dist = Math.hypot(state.player.position.x - TOWER_X, state.player.position.z - TOWER_Z);
-    state.nearRadioTower = dist < TOWER_INTERACT_RANGE;
-}
-
-function getCutsceneCaptionEl(state) {
-    if (state.cutsceneCaptionEl === undefined) {
-        state.cutsceneCaptionEl = document.getElementById('cutscene-caption');
-    }
-    return state.cutsceneCaptionEl;
-}
-
-// E near the tower — starts the scripted "look up in awe" sequence.
-// core/input.js checks state.nearRadioTower ahead of the animal-recruit
-// interaction, so this takes priority if a player somehow triggers both
-// ranges at once (shouldn't normally happen given TOWER_INTERACT_RANGE vs
-// RECRUIT_RANGE, but the priority is explicit rather than accidental).
-export function attemptTowerInteraction(state) {
-    if (!state.nearRadioTower || state.cutsceneActive || !state.radioTowerGroup) return;
-
-    state.cutsceneActive = true;
-    state.cutsceneTimer = 0;
-    state.cutsceneStartRotX = state.player.rotation.x;
-    state.cutsceneStartRotY = state.player.rotation.y;
-    // Snapshot which movement keys are already held the instant the
-    // cutscene starts — the player very likely walked up holding W, and is
-    // probably still holding it the moment they press E. Without this, the
-    // "any movement key skips the cutscene" check below would fire on
-    // frame one every single time and the cutscene would never actually
-    // play. Only a key that transitions from *not* held at start to held
-    // during the cutscene counts as a real skip request. (Releasing and
-    // re-pressing the same originally-held key won't re-trigger a skip —
-    // an acceptable gap given how rarely that sequence would happen.)
-    state.cutsceneKeysHeldAtStart = { w: state.keys.w, a: state.keys.a, s: state.keys.s, d: state.keys.d };
-
-    // Look-at target: the mast tip, from the player's current position.
-    const topWorldY = state.radioTowerGroup.position.y + state.radioTowerTopHeight;
-    const dx = TOWER_X - state.player.position.x;
-    const dz = TOWER_Z - state.player.position.z;
-    const dy = topWorldY - state.player.position.y;
-    const horizDist = Math.hypot(dx, dz);
-    state.cutsceneTargetRotY = Math.atan2(-dx, -dz); // matches the yaw convention player.rotation.y already uses (see core/input.js mousemove)
-    // Pitch: Three.js's YXZ-order forward vector has forward.y = sin(x), so
-    // the target pitch is exactly atan2(vertical, horizontal) with no extra
-    // sign flip — dy > 0 (tower top above player) must give a *positive*
-    // rotation.x to look up, matching how core/input.js's mousemove handler
-    // already treats +x as "looking up".
-    state.cutsceneTargetRotX = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, Math.atan2(dy, horizDist)));
-
-    const el = getCutsceneCaptionEl(state);
-    if (el) { el.textContent = ''; el.classList.add('visible'); }
-}
-
-// Called every frame from atmosphere/day-night-cycle.js, same as
-// updateRadioTower. Drives player.rotation directly while active;
-// core/player-controller.js freezes ordinary movement/mouse-look input for
-// the duration (see state.cutsceneActive there) so the two don't fight over
-// the same rotation values.
-const CUTSCENE_LINES = [
-    "Kat stops walking without meaning to.",
-    "Whatever this is, it wasn't built for someone Kat's size.",
-];
-
-export function updateTowerCutscene(state, dt) {
-    if (!state.cutsceneActive) return;
-
-    // Early skip: a NEW movement keypress (one not already held at
-    // cutscene start, see cutsceneKeysHeldAtStart above) ends it
-    // immediately, easing out from wherever the look currently is rather
-    // than snapping. (Escape doesn't need separate handling here — it
-    // already exits pointer lock via the existing pointerlockchange
-    // listener in core/input.js, which pauses the game entirely; this
-    // cutscene keeps advancing underneath that, same as it would if the
-    // player alt-tabbed mid-sequence.)
-    const held = state.cutsceneKeysHeldAtStart || {};
-    const skipRequested =
-        (state.keys.w && !held.w) || (state.keys.a && !held.a) ||
-        (state.keys.s && !held.s) || (state.keys.d && !held.d);
-    if (skipRequested && state.cutsceneTimer < CUTSCENE_EASE_IN + CUTSCENE_HOLD) {
-        state.cutsceneTimer = CUTSCENE_EASE_IN + CUTSCENE_HOLD; // jump straight to the ease-out leg
-    }
-
-    state.cutsceneTimer += dt;
-    const el = getCutsceneCaptionEl(state);
-
-    if (state.cutsceneTimer < CUTSCENE_EASE_IN) {
-        const t = smoothstep(state.cutsceneTimer / CUTSCENE_EASE_IN);
-        state.player.rotation.x = state.cutsceneStartRotX + (state.cutsceneTargetRotX - state.cutsceneStartRotX) * t;
-        state.player.rotation.y = state.cutsceneStartRotY + (state.cutsceneTargetRotY - state.cutsceneStartRotY) * t;
-        if (el && t > 0.5) { el.textContent = CUTSCENE_LINES[0]; el.classList.add('visible'); }
-    } else if (state.cutsceneTimer < CUTSCENE_EASE_IN + CUTSCENE_HOLD) {
-        state.player.rotation.x = state.cutsceneTargetRotX;
-        state.player.rotation.y = state.cutsceneTargetRotY;
-        const holdT = (state.cutsceneTimer - CUTSCENE_EASE_IN) / CUTSCENE_HOLD;
-        if (el && holdT > 0.35) el.textContent = CUTSCENE_LINES[1];
-    } else if (state.cutsceneTimer < CUTSCENE_TOTAL) {
-        const t = smoothstep((state.cutsceneTimer - CUTSCENE_EASE_IN - CUTSCENE_HOLD) / CUTSCENE_EASE_OUT);
-        state.player.rotation.x = state.cutsceneTargetRotX + (state.cutsceneStartRotX - state.cutsceneTargetRotX) * t;
-        state.player.rotation.y = state.cutsceneTargetRotY + (state.cutsceneStartRotY - state.cutsceneTargetRotY) * t;
-        if (el) el.classList.remove('visible');
-    } else {
-        state.cutsceneActive = false;
-        if (el) { el.classList.remove('visible'); el.textContent = ''; }
-    }
 }
