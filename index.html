@@ -76,6 +76,36 @@
             z-index: 10;
             pointer-events: none;
         }
+        /* Touch devices (core/touch-controls.js adds this class once real
+           touch controls are actually active — see its own header comment)
+           don't have a locked pointer to aim with, so the aim dot in the
+           middle of the screen is just noise; and the joystick/action
+           buttons need the HUD text and interact prompt out of their way,
+           not just smaller. */
+        .touch-active .crosshair {
+            display: none;
+        }
+        .touch-active .hud-layer {
+            font-size: 0.68rem;
+            gap: 0.5rem;
+            top: 1.2rem;
+            left: 1.2rem;
+        }
+        .touch-active #hud-pause-hint {
+            display: none; /* Escape doesn't exist on touch — touch-pause-btn is the real affordance, already visible */
+        }
+        .touch-active .interact-prompt {
+            bottom: 32%; /* clears the joystick zone's 55%-of-screen-height footprint on the left; prompt is centered so this is the safe common case */
+        }
+        .touch-active .boundary-message {
+            bottom: 30%;
+        }
+
+        @media (max-width: 640px) {
+            .pause-panel {
+                padding: 2rem 1.4rem 1.6rem;
+            }
+        }
 
         /* Mobile touch controls (core/touch-controls.js) — joystick
            bottom-left, drag-to-look zone covering the right two-thirds of
@@ -1280,11 +1310,13 @@
     <!-- Mobile touch controls — core/touch-controls.js shows/hides this
          whole block based on touch-capability detection (or the manual
          override in Settings > Controls, see core/settings.js's
-         forceTouchControls). Movement joystick fakes the exact same
-         state.keys.w/a/s/d booleans the WASD keydown listener sets in
-         core/input.js, and the look-drag zone calls the same rotation math
-         core/input.js's mousemove handler uses — so core/player-controller.js
-         needed zero changes to support touch at all. -->
+         forceTouchControls). Movement joystick toggles the same
+         state.move.forward/back/left/right booleans main.js's WASD
+         keydown listener sets, and the look-drag zone calls
+         state._applyLook(dx, dy), the same function main.js's mousemove
+         listener calls — so main.js's player controller needed only to
+         expose those two hooks on `state`, not be rewritten, to support
+         touch. -->
     <div id="touch-controls" class="touch-controls hidden">
         <div id="touch-look-zone" class="touch-look-zone"></div>
         <div id="touch-joystick-zone" class="touch-joystick-zone">

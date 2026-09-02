@@ -91,6 +91,7 @@ function createTreeImposters(state, treeInstances) {
     imposterMat.onBeforeCompile = (shader) => {
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
         shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
+        state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         imposterMat.userData.shader = shader;
 
         shader.vertexShader = shader.vertexShader.replace('#include <common>', `
@@ -291,6 +292,7 @@ export async function generateFractalForest(state, onProgress) {
     trunkMat.onBeforeCompile = (shader) => {
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
         shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
+        state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         trunkMat.userData.shader = shader;
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
@@ -373,6 +375,7 @@ export async function generateFractalForest(state, onProgress) {
         shader.uniforms.uTime = { value: 0 };
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
         shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
+        state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         leafMat.userData.shader = shader;
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',

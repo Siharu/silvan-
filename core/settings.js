@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS = {
     invertY: false,
     drawDistance: DEFAULT_DRAW_DISTANCE, // tree LOD switch distance (environment/forest.js) — also loosely scales scene.fog density, see setDrawDistance below
     fogDensityMult: 1.0,   // multiplies main.js's base 0.0052 FogExp2 density
+    masterVolume: 1.0,     // top-level multiplier over ambienceVolume/sfxVolume — persisted now, has nothing to apply to yet (see core/input.js's Audio-tab comment)
     ambienceVolume: 1.0,   // multiplies every ambient Howl's own per-frame target volume (day/night/wind/water/rain — see atmosphere/day-night-cycle.js)
     sfxVolume: 1.0,        // multiplies stepAudio's volume
     forceTouchControls: false, // shows the mobile touch UI (core/touch-controls.js) even on a device that doesn't report touch support — for testing on desktop, or a hybrid touchscreen laptop that the browser doesn't self-report correctly

@@ -243,6 +243,15 @@ export function createRocks(state) {
 
         state.rockGroup.add(rockMesh);
 
+        // Same {x, z, r} circle-collider shape forest.js/pine-trees.js
+        // already push — main.js's player controller reads this array
+        // generically, so rocks just needed to start contributing to it.
+        // Base geometry is roughly unit-radius before scaling; average the
+        // asymmetric x/z scale factors for a reasonable circle approximation
+        // (rocks aren't circular, but a slightly-off collision radius on a
+        // static rock is a much smaller problem than no collision at all).
+        state.colliders.push({ x, z, r: scale * 0.75 });
+
         // Moss on ~40% of placed rocks, larger ones only — small pebbles
         // shouldn't visually compete with a mossy boulder.
         if (scale > 1.6 && Math.random() < 0.4) {

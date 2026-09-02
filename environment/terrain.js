@@ -12,7 +12,12 @@
 // flat-shaded placeholder forever.
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from '../core/world-state.js';
+import { WORLD_SIZE, WATER_LEVEL } from '../core/world-state.js';
+
+function smoothstep(edge0, edge1, x) {
+    const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+}
 
 function hash2(x, y) {
     const px = x * 127.1 + y * 311.7;
@@ -65,7 +70,22 @@ export function getElevation(x, z, state) {
     const sampleZ = (z + p.offsetY + p.seed) * p.scale;
     let h = cpuFbm(sampleX, sampleZ, p.octaves, p.persistence, p.lacunarity);
     h = Math.pow(Math.max(0, h + 0.5), 1.6);
-    return h * p.elevation;
+    h *= p.elevation;
+
+    // Island falloff — without this the fbm heightfield runs edge to edge
+    // (land everywhere, ocean plane just floating around/under it), which
+    // is why it never actually read as an island. Blend the real
+    // heightfield toward a seabed depth as distance from center grows, so
+    // land genuinely ends and a shoreline forms against WATER_LEVEL.
+    const dist = Math.sqrt(x * x + z * z);
+    const islandRadius = WORLD_SIZE * 0.5;
+    const coastStart = islandRadius * 0.55; // land holds full height inside this
+    const coastEnd = islandRadius * 0.92;   // fully seabed by here
+    const mask = 1.0 - smoothstep(coastStart, coastEnd, dist);
+    const seabedDepth = WATER_LEVEL - 16;
+    h = h * mask + seabedDepth * (1 - mask);
+
+    return h;
 }
 
 export function createTerrain(state) {
@@ -93,6 +113,7 @@ export function createTerrain(state) {
     // ball smooth even where the actual mesh is flat.
     mat.onBeforeCompile = (shader) => {
         shader.uniforms.uTime = { value: 0 };
+        shader.uniforms.uWaterLevel = { value: WATER_LEVEL };
         mat.userData.shader = shader;
 
         shader.vertexShader = shader.vertexShader.replace(
@@ -113,6 +134,7 @@ export function createTerrain(state) {
             `#include <common>
             varying vec3 vWorldPosTerrain;
             varying vec3 vObjectNormalTerrain;
+            uniform float uWaterLevel;
 
             float hashTerrain(vec2 p) {
                 return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -132,6 +154,8 @@ export function createTerrain(state) {
             vec3 dirtColor = vec3(0.31, 0.24, 0.14);
             vec3 grassColor = vec3(0.29, 0.42, 0.23);
             vec3 rockColor = vec3(0.38, 0.37, 0.34);
+            vec3 sandColor = vec3(0.76, 0.68, 0.48);
+            vec3 wetSandColor = vec3(0.55, 0.48, 0.35);
 
             float slope = 1.0 - vObjectNormalTerrain.y; // 0 flat, ~1 vertical
             float heightBand = smoothstep(18.0, 30.0, vWorldPosTerrain.y);
@@ -139,6 +163,16 @@ export function createTerrain(state) {
             vec3 albedo = mix(dirtColor, grassColor, smoothstep(0.15, 0.4, 1.0 - slope));
             albedo = mix(albedo, rockColor, smoothstep(0.35, 0.7, slope));
             albedo = mix(albedo, rockColor, heightBand * 0.7);
+
+            // Beach band: sand right at the shoreline, darker "wet sand"
+            // just above the waterline, fading back to grass/dirt inland.
+            // Slope-gated so cliffs dropping straight into water don't
+            // get sand-washed — only gentle shoreline reads as beach.
+            float sandHeight = smoothstep(uWaterLevel - 0.3, uWaterLevel + 3.2, vWorldPosTerrain.y);
+            float wetBand = 1.0 - smoothstep(uWaterLevel + 0.1, uWaterLevel + 1.0, vWorldPosTerrain.y);
+            float beachMask = (1.0 - sandHeight) * smoothstep(0.55, 0.15, slope);
+            vec3 beachColor = mix(sandColor, wetSandColor, wetBand);
+            albedo = mix(albedo, beachColor, beachMask);
 
             // Fine noise-based color speckle so the surface doesn't read as
             // one flat airbrushed color even within a single band.

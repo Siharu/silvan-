@@ -46,6 +46,13 @@ export function createWorldState() {
         // unconditionally as trees are placed.
         colliders: [],
 
+        // Every LOD material's uSwitchDist uniform object (trunk/imposter/
+        // leaf shaders in environment/forest.js), pushed at material-build
+        // time so core/input.js's Tree Draw Distance slider can mutate
+        // `.value` on all of them live with zero rebuild — same live-apply
+        // reasoning as core/settings.js's other sliders.
+        lodUniforms: [],
+
         // Populated by environment/forest.js's growBranch() as it walks
         // each tree's fractal branch structure — every leaf instance's
         // matrix/color gets pushed here during generateFractalForest(),

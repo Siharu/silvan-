@@ -3,24 +3,27 @@
 // files shared one scene/init/animate structure this project could copy
 // wholesale — each was its own standalone demo.
 //
-// NOT wired up here, flagged plainly: index.html's settings tabs, pause
-// menu, save system, and quality/view-mode toggles reference
-// core/input.js, core/save-system.js, core/quality.js, core/view-mode.js,
-// none of which exist in this rebuild yet. This file only hooks the
-// title screen's "Remember" button (id="title-remember-btn") to start the
-// engine, and core/settings.js's getSettings() for FOV/sensitivity
-// defaults where relevant. Everything else on the title/pause UI will
-// render but not function yet — same caveat given when index.html was
-// first copied over.
+// PLAN.md #3 (settings menu / pause menu) is now wired: core/input.js,
+// core/save-system.js, core/quality.js, core/view-mode.js all exist and
+// setupInput(state) is called right below, before the title screen's
+// "Remember" button is ever clicked. See core/input.js's own header
+// comment for exactly which controls are live, reload-tier, or still
+// honestly stubbed (rock detail, top-down mode, keybind remapping, and
+// audio volume all persist correctly but have nothing downstream to apply
+// to yet — no modifiers.js, no top-down controller, no remapping, no audio
+// system exist in this rebuild).
 
 import * as THREE from 'three';
 import { createWorldState } from './core/world-state.js';
 import { getSettings } from './core/settings.js';
+import { setupInput } from './core/input.js';
+import { markGameStarted } from './core/save-system.js';
 
 import { createTerrain, getElevation } from './environment/terrain.js';
 import { createGrass, updateGrass } from './environment/grass.js';
 import { createRainSystem, createRainSplashes, updateRain } from './environment/rain.js';
 import { createFerns, updateFoliage } from './environment/foliage.js';
+import { createBushes, updateBushes } from './environment/bushes.js';
 import { generateFractalForest } from './environment/forest.js';
 import { createRocks } from './environment/rocks.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
@@ -28,9 +31,25 @@ import { createWater, updateWater } from './environment/water.js';
 import { createRadioTower, updateRadioTower } from './environment/radio-tower.js';
 import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecruitInteraction } from './environment/animals.js';
 import { createDayNightCycle, updateDayNightCycle, updateStars } from './atmosphere/day-night-cycle.js';
+import { setupTouchControls } from './core/touch-controls.js';
 
 const state = createWorldState();
 window._silvanState = state; // console-debuggable, same convenience the old project's main.js had
+
+// Live-mutable settings snapshot — core/input.js writes straight into this
+// object on every slider change, so the player controller's mousemove
+// handler (a closure created once in setupPlayerController, long before
+// input.js exists as a separate module) reads live values every frame
+// instead of a stale getSettings() snapshot taken at controller-setup time.
+state.settings = getSettings();
+state.isPaused = false;
+
+// PLAN.md #3: wired here, immediately, rather than inside init() — the
+// title screen's Settings/Credits panels need to work before the
+// "Remember" button is ever clicked (state.camera/state.renderer are still
+// null at this point; every input.js control that touches them is
+// null-guarded so this is safe to call this early).
+setupInput(state);
 
 function setLoadingProgress(fraction, label) {
     const frame = document.getElementById('loading-screen-frame');
@@ -88,14 +107,61 @@ function setupRenderer() {
 // Stashes its per-frame update function onto state._updatePlayer so the
 // top-level animate() loop (which doesn't have this closure in scope) can
 // call it every frame.
+// --- Collision (PLAN.md: "No collision beyond state.colliders being
+// populated — nothing currently reads it") ---
+// Simple circle-vs-circle push-out against every {x, z, r} entry in
+// state.colliders (trees: forest.js/pine-trees.js, rocks: rocks.js — see
+// each file's own push site). XZ-only, ignores Y entirely, matching the
+// colliders' own shape (they're placed at ground level with no height
+// data) — fine for trunks/boulders since the player can't currently
+// jump onto or over anything anyway (no jump state yet, PLAN.md's other
+// open item). Runs every colliding pair, not just the nearest one, so
+// standing in the gap between two trees resolves against both instead of
+// tunneling through the second after being pushed off the first.
+const PLAYER_RADIUS = 0.4;
+
+function resolveColliderPush(state) {
+    const colliders = state.colliders;
+    if (!colliders || colliders.length === 0) return;
+    const p = state.player.position;
+    for (let i = 0; i < colliders.length; i++) {
+        const c = colliders[i];
+        const dx = p.x - c.x, dz = p.z - c.z;
+        const minDist = PLAYER_RADIUS + c.r;
+        const distSq = dx * dx + dz * dz;
+        if (distSq >= minDist * minDist || distSq < 1e-8) continue;
+        const dist = Math.sqrt(distSq);
+        const push = (minDist - dist) / dist;
+        p.x += dx * push;
+        p.z += dz * push;
+    }
+}
+
 function setupPlayerController() {
-    const settings = getSettings();
+    // Exposed on state (not just a closure var) so core/touch-controls.js's
+    // joystick can toggle the exact same booleans the keydown/keyup
+    // listeners below set — one movement path, two input methods, per
+    // PLAN.md's mobile scope note.
     const move = { forward: false, back: false, left: false, right: false, run: false };
+    state.move = move;
     let yaw = 0, pitch = 0;
     const PLAYER_SPEED = 8;
     const RUN_MULT = 1.9;
 
+    // Same reasoning as `move` above: shared with touch-controls.js's
+    // look-drag zone so sensitivity/invert-Y (core/settings.js) apply
+    // identically on mouse and touch instead of two separate math paths
+    // drifting out of sync over time.
+    function applyLook(movementX, movementY) {
+        const sens = (state.settings.mouseSensitivity || 1) * 0.0022;
+        yaw -= movementX * sens;
+        pitch -= movementY * sens * (state.settings.invertY ? -1 : 1);
+        pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+    }
+    state._applyLook = applyLook;
+
     document.addEventListener('keydown', (e) => {
+        if (state.isPaused) return;
         if (e.code === 'KeyW') move.forward = true;
         if (e.code === 'KeyS') move.back = true;
         if (e.code === 'KeyA') move.left = true;
@@ -108,19 +174,18 @@ function setupPlayerController() {
         if (e.code === 'KeyA') move.left = false;
         if (e.code === 'KeyD') move.right = false;
         if (e.code === 'ShiftLeft') move.run = false;
-        if (e.code === 'KeyE') attemptRecruitInteraction(state);
+        if (e.code === 'KeyE' && !state.isPaused) attemptRecruitInteraction(state);
     });
 
     state.renderer.domElement.addEventListener('click', () => {
+        if (state.isPaused) return; // don't re-lock the pointer by clicking through the pause panel
+        if (state.touchControlsActive) return; // touch devices drive look via the drag zone, not pointer lock — most mobile browsers handle it poorly/not at all anyway
         state.renderer.domElement.requestPointerLock();
     });
 
     document.addEventListener('mousemove', (e) => {
         if (document.pointerLockElement !== state.renderer.domElement) return;
-        const sens = (settings.sensitivity || 1) * 0.0022;
-        yaw -= e.movementX * sens;
-        pitch -= e.movementY * sens * (settings.invertY ? -1 : 1);
-        pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+        applyLook(e.movementX, e.movementY);
     });
 
     state.player.position.x = 0;
@@ -128,6 +193,8 @@ function setupPlayerController() {
     state.player.position.y = getElevation(0, 20, state) + state.player.height;
 
     state._updatePlayer = function updatePlayer(delta) {
+        if (state.isPaused) return; // freeze movement entirely rather than just ignoring new key events —
+        // keys already held down when Escape was pressed would otherwise keep the player sliding under the pause panel
         const speed = PLAYER_SPEED * (move.run ? RUN_MULT : 1) * delta;
         // FIXED: at yaw=0 a Three.js camera looks down -Z by default. The
         // previous forward=(sin(yaw),cos(yaw)) evaluated to (0,0,1) at
@@ -147,6 +214,7 @@ function setupPlayerController() {
             dir.normalize().multiplyScalar(speed);
             state.player.position.x += dir.x;
             state.player.position.z += dir.z;
+            resolveColliderPush(state);
         }
         state.player.isRunning = move.run && dir.lengthSq() > 0;
 
@@ -190,6 +258,13 @@ async function init() {
     setLoadingProgress(0.55, 'Growing ferns');
     await createFerns(state, (f) => setLoadingProgress(0.55 + f * 0.15, 'Growing ferns'));
 
+    setLoadingProgress(0.68, 'Planting bushes');
+    // After forest.js/pine-trees.js so state.colliders is already
+    // populated — bushes.js's pass 2 seeds undergrowth clumps around
+    // those existing tree positions.
+    createBushes(state);
+    await afterStep();
+
     setLoadingProgress(0.72, 'Scattering rocks');
     createRocks(state);
     await afterStep();
@@ -213,6 +288,7 @@ async function init() {
     await afterStep();
 
     setupPlayerController();
+    setupTouchControls(state, { attemptRecruitInteraction });
 
     setLoadingProgress(1.0, 'Ready');
     startEngine();
@@ -248,6 +324,7 @@ function animate() {
     updateWater(state, ts);
     updateGrass(state, ts);
     updateFoliage(state, ts);
+    updateBushes(state, ts);
     updateRain(state, ts);
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
@@ -260,6 +337,7 @@ function animate() {
 const rememberBtn = document.getElementById('title-remember-btn');
 if (rememberBtn) {
     rememberBtn.addEventListener('click', () => {
+        markGameStarted(); // so a later visit's title screen shows "Regain" honestly — this is the real first entry, not a decorative flag
         const loadingScreen = document.getElementById('loading-screen');
         const loadingFrame = document.getElementById('loading-screen-frame');
         if (loadingFrame && !loadingFrame.src) loadingFrame.src = 'loading-screen.html';
@@ -279,4 +357,15 @@ if (rememberBtn) {
     // No title screen button found (e.g. testing index.html standalone) —
     // start immediately rather than leaving the game unreachable.
     init();
+}
+
+// "Regain (Continue)" — only shown by core/input.js once
+// save-system.js's hasStartedGame() is true. This rebuild has no real
+// progression state to resume (see save-system.js's own comment: only
+// settings persist today), so Regain currently just re-enters the world
+// the same way Remember does, rather than pretending to restore a game
+// state that doesn't exist yet.
+const regainBtn = document.getElementById('title-regain-btn');
+if (regainBtn && rememberBtn) {
+    regainBtn.addEventListener('click', () => rememberBtn.click());
 }
