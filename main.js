@@ -241,7 +241,16 @@ if (rememberBtn) {
         const loadingFrame = document.getElementById('loading-screen-frame');
         if (loadingFrame && !loadingFrame.src) loadingFrame.src = 'loading-screen.html';
         if (loadingScreen) loadingScreen.classList.remove('hidden');
-        init();
+        // Double-rAF hop BEFORE the heavy synchronous init() work (terrain
+        // heightfield, rock shader builds, tree generation, etc.) — same
+        // pattern startEngine() uses to hide the loading screen at the
+        // end, just needed here too. Without this, classList.remove
+        // above never actually gets painted before init() locks the main
+        // thread, so the whole load looks like a frozen black screen
+        // instead of showing the loading screen while it works.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            init();
+        }));
     });
 } else {
     // No title screen button found (e.g. testing index.html standalone) —
