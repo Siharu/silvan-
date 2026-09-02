@@ -75,6 +75,31 @@ function createTreeCardTexture() {
     return tex;
 }
 
+function createLeafTexture() {
+    // state.globalTextures.leaf was referenced by the leaf InstancedMesh
+    // material below but nothing in this rebuild ever generated it (the
+    // old project must have built this elsewhere) — same
+    // canvas-baked-texture approach as createTreeCardTexture above, just a
+    // single soft round leaf blob instead of a multi-blob canopy, since
+    // this is tiled per-leaf-quad rather than once per whole tree card.
+    const size = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, size, size);
+    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.7, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(size / 2, size / 2, size / 2, size / 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+}
+
 function createTreeImposters(state, treeInstances) {
     if (treeInstances.length === 0) return;
 
@@ -169,6 +194,11 @@ function createTreeImposters(state, treeInstances) {
 }
 
 export async function generateFractalForest(state, onProgress) {
+    // Lazily create+cache on state so a second call (e.g. regenerating the
+    // forest without a full reload) doesn't rebake the texture pointlessly.
+    if (!state.globalTextures) state.globalTextures = {};
+    if (!state.globalTextures.leaf) state.globalTextures.leaf = createLeafTexture();
+
     const baseTrunkColor = new THREE.Color(0x28201a);
 
     function growBranch(matrix, depth, maxDepth, length, radius, leafBaseColor) {
