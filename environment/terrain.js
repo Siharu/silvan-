@@ -104,7 +104,7 @@ export function createTerrain(state) {
     }
     geo.computeVertexNormals();
 
-    const mat = new THREE.MeshStandardMaterial({ color: 0x4a6b3a, roughness: 1.0 });
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3a3226, roughness: 1.0 });
     // Cheap fragment-shader detail — no extra geometry (so no extra lag),
     // just fixing the "flat green plastic hill" look from a single solid
     // color + coarse-mesh soft normals. Adds: (1) height/slope-based
@@ -151,8 +151,8 @@ export function createTerrain(state) {
         shader.fragmentShader = shader.fragmentShader.replace(
             'vec4 diffuseColor = vec4( diffuse, opacity );',
             `
-            vec3 dirtColor = vec3(0.31, 0.24, 0.14);
-            vec3 grassColor = vec3(0.29, 0.42, 0.23);
+            vec3 dirtColor = vec3(0.24, 0.18, 0.11);
+            vec3 grassColor = vec3(0.22, 0.28, 0.16);
             vec3 rockColor = vec3(0.38, 0.37, 0.34);
             vec3 sandColor = vec3(0.76, 0.68, 0.48);
             vec3 wetSandColor = vec3(0.55, 0.48, 0.35);

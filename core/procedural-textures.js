@@ -80,15 +80,15 @@ export function makeGrassDiffuseTexture(size = 128) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#3d661d';
+    ctx.fillStyle = '#2b3a1a';
     ctx.fillRect(0, 0, size, size);
     for (let i = 0; i < 900; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
         const shade = 0.55 + Math.random() * 0.7;
-        const r = Math.round(45 * shade);
-        const g = Math.round(95 * shade + 30);
-        const b = Math.round(20 * shade);
+        const r = Math.round(32 * shade);
+        const g = Math.round(58 * shade + 18);
+        const b = Math.round(16 * shade);
         ctx.fillStyle = `rgba(${r},${g},${b},0.55)`;
         ctx.beginPath();
         ctx.arc(x, y, 1.2 + Math.random() * 2.2, 0, Math.PI * 2);
