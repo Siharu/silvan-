@@ -154,8 +154,8 @@ export function createTerrain(state) {
             vec3 dirtColor = vec3(0.24, 0.18, 0.11);
             vec3 grassColor = vec3(0.22, 0.28, 0.16);
             vec3 rockColor = vec3(0.38, 0.37, 0.34);
-            vec3 sandColor = vec3(0.76, 0.68, 0.48);
-            vec3 wetSandColor = vec3(0.55, 0.48, 0.35);
+            vec3 sandColor = vec3(0.30, 0.26, 0.18);
+            vec3 wetSandColor = vec3(0.20, 0.17, 0.12);
 
             float slope = 1.0 - vObjectNormalTerrain.y; // 0 flat, ~1 vertical
             float heightBand = smoothstep(18.0, 30.0, vWorldPosTerrain.y);
