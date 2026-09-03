@@ -145,8 +145,18 @@ const PRESETS = {
         colorOffset: 0.25, colorMultiplier: 2.0, foamThreshold: 1.2, opacity: 0.7,
         w1_dir: 45, w1_steep: 0.15, w1_len: 20,
         w2_dir: 120, w2_steep: 0.15, w2_len: 10,
-        w3_dir: 200, w3_steep: 0.1, w3_len: 5,
-        w4_dir: 0, w4_steep: 0.05, w4_len: 2
+        // w3/w4 were 5 and 2 — far shorter than the ocean mesh's ~12.5
+        // unit/quad tessellation (2000-unit plane, 160 segments). A wave
+        // shorter than a quad can't be represented by that quad's vertices
+        // at all, so per-vertex normals flip wildly frame to frame — the
+        // moire/banding pattern seen in-game. Lengthened both to sit
+        // closer to (still under, for some chop) the mesh's actual
+        // resolution instead of far below it. Re-tessellating the mesh to
+        // properly resolve a real 2-unit wave across 2000 units would cost
+        // ~2000 segments — not viable alongside the other lag fixes.
+        w3_len: 12, w4_len: 9,
+        w3_dir: 200, w3_steep: 0.08,
+        w4_dir: 0, w4_steep: 0.04
     },
     storm: {
         speed: 1.8, elevationScale: 1.5,

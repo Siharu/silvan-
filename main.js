@@ -24,7 +24,7 @@ import { createGrass, updateGrass } from './environment/grass.js';
 import { createRainSystem, createRainSplashes, updateRain } from './environment/rain.js';
 import { createFerns, updateFoliage } from './environment/foliage.js';
 import { createBushes, updateBushes } from './environment/bushes.js';
-import { generateFractalForest } from './environment/forest.js';
+import { generateFractalForest, updateForestLOD } from './environment/forest.js';
 import { createRocks } from './environment/rocks.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
 import { createWater, updateWater } from './environment/water.js';
@@ -386,6 +386,7 @@ function animate() {
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
     updateInteractPrompt(state);
+    updateForestLOD(state); // camera position feed for forest.js's billboard/LOD shaders — see forest.js's export comment
 
     state.renderer.render(state.scene, state.camera);
 }

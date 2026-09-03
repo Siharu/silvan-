@@ -115,6 +115,7 @@ function createTreeImposters(state, treeInstances) {
     });
     imposterMat.onBeforeCompile = (shader) => {
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
+        state.lodCameraUniforms.push(shader.uniforms.uCameraPos); // fed real camera position each frame by updateForestLOD() below — was frozen at (0,0,0) forever, see world-state.js's comment
         shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
         state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         imposterMat.userData.shader = shader;
@@ -191,6 +192,11 @@ function createTreeImposters(state, treeInstances) {
 
     state.scene.add(imposterMesh);
     state.treeImposterMesh = imposterMesh;
+}
+
+export function updateForestLOD(state) {
+    if (!state.camera) return;
+    for (const u of state.lodCameraUniforms) u.value.copy(state.camera.position);
 }
 
 export async function generateFractalForest(state, onProgress) {
@@ -323,6 +329,7 @@ export async function generateFractalForest(state, onProgress) {
     // Add custom shader to procedurally blend bark grooves and dynamic moss
     trunkMat.onBeforeCompile = (shader) => {
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
+        state.lodCameraUniforms.push(shader.uniforms.uCameraPos); // fed real camera position each frame by updateForestLOD() below — was frozen at (0,0,0) forever, see world-state.js's comment
         shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
         state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         trunkMat.userData.shader = shader;
@@ -406,6 +413,7 @@ export async function generateFractalForest(state, onProgress) {
     leafMat.onBeforeCompile = (shader) => {
         shader.uniforms.uTime = { value: 0 };
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
+        state.lodCameraUniforms.push(shader.uniforms.uCameraPos); // fed real camera position each frame by updateForestLOD() below — was frozen at (0,0,0) forever, see world-state.js's comment
         shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
         state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         leafMat.userData.shader = shader;

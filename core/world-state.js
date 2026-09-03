@@ -52,6 +52,15 @@ export function createWorldState() {
         // `.value` on all of them live with zero rebuild — same live-apply
         // reasoning as core/settings.js's other sliders.
         lodUniforms: [],
+        // Separate from lodUniforms above (those are uSwitchDist floats,
+        // tied to the draw-distance slider) — these are the uCameraPos
+        // Vector3 uniforms on forest.js's branch/leaf/imposter shaders.
+        // Was declared and read by those shaders but never actually
+        // updated anywhere, so billboards computed their facing direction
+        // toward world origin (0,0,0) instead of the camera, and LOD
+        // switch/fade distance was measured from origin too — see
+        // environment/forest.js's updateForestLOD().
+        lodCameraUniforms: [],
 
         // Populated by environment/forest.js's growBranch() as it walks
         // each tree's fractal branch structure — every leaf instance's
