@@ -241,6 +241,8 @@ export async function generateFractalForest(state, onProgress) {
     // grass's 1.1M instances. Yielding every 40 trees keeps it smooth
     // without the yields themselves costing anything meaningful.
     const treeInstances = []; // fed to createTreeImposters() after the loop — position/color/scale only, not the full branch geometry
+    const pineLeafMatrices = []; // separate instancing buffer — pine needle-cone layers, not part of state.leafMatrices (different geometry/material)
+    const pineLeafColors = [];
     const YIELD_EVERY = 40;
     const treeCount = (state.quality && state.quality.treeCount) || 350; // default since this rebuild has no core/quality.js yet
     for (let i = 0; i < treeCount; i++) {
@@ -270,9 +272,46 @@ export async function generateFractalForest(state, onProgress) {
         
         const biomeVal = noise(x * 0.008, z * 0.008);
 
-        // Every procedurally-generated forest tree is now deciduous/maple —
-        // pines are placed separately as sparse landmark trees, see
-        // environment/pine-trees.js.
+        // Cheap biome-mixed pines, ported back from the original single-file
+        // build — replaces the old separate pine-trees.js system (16 trees,
+        // but each with its own merged-tube branch mesh AND its own
+        // per-tree InstancedMesh of ~thousands of needles at density 280/
+        // unit: 32+ draw calls total). These share ONE InstancedMesh across
+        // every pine layer on every pine tree (one draw call total) on
+        // trivial 9-segment cone geometry, and reuse the same trunk
+        // InstancedMesh the deciduous trees already use (just a taller,
+        // thinner cylinder instance) instead of a separate mesh per tree.
+        if (biomeVal < 0.35 && y > 3.5) {
+            const trunkHeight = 16 * s;
+            const trunkMat4 = baseMatrix.clone()
+                .multiply(new THREE.Matrix4().makeTranslation(0, trunkHeight / 2, 0))
+                .multiply(new THREE.Matrix4().makeScale(0.7 * s, trunkHeight, 0.7 * s));
+            state.branchMatrices.push(trunkMat4);
+            state.branchColors.push(0.18, 0.14, 0.11); // darker, distinct from deciduous bark base
+
+            const numLayers = 6 + Math.floor(Math.random() * 4);
+            for (let j = 0; j < numLayers; j++) {
+                const h = trunkHeight * (0.15 + (j / numLayers) * 0.85); // leaves start lower
+                const lScale = (trunkHeight * 0.35) * (1.0 - Math.pow(j / numLayers, 1.2)); // curve taper
+                const layerMat = baseMatrix.clone()
+                    .multiply(new THREE.Matrix4().makeTranslation(0, h, 0))
+                    .multiply(new THREE.Matrix4().makeScale(lScale, lScale * 0.9, lScale))
+                    .multiply(new THREE.Matrix4().makeRotationY(Math.random() * Math.PI));
+                pineLeafMatrices.push(layerMat);
+                const pc = new THREE.Color(0x1a3320).offsetHSL(Math.random() * 0.03 - 0.015, 0.1, Math.random() * 0.05 - 0.025);
+                pineLeafColors.push(pc.r, pc.g, pc.b);
+            }
+            state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
+
+            if (i > 0 && i % YIELD_EVERY === 0) {
+                if (onProgress) onProgress(i / treeCount);
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+            }
+            continue; // skip the deciduous growBranch below for this tree
+        }
+
+        // Every remaining procedurally-generated forest tree is deciduous/
+        // maple, grown via growBranch above.
         let leafBase = new THREE.Color(0x244a1f); // Default Green
         if (biomeVal > 0.65) {
             // Maple Tree (Autumn colors based on biome)
@@ -443,4 +482,48 @@ export async function generateFractalForest(state, onProgress) {
     state.scene.add(leafMesh);
 
     createTreeImposters(state, treeInstances);
+    createPineNeedleMesh(state, pineLeafMatrices, pineLeafColors);
+}
+
+function createPineNeedleMesh(state, pineLeafMatrices, pineLeafColors) {
+    if (pineLeafMatrices.length === 0) return;
+    // Jagged cone silhouette (ported from the single-file reference build)
+    // instead of a smooth cone — distorts the base ring into a star pattern
+    // and droops the edges so it reads as heavy pine boughs rather than a
+    // clean geometric cone.
+    const pineGeo = new THREE.ConeGeometry(1, 1, 9, 3, true);
+    pineGeo.translate(0, 0.5, 0); // anchor to bottom
+    const pPos = pineGeo.attributes.position;
+    for (let i = 0; i < pPos.count; i++) {
+        const y = pPos.getY(i);
+        const x = pPos.getX(i);
+        const z = pPos.getZ(i);
+        if (y < 0.9) {
+            const angle = Math.atan2(z, x);
+            const radiusVar = 1.0 + 0.25 * Math.sin(angle * 7.0); // jagged star pattern
+            pPos.setX(i, x * radiusVar);
+            pPos.setZ(i, z * radiusVar);
+            pPos.setY(i, y - 0.25 - Math.random() * 0.15); // droop the edges
+        }
+    }
+    pineGeo.computeVertexNormals();
+
+    const pineMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true });
+    pineMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 };
+        pineMat.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nuniform float uTime;`);
+        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+            #include <begin_vertex>
+            vec4 pWorldPos = instanceMatrix * vec4(position, 1.0);
+            // Slower, heavier wind sway than the deciduous leaf flutter above
+            transformed.x += sin(pWorldPos.x * 2.0 + uTime * 0.8) * 0.05 * position.y;
+        `);
+    };
+    const pineMesh = new THREE.InstancedMesh(pineGeo, pineMat, pineLeafMatrices.length);
+    pineMesh.castShadow = true;
+    pineMesh.receiveShadow = true;
+    pineMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(pineLeafColors), 3);
+    for (let i = 0; i < pineLeafMatrices.length; i++) pineMesh.setMatrixAt(i, pineLeafMatrices[i]);
+    state.scene.add(pineMesh);
 }

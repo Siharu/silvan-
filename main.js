@@ -26,7 +26,8 @@ import { createFerns, updateFoliage } from './environment/foliage.js';
 import { createBushes, updateBushes } from './environment/bushes.js';
 import { generateFractalForest } from './environment/forest.js';
 import { createRocks } from './environment/rocks.js';
-import { createDetailedPineTrees } from './environment/pine-trees.js';
+// createDetailedPineTrees import removed — pines now generated inline in
+// forest.js, see the comment at generateFractalForest()'s call site below.
 import { createWater, updateWater } from './environment/water.js';
 import { createRadioTower, updateRadioTower } from './environment/radio-tower.js';
 import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecruitInteraction } from './environment/animals.js';
@@ -294,15 +295,17 @@ async function init() {
     await afterStep();
 
     setLoadingProgress(0.4, 'Growing the forest');
-    // Swapped pine-trees.js (simple banded-cone silhouettes, no branch
-    // detail — what you saw in the black-spikes screenshot) for the
-    // richer fractal-branch forest.js system, ported from the OLD modular
-    // project (has proper billboard LOD, autumn/green biome color
-    // variety, organic bark). Kept a handful of pine-trees.js's pines
-    // too, just far fewer, as sparse landmark accents rather than the
-    // entire forest.
+    // Pines are now generated inline inside generateFractalForest (cheap
+    // biome-mixed layered-cone pines, one shared InstancedMesh — see
+    // environment/forest.js's createPineNeedleMesh), replacing the old
+    // separate createDetailedPineTrees() call: that system was only 16-25
+    // trees but each had its own merged-tube branch mesh plus its own
+    // per-tree InstancedMesh of needles at density 280/unit — 32+ draw
+    // calls and far more total triangles than the new approach's ~100+
+    // pines sharing one draw call. environment/pine-trees.js is unused now
+    // but left in the project in case a future sparse-landmark-tree pass
+    // wants it back.
     await generateFractalForest(state, (f) => setLoadingProgress(0.4 + f * 0.15, 'Growing the forest'));
-    createDetailedPineTrees(state, 25);
     await afterStep();
 
     setLoadingProgress(0.55, 'Growing ferns');
