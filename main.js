@@ -26,8 +26,7 @@ import { createFerns, updateFoliage } from './environment/foliage.js';
 import { createBushes, updateBushes } from './environment/bushes.js';
 import { generateFractalForest } from './environment/forest.js';
 import { createRocks } from './environment/rocks.js';
-// createDetailedPineTrees import removed — pines now generated inline in
-// forest.js, see the comment at generateFractalForest()'s call site below.
+import { createDetailedPineTrees } from './environment/pine-trees.js';
 import { createWater, updateWater } from './environment/water.js';
 import { createRadioTower, updateRadioTower } from './environment/radio-tower.js';
 import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecruitInteraction } from './environment/animals.js';
@@ -303,17 +302,13 @@ async function init() {
     await afterStep();
 
     setLoadingProgress(0.4, 'Growing the forest');
-    // Pines are now generated inline inside generateFractalForest (cheap
-    // biome-mixed layered-cone pines, one shared InstancedMesh — see
-    // environment/forest.js's createPineNeedleMesh), replacing the old
-    // separate createDetailedPineTrees() call: that system was only 16-25
-    // trees but each had its own merged-tube branch mesh plus its own
-    // per-tree InstancedMesh of needles at density 280/unit — 32+ draw
-    // calls and far more total triangles than the new approach's ~100+
-    // pines sharing one draw call. environment/pine-trees.js is unused now
-    // but left in the project in case a future sparse-landmark-tree pass
-    // wants it back.
+    // Detailed pine trees (environment/pine-trees.js) restored — their
+    // needle-density bug is fixed now (see that file's collectNeedleMatrices
+    // comment): was ~523,000 needle instances per tree (~8.3 million across
+    // all 16) from a 7x-redundant per-segment calculation, now ~14,000 per
+    // tree (~230,000 total), same visual density/whorl coverage.
     await generateFractalForest(state, (f) => setLoadingProgress(0.4 + f * 0.15, 'Growing the forest'));
+    createDetailedPineTrees(state, 16);
     await afterStep();
 
     setLoadingProgress(0.55, 'Growing ferns');

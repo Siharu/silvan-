@@ -35,13 +35,21 @@ const NEEDLE_GEO = new THREE.CylinderGeometry(0.005, 0.015, 0.4, 3);
 NEEDLE_GEO.translate(0, 0.2, 0); // pivot at base
 NEEDLE_GEO.rotateX(Math.PI / 2); // point outward
 
-function collectNeedleMatrices(matrices, dummy, startPoint, endPoint, radius, density) {
-    const length = startPoint.distanceTo(endPoint);
-    const numNeedles = Math.floor(length * density * 2.5);
-
+function collectNeedleMatrices(matrices, dummy, curve, curveLength, radius, density) {
+    // Was called once per short curve sub-segment (~7x per branch), each
+    // call independently computing numNeedles as if sizing the WHOLE
+    // branch — that 7x redundancy stacked on top of an already-high
+    // density*2.5 multiplier produced ~523,000 needle instances per tree
+    // (~8.3 million across 16 trees), which is what was actually causing
+    // the lag, not just visual clutter. This now takes the branch's full
+    // curve and computes the needle count exactly once, distributed along
+    // its whole length.
+    const numNeedles = Math.max(2, Math.floor(curveLength * density));
     for (let i = 0; i < numNeedles; i++) {
         const t = i / numNeedles;
-        const pos = new THREE.Vector3().lerpVectors(startPoint, endPoint, t);
+        const pos = curve.getPoint(t);
+        const tangent = curve.getTangent(t);
+        const lookTarget = pos.clone().add(tangent);
         pos.add(new THREE.Vector3(
             (Math.random() - 0.5) * radius * 0.5,
             (Math.random() - 0.5) * radius * 0.5,
@@ -49,7 +57,7 @@ function collectNeedleMatrices(matrices, dummy, startPoint, endPoint, radius, de
         ));
 
         dummy.position.copy(pos);
-        dummy.lookAt(endPoint);
+        dummy.lookAt(lookTarget);
 
         const angle = Math.random() * Math.PI * 2;
         const upBias = (Math.sin(angle) > 0 ? 0.3 : 0);
@@ -138,10 +146,11 @@ function buildDetailedPineTree(treeHeight = 25) {
             const branchGeo = new THREE.TubeGeometry(curve, tubularSegments, branchThickness, 5, false);
             branchGeometries.push(branchGeo);
 
-            const points = curve.getPoints(10);
-            for (let i = 2; i < points.length - 1; i++) {
-                collectNeedleMatrices(needleMatrices, dummy, points[i], points[i + 1], branchThickness, 180);
-            }
+            // Was: loop over 7 short curve sub-segments each independently
+            // sizing needles as if for the whole branch (see
+            // collectNeedleMatrices' comment) — now one call per branch,
+            // density dropped from 180*2.5=450/unit to 14/unit.
+            collectNeedleMatrices(needleMatrices, dummy, curve, length, branchThickness, 14);
 
             const numSubBranches = Math.max(1, Math.floor(length * 1.8));
             for (let sb = 0; sb < numSubBranches; sb++) {
@@ -164,7 +173,7 @@ function buildDetailedPineTree(treeHeight = 25) {
                 const sbGeo = new THREE.TubeGeometry(sbCurve, 2, branchThickness * 0.4, 3, false);
                 branchGeometries.push(sbGeo);
 
-                collectNeedleMatrices(needleMatrices, dummy, sbStart, sbEnd, branchThickness * 0.4, 280);
+                collectNeedleMatrices(needleMatrices, dummy, sbCurve, sbLength, branchThickness * 0.4, 22);
             }
         }
     }
@@ -182,7 +191,8 @@ function buildDetailedPineTree(treeHeight = 25) {
     const belowTopBend = Math.sin(((treeHeight - 0.5) / treeHeight) * Math.PI) * 0.5;
     const topPos = new THREE.Vector3(topBend, treeHeight, 0);
     const slightlyBelowTop = new THREE.Vector3(belowTopBend, treeHeight - 0.5, 0);
-    collectNeedleMatrices(needleMatrices, dummy, slightlyBelowTop, topPos, trunkRadiusTop, 280);
+    const topCurve = new THREE.LineCurve3(slightlyBelowTop, topPos);
+    collectNeedleMatrices(needleMatrices, dummy, topCurve, 0.5, trunkRadiusTop, 22);
 
     const needleInstancedMesh = new THREE.InstancedMesh(NEEDLE_GEO, NEEDLE_MATERIAL, needleMatrices.length);
     needleInstancedMesh.castShadow = true;
