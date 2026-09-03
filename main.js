@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { createWorldState } from './core/world-state.js';
 import { getSettings } from './core/settings.js';
-import { setupInput } from './core/input.js';
+import { setupInput, toggleTimeFastForward } from './core/input.js';
 import { markGameStarted } from './core/save-system.js';
 
 import { createTerrain, getElevation } from './environment/terrain.js';
@@ -233,6 +233,7 @@ function setupPlayerController() {
         if (e.code === 'KeyD') move.right = false;
         if (e.code === 'ShiftLeft') move.run = false;
         if (e.code === 'KeyE' && !state.isPaused) attemptRecruitInteraction(state);
+        if (e.code === 'KeyR' && !state.isPaused) toggleTimeFastForward(state);
     });
 
     state.renderer.domElement.addEventListener('click', () => {

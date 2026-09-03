@@ -218,17 +218,25 @@ function setupPauseMenu(state) {
     if (touchPauseBtn) touchPauseBtn.addEventListener('click', () => { if (isPaused()) resume(); else pause(); });
 }
 
+const TIME_FF_BASE_SPEED = 0.02; // matches day-night-cycle.js's createDayNightCycle() default
+const TIME_FF_FAST_MULT = 20; // ~20x — full day/night cycle in a couple minutes instead of ~20
+
+// Shared between the on-screen button (below) and main.js's R keydown
+// listener, so pressing R updates the button's active-highlight state too
+// and clicking the button keeps a later R press toggling the right way —
+// single source of truth on state.timeFastForwardActive rather than two
+// separate local booleans that could drift out of sync.
+export function toggleTimeFastForward(state) {
+    state.timeFastForwardActive = !state.timeFastForwardActive;
+    state.timeSpeed = state.timeFastForwardActive ? TIME_FF_BASE_SPEED * TIME_FF_FAST_MULT : TIME_FF_BASE_SPEED;
+    const btn = document.getElementById('time-ff-btn');
+    if (btn) btn.classList.toggle('active', state.timeFastForwardActive);
+}
+
 function setupTimeFastForward(state) {
     const btn = document.getElementById('time-ff-btn');
     if (!btn) return;
-    const BASE_SPEED = 0.02; // matches day-night-cycle.js's createDayNightCycle() default
-    const FAST_MULT = 20; // ~20x — full day/night cycle in a couple minutes instead of ~20
-    let active = false;
-    btn.addEventListener('click', () => {
-        active = !active;
-        state.timeSpeed = active ? BASE_SPEED * FAST_MULT : BASE_SPEED;
-        btn.classList.toggle('active', active);
-    });
+    btn.addEventListener('click', () => toggleTimeFastForward(state));
 }
 
 export function setupInput(state) {
