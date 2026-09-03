@@ -218,12 +218,26 @@ function setupPauseMenu(state) {
     if (touchPauseBtn) touchPauseBtn.addEventListener('click', () => { if (isPaused()) resume(); else pause(); });
 }
 
+function setupTimeFastForward(state) {
+    const btn = document.getElementById('time-ff-btn');
+    if (!btn) return;
+    const BASE_SPEED = 0.02; // matches day-night-cycle.js's createDayNightCycle() default
+    const FAST_MULT = 20; // ~20x — full day/night cycle in a couple minutes instead of ~20
+    let active = false;
+    btn.addEventListener('click', () => {
+        active = !active;
+        state.timeSpeed = active ? BASE_SPEED * FAST_MULT : BASE_SPEED;
+        btn.classList.toggle('active', active);
+    });
+}
+
 export function setupInput(state) {
     renderKeybindList('title-keybind-list');
     renderKeybindList('pause-keybind-list');
 
     setupTitleMenu();
     setupPauseMenu(state);
+    setupTimeFastForward(state);
 
     // --- Live controls ---
     wireLiveControl(state, {

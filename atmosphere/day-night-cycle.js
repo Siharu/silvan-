@@ -169,14 +169,25 @@ export function updateDayNightCycle(state, delta) {
 
     if (sunHeightNormalized > 0) {
         const intensity = Math.pow(sunHeightNormalized, 0.3);
-        state.sunLight.intensity = intensity * 2.5;
+        state.sunLight.intensity = intensity * 2.0; // was 2.5 — direct sun alone was already enough to wash out dark ground albedo
+
         state.moonLight.intensity = 0;
 
-        state.hemiLight.color.setHSL(0.6, 0.75, 0.5 + intensity * 0.5);
-        state.hemiLight.groundColor.setHSL(0.095, 0.5, 0.1 + intensity * 0.4);
-        state.hemiLight.intensity = 0.6 + intensity * 0.4;
+        // Ground-bounce lightness/intensity ceilings both lowered — at
+        // intensity=1 (midday) this used to reach RGB (0.75, 0.54, 0.25)
+        // at 1.0 hemisphere intensity: a bright warm-orange ambient wash
+        // over every upward-facing surface (terrain, grass, bushes)
+        // across the whole map, which is what was actually keeping the
+        // ground looking pale/khaki no matter how dark its own albedo was
+        // set — the lighting was overpowering the material, not the
+        // material being wrong. Sky-color (upper hemisphere) ceiling
+        // trimmed to match, so it doesn't look mismatched next to the now-
+        // dimmer ground bounce.
+        state.hemiLight.color.setHSL(0.6, 0.6, 0.35 + intensity * 0.3);
+        state.hemiLight.groundColor.setHSL(0.08, 0.35, 0.05 + intensity * 0.18);
+        state.hemiLight.intensity = 0.4 + intensity * 0.25;
 
-        state.renderer.toneMappingExposure = Math.max(0.4, intensity * 0.8);
+        state.renderer.toneMappingExposure = Math.max(0.4, intensity * 0.65); // was up to 0.8
         state.stars.material.opacity = 0;
     } else {
         const intensity = Math.pow(-sunHeightNormalized, 0.3);

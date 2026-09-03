@@ -211,6 +211,25 @@
             font-size: 1.1rem;
             line-height: 1;
         }
+        .time-ff-btn {
+            position: absolute;
+            top: 1.6rem;
+            right: 4.6rem; /* left of touch-pause-btn, same row */
+            width: 2.6rem;
+            height: 2.6rem;
+            border-radius: 4px;
+            background: rgba(20, 24, 32, 0.4);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.85);
+            font-size: 1.1rem;
+            line-height: 1;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .time-ff-btn.active {
+            background: rgba(201, 181, 126, 0.35);
+            border-color: rgba(201, 181, 126, 0.6);
+            color: #f0e6c8;
+        }
         .hidden {
             opacity: 0;
             pointer-events: none;
@@ -1406,6 +1425,7 @@
             <button id="touch-interact-btn" class="touch-action-btn touch-action-btn-primary" type="button">Interact</button>
         </div>
         <button id="touch-pause-btn" class="touch-pause-btn" type="button" aria-label="Pause">☰</button>
+        <button id="time-ff-btn" class="time-ff-btn" type="button" aria-label="Fast-forward time">⏩</button>
     </div>
 
     <!-- Flashes briefly exactly when core/save-system.js's writeLocalSave()
