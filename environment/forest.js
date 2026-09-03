@@ -218,14 +218,7 @@ export async function generateFractalForest(state, onProgress) {
                 const leafRot = new THREE.Matrix4().makeRotationFromEuler(
                     new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI)
                 );
-                const leafScale = new THREE.Matrix4().makeScale(length*0.9, length*0.9, length*0.9);
-                // Was length*3.2 — that put each leaf card at 6-15 world
-                // units across (nearly as tall as the whole ~6-16 unit
-                // tree), and since leafRot is a fully random 3D Euler,
-                // those oversized flat quads read as huge dark blobs
-                // face-on or paper-thin dark spikes edge-on. 0.9 keeps
-                // clumps sized relative to the branch tip they grow from
-                // instead of the whole canopy.
+                const leafScale = new THREE.Matrix4().makeScale(length*3.2, length*3.2, length*3.2); // reverted to original size per request — big round canopy clumps kept, only bushes.js ground leaves were meant to be small
                 state.leafMatrices.push(endMat.clone().multiply(leafRot).multiply(leafScale));
                 const lColor = leafBaseColor.clone().offsetHSL(Math.random()*0.1-0.05, Math.random()*0.2, Math.random()*0.1-0.05);
                 state.leafColors.push(lColor.r, lColor.g, lColor.b);
