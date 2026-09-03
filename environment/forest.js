@@ -194,9 +194,12 @@ function createTreeImposters(state, treeInstances) {
     state.treeImposterMesh = imposterMesh;
 }
 
-export function updateForestLOD(state) {
+export function updateForestLOD(state, ts) {
     if (!state.camera) return;
     for (const u of state.lodCameraUniforms) u.value.copy(state.camera.position);
+    if (state.forestLeafMat && state.forestLeafMat.userData.shader) {
+        state.forestLeafMat.userData.shader.uniforms.uTime.value = ts;
+    }
 }
 
 export async function generateFractalForest(state, onProgress) {
@@ -282,7 +285,18 @@ export async function generateFractalForest(state, onProgress) {
         // that briefly lived here has been removed to avoid double-
         // planting pines from two systems at once.
         let leafBase = new THREE.Color(0x244a1f); // Default Green
-        if (biomeVal > 0.65) {
+        // Threshold was ported verbatim as 0.65 from the reference build,
+        // but that reference used simple value-noise (range spreads across
+        // nearly the full ±1), while this project's noise() (terrain.js)
+        // is true gradient/Perlin noise — its actual output range here is
+        // roughly ±0.65 at best, and empirically NEVER exceeds ~0.5 in
+        // practice. 0.65 was mathematically unreachable: zero trees in
+        // 20,000 sampled positions ever crossed it, so every tree fell
+        // through to the green default — that's why "no color variety"
+        // wasn't a lighting/rendering issue, the autumn branch was dead
+        // code. 0.10 is this noise function's actual ~72nd percentile,
+        // reproducing the reference's ~28% autumn-tree ratio.
+        if (biomeVal > 0.10) {
             // Maple Tree (Autumn colors based on biome)
             const autumn = [0x992211, 0xaa4411, 0xbb8811, 0xcc3311];
             leafBase.setHex(autumn[Math.floor(Math.random()*autumn.length)]);
@@ -442,7 +456,7 @@ export async function generateFractalForest(state, onProgress) {
             ${collapseVertexGLSL('distance(vLeafWorldPos, uCameraPos) > uSwitchDist')}`
         );
     };
-    // addDynamicFog(leafMat, ...) removed — dynamic fog removed for performance, see main.js.
+    state.forestLeafMat = leafMat; // fed uTime each frame by updateForestLOD() below — was frozen at 0 forever, so the flutter shader never actually moved leaves
 
     const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, state.leafMatrices.length);
     // Optimized: Disabled leaf shadows. Overlapping transparent shadows on millions of instances causes severe overdraw

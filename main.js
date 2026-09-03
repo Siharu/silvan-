@@ -386,7 +386,7 @@ function animate() {
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
     updateInteractPrompt(state);
-    updateForestLOD(state); // camera position feed for forest.js's billboard/LOD shaders — see forest.js's export comment
+    updateForestLOD(state, ts); // camera position + leaf-flutter wind uTime feed for forest.js's shaders — see forest.js's export comment
 
     state.renderer.render(state.scene, state.camera);
 }
