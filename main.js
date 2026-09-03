@@ -118,7 +118,15 @@ async function afterStep() {
 function setupRenderer() {
     state.scene = new THREE.Scene();
     state.scene.background = new THREE.Color(0x87CEEB);
-    state.scene.fog = new THREE.FogExp2(0x87CEEB, 0.0025);
+    // Was 0x87CEEB (sky blue) — same as scene.background, and never
+    // touched again by day-night-cycle.js or anything else, so it was a
+    // flat pale-blue haze blending into every distant surface regardless
+    // of lighting or time of day. Ground/grass seen through it (especially
+    // up close between grass blades, low camera angle) read as washed-out
+    // pale green-gray instead of the actual dark soil color underneath.
+    // Darker, desaturated tone matches this game's dark-forest atmosphere
+    // instead of a bright daytime sky tint.
+    state.scene.fog = new THREE.FogExp2(0x1c1f1a, 0.0025);
 
     const settings = getSettings();
     state.camera = new THREE.PerspectiveCamera(settings.fov || 75, window.innerWidth / window.innerHeight, 0.1, 20000);

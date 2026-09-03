@@ -291,8 +291,14 @@ export async function generateFractalForest(state, onProgress) {
 
             const numLayers = 6 + Math.floor(Math.random() * 4);
             for (let j = 0; j < numLayers; j++) {
-                const h = trunkHeight * (0.15 + (j / numLayers) * 0.85); // leaves start lower
-                const lScale = (trunkHeight * 0.35) * (1.0 - Math.pow(j / numLayers, 1.2)); // curve taper
+                // (j/numLayers) tops out at (numLayers-1)/numLayers, never 1 —
+                // so h's max was always ~86-91% of trunkHeight, leaving the
+                // top sliver of trunk bare above the canopy (the "chimney
+                // pole" sticking out the top in the screenshot). Using
+                // j/(numLayers-1) instead reaches exactly 1.0 on the last
+                // layer, so the topmost needle cone covers the actual tip.
+                const h = trunkHeight * (0.15 + (j / (numLayers - 1)) * 0.85); // leaves start lower
+                const lScale = (trunkHeight * 0.35) * (1.0 - Math.pow(j / (numLayers - 1), 1.2)); // curve taper
                 const layerMat = baseMatrix.clone()
                     .multiply(new THREE.Matrix4().makeTranslation(0, h, 0))
                     .multiply(new THREE.Matrix4().makeScale(lScale, lScale * 0.9, lScale))
