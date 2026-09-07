@@ -92,12 +92,12 @@ function wireToggleGroup({ titleIds, pauseIds, getValue, setValue, values }) {
     });
 }
 
-function wireForceTouch(titleId, pauseId) {
+function wireReloadCheckbox(titleId, pauseId, key) {
     const settings = getSettings();
     [document.getElementById(titleId), document.getElementById(pauseId)].filter(Boolean).forEach((el) => {
-        el.checked = !!settings.forceTouchControls;
+        el.checked = settings[key] !== false; // works for both a true-default (antialiasing) and false-default (forceTouchControls) key, since !!settings.forceTouchControls === (settings.forceTouchControls !== false) when the stored value is only ever true/false/undefined
         el.addEventListener('change', () => {
-            setSetting('forceTouchControls', el.checked);
+            setSetting(key, el.checked);
             location.reload();
         });
     });
@@ -239,6 +239,21 @@ function setupTimeFastForward(state) {
     btn.addEventListener('click', () => toggleTimeFastForward(state));
 }
 
+function setupFullscreenButton() {
+    const btn = document.getElementById('fullscreen-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            document.documentElement.requestFullscreen().catch(() => { /* some browsers refuse without a more direct user gesture context — button click already counts as one in most, so this is just a safety net */ });
+        }
+    });
+    document.addEventListener('fullscreenchange', () => {
+        btn.classList.toggle('active', !!document.fullscreenElement);
+    });
+}
+
 export function setupInput(state) {
     renderKeybindList('title-keybind-list');
     renderKeybindList('pause-keybind-list');
@@ -246,6 +261,7 @@ export function setupInput(state) {
     setupTitleMenu();
     setupPauseMenu(state);
     setupTimeFastForward(state);
+    setupFullscreenButton();
 
     // --- Live controls ---
     wireLiveControl(state, {
@@ -289,6 +305,19 @@ export function setupInput(state) {
         values: ['high', 'medium', 'low'],
         getValue: getQuality, setValue: setQuality,
     });
+    // Resolution scale — multiplies devicePixelRatio (main.js's
+    // setupRenderer()). Separate from the quality preset above: quality
+    // scales geometry/instance counts, this scales render resolution —
+    // independently useful, since a low-end iGPU can be fill-rate bound
+    // (resolution) rather than vertex/draw-call bound (instance counts),
+    // or vice versa.
+    wireToggleGroup({
+        titleIds: ['title-resolution-full-btn', 'title-resolution-med-btn', 'title-resolution-low-btn'],
+        pauseIds: ['pause-resolution-full-btn', 'pause-resolution-med-btn', 'pause-resolution-low-btn'],
+        values: [1.0, 0.75, 0.5],
+        getValue: () => getSettings().resolutionScale || 1.0,
+        setValue: (v) => setSetting('resolutionScale', v),
+    });
     wireToggleGroup({
         titleIds: ['title-view-firstperson-btn', 'title-view-topdown-btn'],
         pauseIds: ['pause-view-firstperson-btn', 'pause-view-topdown-btn'],
@@ -307,7 +336,16 @@ export function setupInput(state) {
         setValue: (v) => setSetting('rockDetail', v),
     });
 
-    wireForceTouch('title-force-touch-checkbox', 'pause-force-touch-checkbox');
+    wireReloadCheckbox('title-force-touch-checkbox', 'pause-force-touch-checkbox', 'forceTouchControls');
+    // Live checkboxes — both systems already read getSettings() fresh
+    // (updateFpsCounter/updateWeather), so no onLive push needed, unlike
+    // fov/sensitivity which write straight into camera/uniform state.
+    wireLiveControl(state, { titleId: 'title-fps-counter-checkbox', pauseId: 'pause-fps-counter-checkbox', key: 'showFpsCounter', isCheckbox: true });
+    wireLiveControl(state, { titleId: 'title-disable-weather-checkbox', pauseId: 'pause-disable-weather-checkbox', key: 'disableWeather', isCheckbox: true });
+    // Antialiasing — reload-tier, same as forceTouchControls: the
+    // WebGLRenderer's antialias flag is a constructor-time option, can't
+    // be flipped on a live renderer.
+    wireReloadCheckbox('title-antialiasing-checkbox', 'pause-antialiasing-checkbox', 'antialiasing');
     wireExportImport();
     wireKeybindResetStub('title-keybind-reset-btn', 'title-save-status');
     wireKeybindResetStub('pause-keybind-reset-btn', 'pause-save-status');

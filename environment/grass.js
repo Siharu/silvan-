@@ -28,7 +28,7 @@ import * as THREE from 'three';
 import { bakeHeightMapTexture, makeSmoothNoiseTexture, makeGrassDiffuseTexture } from '../core/procedural-textures.js';
 
 const PATCH_SIZE = 30;   // world units per side of the sliding-window patch
-const BLADE_COUNT = 120000;
+const BLADE_COUNT = 120000; // fallback if state.quality is missing — see createGrass
 const BLADE_WIDTH = 0.08;
 
 const vertexShader = `
@@ -147,7 +147,17 @@ void main() {
 
     vColor = texture2D(uDiffuseMap, uv * 10.0).rgb * color;
     vec3 colorNoise = texture2D(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
-    vColor *= colorNoise;
+    // Was `vColor *= colorNoise` using all 3 channels directly — but
+    // uNoiseTexture's R/G/B are independently random per pixel (see
+    // makeSmoothNoiseTexture), so that randomly shifted each blade's HUE,
+    // not just its brightness. A blade landing on a noise pixel with a
+    // disproportionate green channel would read as bright green no matter
+    // how dark uDiffuseMap's base texture was — that's what was keeping
+    // the ground looking green after the soil-color pass. Averaging to a
+    // single grayscale factor keeps the intended brightness/contrast
+    // variation without recoloring blades toward whatever channel the
+    // noise happened to roll high on this pixel.
+    vColor *= (colorNoise.r + colorNoise.g + colorNoise.b) / 3.0;
 
     float distanceFromCenter = length(origin.xz) / halfPatchSize;
     float innerCircleFactor = clamp(smoothstep(0.0, 0.5, distanceFromCenter), 0.0, 1.0);
@@ -198,7 +208,8 @@ export function createGrass(state) {
     const bladeOrigins = [];
 
     const half = PATCH_SIZE * 0.5;
-    for (let i = 0; i < BLADE_COUNT; i++) {
+    const bladeCount = (state.quality && state.quality.bladeCount) || BLADE_COUNT;
+    for (let i = 0; i < bladeCount; i++) {
         const ox = THREE.MathUtils.randFloat(-half, half);
         const oz = THREE.MathUtils.randFloat(-half, half);
 

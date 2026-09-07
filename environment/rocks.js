@@ -220,7 +220,7 @@ const ROCK_TYPES = [
 
 export function createRocks(state) {
     const ROCK_RADIUS = 260;
-    const placements = 90;
+    const placements = (state.quality && state.quality.rockCount) || 90;
     state.rockGroup = new THREE.Group();
 
     let placed = 0;

@@ -166,6 +166,7 @@ export function updateDayNightCycle(state, delta) {
     state.moonMesh.position.copy(state.moonPosition);
 
     const sunHeightNormalized = Math.sin(angle);
+    state.sunHeightNormalized = sunHeightNormalized; // exposed for other systems (fireflies.js, dust.js) that need day/night blend without redoing this angle math
 
     if (sunHeightNormalized > 0) {
         const intensity = Math.pow(sunHeightNormalized, 0.3);

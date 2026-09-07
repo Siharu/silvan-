@@ -211,10 +211,19 @@
             font-size: 1.1rem;
             line-height: 1;
         }
+        .game-hud-buttons {
+            position: fixed;
+            inset: 0;
+            z-index: 5; /* above #canvas-container(1), below .ui-layer(10)/.loading-screen(100) — see index.html's markup comment */
+            pointer-events: none; /* only the buttons inside should be clickable, not the full-viewport wrapper */
+        }
+        .game-hud-buttons > * {
+            pointer-events: auto;
+        }
         .time-ff-btn {
             position: absolute;
             top: 1.6rem;
-            right: 4.6rem; /* left of touch-pause-btn, same row */
+            right: 4.6rem; /* left of touch-pause-btn's own top:1.6rem/right:1.6rem position, same row, even though they're no longer in the same DOM parent */
             width: 2.6rem;
             height: 2.6rem;
             border-radius: 4px;
@@ -229,6 +238,21 @@
             background: rgba(201, 181, 126, 0.35);
             border-color: rgba(201, 181, 126, 0.6);
             color: #f0e6c8;
+        }
+        .fps-counter {
+            position: absolute;
+            top: 1.6rem;
+            left: 1.6rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: rgba(20, 24, 32, 0.4);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: rgba(255,255,255,0.75);
+            font: 11px/1 'Courier New', monospace;
+            letter-spacing: .05em;
+        }
+        .fps-counter.hidden {
+            display: none;
         }
         .hidden {
             opacity: 0;
@@ -1293,6 +1317,25 @@
                         <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
                     </div>
 
+                    <label style="margin-top: 0.7rem;">Resolution Scale <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row" id="title-resolution-row">
+                        <button id="title-resolution-full-btn" class="quality-toggle-btn">Full</button>
+                        <button id="title-resolution-med-btn" class="quality-toggle-btn">75%</button>
+                        <button id="title-resolution-low-btn" class="quality-toggle-btn">50%</button>
+                    </div>
+                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
+                        <input type="checkbox" id="title-antialiasing-checkbox">
+                        Antialiasing <span class="quality-reload-note">(applies on reload)</span>
+                    </label>
+                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
+                        <input type="checkbox" id="title-fps-counter-checkbox">
+                        Show FPS Counter
+                    </label>
+                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
+                        <input type="checkbox" id="title-disable-weather-checkbox">
+                        Disable Weather (no rain/storms)
+                    </label>
+
                     <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
                     <div class="quality-toggle-row" id="title-view-mode-row">
                         <button id="title-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
@@ -1425,7 +1468,22 @@
             <button id="touch-interact-btn" class="touch-action-btn touch-action-btn-primary" type="button">Interact</button>
         </div>
         <button id="touch-pause-btn" class="touch-pause-btn" type="button" aria-label="Pause">☰</button>
+    </div>
+
+    <!-- Always-visible game HUD buttons — NOT inside #touch-controls (that
+         whole block stays hidden on desktop/mouse+keyboard sessions,
+         unhidden only by touch-controls.js's shouldShowTouchControls()
+         check). time-ff-btn has no keyboard fallback the way Escape backs
+         up touch-pause-btn on desktop, so it needs to actually be visible
+         regardless of input method. z-index 5: above #canvas-container
+         (1) so it's clickable during gameplay, below .ui-layer (10) and
+         .loading-screen (100) so it stays hidden behind the title/loading
+         screens until the game actually starts and those overlays hide
+         themselves — no separate show/hide toggle needed here. -->
+    <div id="game-hud-buttons" class="game-hud-buttons">
         <button id="time-ff-btn" class="time-ff-btn" type="button" aria-label="Fast-forward time">⏩</button>
+        <button id="fullscreen-btn" class="time-ff-btn" type="button" aria-label="Toggle fullscreen" style="right: 7.6rem;">⛶</button>
+        <div id="fps-counter" class="fps-counter hidden">0 FPS</div>
     </div>
 
     <!-- Flashes briefly exactly when core/save-system.js's writeLocalSave()
@@ -1467,6 +1525,24 @@
                         <button id="pause-quality-med-btn" class="quality-toggle-btn">Medium</button>
                         <button id="pause-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
                     </div>
+                    <label style="margin-top: 0.7rem;">Resolution Scale <span class="quality-reload-note">(applies on reload)</span></label>
+                    <div class="quality-toggle-row">
+                        <button id="pause-resolution-full-btn" class="quality-toggle-btn">Full</button>
+                        <button id="pause-resolution-med-btn" class="quality-toggle-btn">75%</button>
+                        <button id="pause-resolution-low-btn" class="quality-toggle-btn">50%</button>
+                    </div>
+                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
+                        <input type="checkbox" id="pause-antialiasing-checkbox">
+                        Antialiasing <span class="quality-reload-note">(applies on reload)</span>
+                    </label>
+                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
+                        <input type="checkbox" id="pause-fps-counter-checkbox">
+                        Show FPS Counter
+                    </label>
+                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
+                        <input type="checkbox" id="pause-disable-weather-checkbox">
+                        Disable Weather (no rain/storms)
+                    </label>
                     <label style="margin-top: 0.7rem;" for="pause-draw-distance-slider">Tree Draw Distance</label>
                     <input type="range" id="pause-draw-distance-slider" min="60" max="300" step="10" value="150">
                     <label for="pause-fog-density-slider">Fog Density</label>

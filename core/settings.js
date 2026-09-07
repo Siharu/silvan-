@@ -30,6 +30,10 @@ const DEFAULT_SETTINGS = {
     masterVolume: 1.0,     // top-level multiplier over ambienceVolume/sfxVolume — persisted now, has nothing to apply to yet (see core/input.js's Audio-tab comment)
     ambienceVolume: 1.0,   // multiplies every ambient Howl's own per-frame target volume (day/night/wind/water/rain — see atmosphere/day-night-cycle.js)
     sfxVolume: 1.0,        // multiplies stepAudio's volume
+    resolutionScale: 1.0, // multiplies devicePixelRatio when setting up the renderer — see main.js's setupRenderer()
+    antialiasing: true, // reload-tier — passed to the WebGLRenderer constructor, can't be changed on an existing renderer
+    showFpsCounter: false, // live — toggles #fps-counter's visibility, see main.js's animate()
+    disableWeather: false, // live-ish (checked each updateWeather() call) — forces state.currentRainIntensity toward 0 regardless of the weather cycle's current phase
     forceTouchControls: false, // shows the mobile touch UI (core/touch-controls.js) even on a device that doesn't report touch support — for testing on desktop, or a hybrid touchscreen laptop that the browser doesn't self-report correctly
 };
 

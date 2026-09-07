@@ -1,25 +1,36 @@
-// Quality presets. Genuinely reload-tier, not a shortcut: grass slot count
-// (environment/grass.js), forest/leaf instance counts (environment/forest.js),
-// and rock counts (environment/rocks.js) are all fixed InstancedMesh sizes
-// baked in main.js's init() at generation time, not values read from a live
-// uniform the way FOV/sensitivity/volume are (see core/settings.js's own
-// comment on that split). index.html's quality-toggle-rows are all labeled
-// "(applies on reload)" for exactly this reason.
+// Quality presets. Now genuinely scales instance counts too, not just
+// drawDistance/fogDensityMult — forest.js was already written expecting a
+// state.quality.treeCount (with a `|| 350` fallback for when this didn't
+// exist yet), so that half of the wiring predates this pass. Every
+// generator below now reads its count the same way: state.quality's field
+// if present, else its own original hardcoded default, so nothing breaks
+// if a generator is ever called without state.quality set.
 //
-// What each preset actually changes today: drawDistance and fogDensityMult,
-// both real live-tunable settings (core/settings.js) that also happen to be
-// good perf/fidelity proxies. It does NOT yet scale instance counts —
-// wiring quality into the generators themselves (createGrass,
-// generateFractalForest, createRocks all currently take no count param) is
-// unstarted, same "not yet" as the settings menu's own #3 was before this
-// pass. Flagged rather than faked.
+// Reload-tier, not live: these are baked into InstancedMesh sizes at
+// generation time in main.js's init(), same as before — see
+// core/settings.js's comment on the live vs. reload-tier split.
 
 import { getSettings, setSetting } from './settings.js';
 
 export const QUALITY_PRESETS = {
-    high:   { drawDistance: 220, fogDensityMult: 0.8 },
-    medium: { drawDistance: 150, fogDensityMult: 1.0 },
-    low:    { drawDistance: 90,  fogDensityMult: 1.3 },
+    high: {
+        drawDistance: 220, fogDensityMult: 0.8,
+        treeCount: 380, bladeCount: 120000, rockCount: 90,
+        bushLeafCount: 45000, bushClusterCount: 700,
+        flowerCount: 12000, fireflyCount: 1200, dustCount: 3500, puddleCount: 120,
+    },
+    medium: {
+        drawDistance: 150, fogDensityMult: 1.0,
+        treeCount: 260, bladeCount: 70000, rockCount: 60,
+        bushLeafCount: 28000, bushClusterCount: 450,
+        flowerCount: 7000, fireflyCount: 800, dustCount: 2200, puddleCount: 80,
+    },
+    low: {
+        drawDistance: 90, fogDensityMult: 1.3,
+        treeCount: 150, bladeCount: 30000, rockCount: 35,
+        bushLeafCount: 12000, bushClusterCount: 220,
+        flowerCount: 3000, fireflyCount: 400, dustCount: 1000, puddleCount: 40,
+    },
 };
 
 const QUALITY_KEY = 'quality';
@@ -27,6 +38,10 @@ const DEFAULT_QUALITY = 'medium';
 
 export function getQuality() {
     return getSettings()[QUALITY_KEY] || DEFAULT_QUALITY;
+}
+
+export function getQualityCounts() {
+    return QUALITY_PRESETS[getQuality()] || QUALITY_PRESETS[DEFAULT_QUALITY];
 }
 
 export function setQuality(level) {

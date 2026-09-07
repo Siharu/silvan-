@@ -25,8 +25,8 @@ import * as THREE from 'three';
 import { getElevation } from './terrain.js';
 import { WORLD_SIZE, WATER_LEVEL } from '../core/world-state.js';
 
-const LEAF_COUNT = 45000;
-const CLUSTER_COUNT = 700;       // independent bush clumps, noise-scattered
+const LEAF_COUNT = 45000; // fallback if state.quality is missing — createBushes shadows this with a quality-scaled local
+const CLUSTER_COUNT = 700; // fallback if state.quality is missing — same shadowing, see createBushes
 const UNDERGROWTH_PER_TREE = 3;  // extra small clumps seeded per existing collider
 const SPREAD = WORLD_SIZE * 0.42; // stay inside the island's coastline (see terrain.js's coastStart)
 
@@ -74,6 +74,14 @@ function injectWindShader(shader, uniforms, isBranch) {
 }
 
 export function createBushes(state) {
+    // Shadows the module-level LEAF_COUNT/CLUSTER_COUNT fallback constants
+    // below for the rest of this function — every other reference to
+    // those names in this file already lives inside createBushes, so this
+    // one local override is enough to make the whole function
+    // quality-scaled without touching each usage site individually.
+    const LEAF_COUNT = (state.quality && state.quality.bushLeafCount) || 45000;
+    const CLUSTER_COUNT = (state.quality && state.quality.bushClusterCount) || 700;
+
     const uniforms = { time: { value: 0 } };
 
     // --- Leaf geometry (unchanged from source module) ---
@@ -175,7 +183,22 @@ export function createBushes(state) {
         const startPos = new THREE.Vector3(bx, groundY, bz);
         const startDir = new THREE.Vector3((Math.random() - 0.5) * 0.5, 1, (Math.random() - 0.5) * 0.5).normalize();
         growBranch(startPos, startDir, clumpHeight * 0.5, 1);
+        // Was never pushed — bushes.js only ever READ state.colliders (to
+        // seed undergrowth near trees below), never wrote to it, so every
+        // bush clump was walk-through. Radius kept small/soft (0.6-1.1)
+        // relative to tree colliders (which run 0.7*s+0.6, often 1-2+) —
+        // a bush is brush, not a solid trunk, so this should feel more
+        // like being slowed/nudged by undergrowth than hitting a wall.
+        state.colliders.push({ x: bx, z: bz, r: 0.6 + clumpHeight * 0.2 });
     };
+
+    // Snapshot BEFORE Pass 1 runs — plantBushAt now pushes each bush's
+    // own collider onto state.colliders (see its own comment above), and
+    // Pass 2 below needs the ORIGINAL tree/rock colliders only, not
+    // Pass 1's bush clumps mixed in — otherwise Pass 2 would treat every
+    // bush as another "tree" to seed more undergrowth around, cascading
+    // unpredictably instead of just seeding around actual trees/rocks.
+    const treeCollidersSnapshot = state.colliders ? state.colliders.slice() : [];
 
     // --- Pass 1: independent clumps, noise-clustered same as the source
     // module's topography density map, just island-radius-bounded now.
@@ -194,16 +217,15 @@ export function createBushes(state) {
 
     // --- Pass 2: undergrowth seeded right around existing tree colliders
     // (forest.js/pine-trees.js), so bushes actually read as "around
-    // trees" instead of just independently scattered.
-    if (state.colliders && state.colliders.length) {
-        for (const c of state.colliders) {
+    // trees" instead of just independently scattered. Uses the snapshot
+    // taken before Pass 1, above — see that comment.
+    for (const c of treeCollidersSnapshot) {
+        if (leafIndex >= LEAF_COUNT) break;
+        for (let i = 0; i < UNDERGROWTH_PER_TREE; i++) {
             if (leafIndex >= LEAF_COUNT) break;
-            for (let i = 0; i < UNDERGROWTH_PER_TREE; i++) {
-                if (leafIndex >= LEAF_COUNT) break;
-                const ang = Math.random() * Math.PI * 2;
-                const dist = (c.r || 1) * (1.1 + Math.random() * 1.8);
-                plantBushAt(c.x + Math.cos(ang) * dist, c.z + Math.sin(ang) * dist);
-            }
+            const ang = Math.random() * Math.PI * 2;
+            const dist = (c.r || 1) * (1.1 + Math.random() * 1.8);
+            plantBushAt(c.x + Math.cos(ang) * dist, c.z + Math.sin(ang) * dist);
         }
     }
 

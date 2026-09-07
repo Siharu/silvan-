@@ -16,12 +16,18 @@
 import * as THREE from 'three';
 import { createWorldState } from './core/world-state.js';
 import { getSettings } from './core/settings.js';
+import { getQualityCounts } from './core/quality.js';
 import { setupInput, toggleTimeFastForward } from './core/input.js';
 import { markGameStarted } from './core/save-system.js';
 
 import { createTerrain, getElevation } from './environment/terrain.js';
 import { createGrass, updateGrass } from './environment/grass.js';
 import { createRainSystem, createRainSplashes, updateRain } from './environment/rain.js';
+import { createWeather, updateWeather } from './atmosphere/weather.js';
+import { createFlowers, updateFlowers } from './environment/flowers.js';
+import { createPuddles, updatePuddles } from './environment/puddles.js';
+import { createFireflies, updateFireflies } from './environment/fireflies.js';
+import { createDustParticles, updateDustParticles } from './environment/dust.js';
 import { createFerns, updateFoliage } from './environment/foliage.js';
 import { createBushes, updateBushes } from './environment/bushes.js';
 import { generateFractalForest, updateForestLOD } from './environment/forest.js';
@@ -131,9 +137,16 @@ function setupRenderer() {
     state.camera = new THREE.PerspectiveCamera(settings.fov || 75, window.innerWidth / window.innerHeight, 0.1, 20000);
     state.camera.position.set(0, 5, 20);
 
-    state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    state.renderer = new THREE.WebGLRenderer({ antialias: settings.antialiasing !== false, powerPreference: 'high-performance' });
     state.renderer.setSize(window.innerWidth, window.innerHeight);
-    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // resolutionScale (default 1.0) multiplies devicePixelRatio — a cheap,
+    // high-impact lever for weak iGPUs: dropping to e.g. 0.75 cuts fragment
+    // shader work ~44% (0.75^2) with a much smaller visual cost than
+    // lowering instance counts further. Reload-tier like quality's counts,
+    // not live, since changing a renderer's pixel ratio after creation on
+    // some browsers doesn't reliably resize internal buffers.
+    const resolutionScale = settings.resolutionScale || 1.0;
+    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * resolutionScale);
     state.renderer.shadowMap.enabled = false; // was true (PCFSoftShadowMap,
     // two 2048x2048 maps from sunLight+moonLight) — this was flagged as
     // the single biggest perf cost multiple times while it was being
@@ -290,6 +303,16 @@ async function init() {
     setupRenderer();
     await afterStep();
 
+    // Must happen before any generator below — createGrass/generateFractalForest/
+    // createRocks/createBushes/createFlowers/createFireflies/createDustParticles/
+    // createPuddles all read state.quality's per-system count fields (falling
+    // back to their own hardcoded default if it's missing). This was the
+    // missing link: quality.js's presets already had real count fields and
+    // every generator already knew how to read them, but nothing ever set
+    // state.quality itself, so "Low (potato mode)" only ever changed draw
+    // distance/fog — not actual instance counts.
+    state.quality = getQualityCounts();
+
     setLoadingProgress(0.08, 'Growing terrain');
     createTerrain(state);
     await afterStep();
@@ -330,14 +353,27 @@ async function init() {
     createGrass(state);
     await afterStep();
 
+    setLoadingProgress(0.85, 'Blooming flowers');
+    createFlowers(state);
+    await afterStep();
+
     setLoadingProgress(0.88, 'Loading rain');
     createRainSystem(state);
     createRainSplashes(state);
-    state.currentRainIntensity = 0; // clear by default; weather system TBD
+    createWeather(state); // drives state.currentRainIntensity over time — see atmosphere/weather.js; was hardcoded to 0 forever before this
+    await afterStep();
+
+    setLoadingProgress(0.90, 'Filling puddles');
+    createPuddles(state);
     await afterStep();
 
     setLoadingProgress(0.93, 'Raising the tower');
     createRadioTower(state, new THREE.Vector3(120, 0, -140));
+    await afterStep();
+
+    setLoadingProgress(0.95, 'Lighting fireflies');
+    createFireflies(state);
+    createDustParticles(state);
     await afterStep();
 
     setLoadingProgress(0.97, 'Waking the animals');
@@ -379,17 +415,41 @@ function animate() {
 
     updateDayNightCycle(state, delta);
     updateStars(state, delta);
+    updateWeather(state, delta); // must run before updateRain/updatePuddles/updateFireflies/updateDustParticles — they all read state.currentRainIntensity this same frame
     updateWater(state, ts);
     updateGrass(state, ts);
     updateFoliage(state, ts);
     updateBushes(state, ts);
     updateRain(state, ts);
+    updateFlowers(state, ts);
+    updatePuddles(state, ts);
+    updateFireflies(state, ts);
+    updateDustParticles(state, ts);
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
     updateInteractPrompt(state);
     updateForestLOD(state, ts); // camera position + leaf-flutter wind uTime feed for forest.js's shaders — see forest.js's export comment
+    updateFpsCounter(state);
 
     state.renderer.render(state.scene, state.camera);
+}
+
+let _fpsFrames = 0;
+let _fpsLastSample = 0;
+function updateFpsCounter(state) {
+    const el = state._fpsCounterEl || (state._fpsCounterEl = document.getElementById('fps-counter'));
+    if (!el) return;
+    const show = !!getSettings().showFpsCounter;
+    el.classList.toggle('hidden', !show);
+    if (!show) return;
+    _fpsFrames++;
+    const now = performance.now();
+    if (now - _fpsLastSample >= 500) { // update twice a second — a counter that changes every frame is unreadable
+        const fps = Math.round((_fpsFrames * 1000) / (now - _fpsLastSample));
+        el.textContent = fps + ' FPS';
+        _fpsFrames = 0;
+        _fpsLastSample = now;
+    }
 }
 
 // --- Title screen hookup ---
