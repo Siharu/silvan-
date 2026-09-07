@@ -147,7 +147,7 @@ void main() {
 
     vColor = texture2D(uDiffuseMap, uv * 10.0).rgb * color;
     vec3 colorNoise = texture2D(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
-    // Was `vColor *= colorNoise` using all 3 channels directly — but
+    // Was "vColor *= colorNoise" using all 3 channels directly — but
     // uNoiseTexture's R/G/B are independently random per pixel (see
     // makeSmoothNoiseTexture), so that randomly shifted each blade's HUE,
     // not just its brightness. A blade landing on a noise pixel with a
