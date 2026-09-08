@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { getElevation } from './terrain.js';
 import { applyMoss } from './foliage.js';
+import { getSettings } from '../core/settings.js';
 
 const noise3DGLSL = `
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -104,11 +105,17 @@ const fbmGLSL = `
 
 // Direct port of generateRock() — builds one displaced-icosahedron mesh
 // per call, given the same param shape rockParams had in the reference.
-function buildRockMesh(params) {
-    const geometry = new THREE.IcosahedronGeometry(1, params.detail);
+function buildRockMesh(params, settings) {
+    // rockDetail setting applies as a delta on top of each ROCK_TYPE's own
+    // base detail level (4 or 5), preserving their relative shape variety
+    // rather than forcing every rock to the same subdivision count.
+    // Clamped to >=1 since IcosahedronGeometry throws on negative detail.
+    const detailDelta = { low: -2, med: 0, high: 1 }[settings.rockDetail] ?? 0;
+    const detail = Math.max(1, params.detail + detailDelta);
+    const geometry = new THREE.IcosahedronGeometry(1, detail);
     const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(params.baseColor),
-        roughness: 0.8,
+        roughness: Math.min(1, 0.8 * (settings.rockRoughnessMult ?? 1.0)),
         metalness: 0.1,
         flatShading: params.flatShading,
     });
@@ -221,6 +228,7 @@ const ROCK_TYPES = [
 export function createRocks(state) {
     const ROCK_RADIUS = 260;
     const placements = (state.quality && state.quality.rockCount) || 90;
+    const settings = getSettings();
     state.rockGroup = new THREE.Group();
 
     let placed = 0;
@@ -234,7 +242,7 @@ export function createRocks(state) {
         if (Math.hypot(x - 0, z - 20) < 12) continue; // keep clear of player spawn (0, _, 20)
 
         const params = { ...ROCK_TYPES[Math.floor(Math.random() * ROCK_TYPES.length)], seed: Math.random() * 100 };
-        const rockMesh = buildRockMesh(params);
+        const rockMesh = buildRockMesh(params, settings);
 
         const scale = 0.8 + Math.random() * 2.5;
         rockMesh.scale.set(scale * (0.8 + Math.random() * 0.4), scale * (0.7 + Math.random() * 0.4), scale * (0.8 + Math.random() * 0.4));

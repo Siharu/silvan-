@@ -719,6 +719,38 @@
             color: #eef1f6;
             box-shadow: 0 0 14px rgba(160, 190, 255, 0.15);
         }
+        .keybind-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.35rem 0;
+            font-size: 0.75rem;
+            color: #c3cddb;
+        }
+        .keybind-key {
+            padding: 0.25rem 0.7rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(210, 225, 255, 0.15);
+            border-radius: 2px;
+            color: #9fb0c9;
+            font-size: 0.65rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .keybind-rebind-btn {
+            cursor: pointer;
+            min-width: 4.5rem;
+            text-align: center;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+        .keybind-rebind-btn:hover {
+            border-color: rgba(210, 225, 255, 0.4);
+        }
+        .keybind-rebind-btn.rebinding {
+            background: rgba(201, 181, 126, 0.2);
+            border-color: rgba(201, 181, 126, 0.6);
+            color: #f0e6c8;
+        }
 
         /* --- Title screen v2 ---
            The old version fully obscured the scene (12px blur + 90% flat
@@ -1464,6 +1496,7 @@
         </div>
         <div class="touch-action-buttons">
             <button id="touch-rest-btn" class="touch-action-btn touch-action-btn-small" type="button">Rest</button>
+            <button id="touch-jump-btn" class="touch-action-btn touch-action-btn-small" type="button">Jump</button>
             <button id="touch-sprint-btn" class="touch-action-btn" type="button">Sprint</button>
             <button id="touch-interact-btn" class="touch-action-btn touch-action-btn-primary" type="button">Interact</button>
         </div>

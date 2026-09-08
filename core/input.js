@@ -13,31 +13,74 @@
 //              persisted, then location.reload() so main.js's init() picks
 //              them up fresh. Genuinely reload-tier (see quality.js's own
 //              comment), not a shortcut taken here.
-//   - STUBBED: rock detail value, top-down view mode, keybind remapping,
-//              audio volume's actual effect — persisted correctly but
-//              nothing downstream reads them yet (no modifiers.js, no
-//              top-down controller, no remapping, no audio system exist in
-//              this rebuild). Flagged in place, not faked.
+//   - STUBBED: audio volume's actual effect — persisted correctly but
+//              nothing downstream reads it yet (no audio system exists in
+//              this rebuild). Flagged in place, not faked. Rock detail,
+//              top-down view mode, and keybind remapping used to be on
+//              this list too — all three are real now (see
+//              environment/rocks.js, main.js's isTopDown branch, and
+//              core/keybinds.js respectively).
 
 import { getSettings, setSetting, DEFAULT_DRAW_DISTANCE } from './settings.js';
 import { getQuality, setQuality } from './quality.js';
 import { getViewMode, setViewMode } from './view-mode.js';
 import { hasStartedGame, exportSaveFile, importSaveFile, startAutosaveLoop } from './save-system.js';
-
-const KEYBINDS = [
-    ['W / A / S / D', 'Move'],
-    ['Shift', 'Run'],
-    ['Mouse', 'Look (click to lock pointer)'],
-    ['E', 'Interact / recruit'],
-    ['Esc', 'Pause'],
-];
+import { getKeybinds, setKeybind, resetKeybinds, ACTION_LABELS, codeToLabel } from './keybinds.js';
 
 function renderKeybindList(containerId) {
     const el = document.getElementById(containerId);
     if (!el) return;
-    el.innerHTML = KEYBINDS.map(([key, action]) =>
-        `<div class="keybind-row"><span class="keybind-key">${key}</span><span class="keybind-action">${action}</span></div>`
-    ).join('');
+    const kb = getKeybinds();
+    el.innerHTML = Object.keys(ACTION_LABELS).map((action) =>
+        `<div class="keybind-row">
+            <span class="keybind-action">${ACTION_LABELS[action]}</span>
+            <button type="button" class="keybind-key keybind-rebind-btn" data-action="${action}">${codeToLabel(kb[action])}</button>
+        </div>`
+    ).join('') + `<div class="keybind-row"><span class="keybind-action">Look</span><span class="keybind-key">Mouse (click to lock pointer)</span></div>
+                  <div class="keybind-row"><span class="keybind-action">Pause</span><span class="keybind-key">Esc</span></div>`;
+
+    // One capturing listener on the container, not one per button — the
+    // list gets rebuilt (innerHTML replaced) every render, which would
+    // otherwise mean re-attaching per-button listeners each time or
+    // leaking old ones.
+    el.querySelectorAll('.keybind-rebind-btn').forEach((btn) => {
+        btn.addEventListener('click', () => startRebindCapture(btn, btn.dataset.action));
+    });
+}
+
+// Only one rebind capture active at a time, across BOTH the title and
+// pause panels' keybind lists (renderKeybindList runs for each) — without
+// this, listening for the next keydown on two buttons simultaneously
+// (title's and pause's copy of the same action) would rebind from
+// whichever panel's listener happened to be registered first.
+let activeRebindCleanup = null;
+
+function startRebindCapture(btn, action) {
+    if (activeRebindCleanup) activeRebindCleanup();
+    const original = btn.textContent;
+    btn.textContent = 'Press a key…';
+    btn.classList.add('rebinding');
+
+    const onKeydown = (e) => {
+        e.preventDefault();
+        if (e.code === 'Escape') { // Escape cancels instead of binding — it's the pause-menu key, binding it to a movement action would be confusing
+            cleanup();
+            return;
+        }
+        setKeybind(action, e.code);
+        cleanup();
+        // Re-render both panels' lists (whichever exist) so a swapped
+        // conflict action's displayed key updates too, not just this one.
+        renderKeybindList('title-keybind-list');
+        renderKeybindList('pause-keybind-list');
+    };
+    function cleanup() {
+        document.removeEventListener('keydown', onKeydown, true);
+        btn.classList.remove('rebinding');
+        activeRebindCleanup = null;
+    }
+    activeRebindCleanup = cleanup;
+    document.addEventListener('keydown', onKeydown, true); // capture phase — needs to intercept before main.js's own movement keydown listener acts on the key being pressed to rebind
 }
 
 function flashAutosaveIcon() {
@@ -103,6 +146,19 @@ function wireReloadCheckbox(titleId, pauseId, key) {
     });
 }
 
+function wireReloadSlider(titleId, pauseId, key, defaultValue) {
+    const settings = getSettings();
+    [document.getElementById(titleId), document.getElementById(pauseId)].filter(Boolean).forEach((el) => {
+        el.value = key in settings ? settings[key] : defaultValue;
+        // 'change' (fires on release), not 'input' — this reloads the
+        // page, so firing on every drag tick would reload mid-drag.
+        el.addEventListener('change', () => {
+            setSetting(key, Number(el.value));
+            location.reload();
+        });
+    });
+}
+
 function wireExportImport() {
     ['title-export-save-btn', 'pause-export-save-btn'].forEach((id) => {
         const btn = document.getElementById(id);
@@ -130,13 +186,16 @@ function wireExportImport() {
 // hardcoded KeyboardEvent.code checks), so there's nothing to reset yet.
 // Wired to a friendly no-op status message rather than silently doing
 // nothing on click.
-function wireKeybindResetStub(id, statusId) {
+function wireKeybindReset(id, statusId) {
     const btn = document.getElementById(id);
     if (!btn) return;
     btn.addEventListener('click', () => {
+        resetKeybinds();
+        renderKeybindList('title-keybind-list');
+        renderKeybindList('pause-keybind-list');
         const status = statusId && document.getElementById(statusId);
         if (status) {
-            status.textContent = 'Controls aren\'t remappable yet — nothing to reset';
+            status.textContent = 'Controls reset to defaults';
             setTimeout(() => { status.textContent = ''; }, 2000);
         }
     });
@@ -342,13 +401,17 @@ export function setupInput(state) {
     // fov/sensitivity which write straight into camera/uniform state.
     wireLiveControl(state, { titleId: 'title-fps-counter-checkbox', pauseId: 'pause-fps-counter-checkbox', key: 'showFpsCounter', isCheckbox: true });
     wireLiveControl(state, { titleId: 'title-disable-weather-checkbox', pauseId: 'pause-disable-weather-checkbox', key: 'disableWeather', isCheckbox: true });
+    wireLiveControl(state, { titleId: 'title-wave-height-slider', key: 'waveHeightMult' });
+    wireLiveControl(state, { titleId: 'title-wave-speed-slider', key: 'waveSpeedMult' });
+    wireLiveControl(state, { titleId: 'title-storm-reactivity-slider', key: 'stormReactivityMult' });
+    wireReloadSlider('title-rock-roughness-slider', 'pause-rock-roughness-slider', 'rockRoughnessMult', 1.0);
     // Antialiasing — reload-tier, same as forceTouchControls: the
     // WebGLRenderer's antialias flag is a constructor-time option, can't
     // be flipped on a live renderer.
     wireReloadCheckbox('title-antialiasing-checkbox', 'pause-antialiasing-checkbox', 'antialiasing');
     wireExportImport();
-    wireKeybindResetStub('title-keybind-reset-btn', 'title-save-status');
-    wireKeybindResetStub('pause-keybind-reset-btn', 'pause-save-status');
+    wireKeybindReset('title-keybind-reset-btn', 'title-save-status');
+    wireKeybindReset('pause-keybind-reset-btn', 'pause-save-status');
 
     // Modifiers tab's wave-height/wave-speed/storm-reactivity sliders and
     // its "Reset to defaults" button are NOT wired here — water.js has no

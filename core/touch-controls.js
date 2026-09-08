@@ -151,6 +151,26 @@ function setupActionButtons(state, attemptRecruitInteraction) {
         sprintBtn.addEventListener('touchcancel', stop);
     }
 
+    const jumpBtn = document.getElementById('touch-jump-btn');
+    if (jumpBtn) {
+        // Sets both like Space's keydown does: jumpPressed (one-shot,
+        // consumed by _updatePlayer each frame — see main.js) triggers an
+        // actual jump when grounded, jumpHeld (continuous) drives the
+        // swim-up float while in water. touchstart can fire again before
+        // jumpPressed gets consumed on a very fast double-tap, but
+        // _updatePlayer only reads it once per frame regardless.
+        jumpBtn.addEventListener('touchstart', (e) => {
+            if (state.isPaused) return;
+            state.move.jumpPressed = true;
+            state.move.jumpHeld = true;
+            jumpBtn.classList.add('active');
+            e.preventDefault();
+        }, { passive: false });
+        const stop = () => { state.move.jumpHeld = false; jumpBtn.classList.remove('active'); };
+        jumpBtn.addEventListener('touchend', stop);
+        jumpBtn.addEventListener('touchcancel', stop);
+    }
+
     const interactBtn = document.getElementById('touch-interact-btn');
     if (interactBtn) {
         interactBtn.addEventListener('touchstart', (e) => {

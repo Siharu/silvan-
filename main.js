@@ -14,9 +14,11 @@
 // system exist in this rebuild).
 
 import * as THREE from 'three';
-import { createWorldState } from './core/world-state.js';
+import { createWorldState, WATER_LEVEL } from './core/world-state.js';
 import { getSettings } from './core/settings.js';
 import { getQualityCounts } from './core/quality.js';
+import { getViewMode } from './core/view-mode.js';
+import { getKeybinds } from './core/keybinds.js';
 import { setupInput, toggleTimeFastForward } from './core/input.js';
 import { markGameStarted } from './core/save-system.js';
 
@@ -35,7 +37,7 @@ import { createRocks } from './environment/rocks.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
 import { createWater, updateWater } from './environment/water.js';
 import { createRadioTower, updateRadioTower } from './environment/radio-tower.js';
-import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecruitInteraction } from './environment/animals.js';
+import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecruitInteraction, updateRadioTowerProximity } from './environment/animals.js';
 import { createDayNightCycle, updateDayNightCycle, updateStars } from './atmosphere/day-night-cycle.js';
 import { setupTouchControls } from './core/touch-controls.js';
 
@@ -213,7 +215,7 @@ function setupPlayerController() {
     // joystick can toggle the exact same booleans the keydown/keyup
     // listeners below set — one movement path, two input methods, per
     // PLAN.md's mobile scope note.
-    const move = { forward: false, back: false, left: false, right: false, run: false };
+    const move = { forward: false, back: false, left: false, right: false, run: false, jumpPressed: false, jumpHeld: false };
     state.move = move;
     let yaw = 0, pitch = 0;
     const PLAYER_SPEED = 8;
@@ -233,25 +235,30 @@ function setupPlayerController() {
 
     document.addEventListener('keydown', (e) => {
         if (state.isPaused) return;
-        if (e.code === 'KeyW') move.forward = true;
-        if (e.code === 'KeyS') move.back = true;
-        if (e.code === 'KeyA') move.left = true;
-        if (e.code === 'KeyD') move.right = true;
-        if (e.code === 'ShiftLeft') move.run = true;
+        const kb = getKeybinds();
+        if (e.code === kb.moveForward) move.forward = true;
+        if (e.code === kb.moveBack) move.back = true;
+        if (e.code === kb.moveLeft) move.left = true;
+        if (e.code === kb.moveRight) move.right = true;
+        if (e.code === kb.run) move.run = true;
+        if (e.code === kb.jump) { move.jumpPressed = true; move.jumpHeld = true; }
     });
     document.addEventListener('keyup', (e) => {
-        if (e.code === 'KeyW') move.forward = false;
-        if (e.code === 'KeyS') move.back = false;
-        if (e.code === 'KeyA') move.left = false;
-        if (e.code === 'KeyD') move.right = false;
-        if (e.code === 'ShiftLeft') move.run = false;
-        if (e.code === 'KeyE' && !state.isPaused) attemptRecruitInteraction(state);
-        if (e.code === 'KeyR' && !state.isPaused) toggleTimeFastForward(state);
+        const kb = getKeybinds();
+        if (e.code === kb.moveForward) move.forward = false;
+        if (e.code === kb.moveBack) move.back = false;
+        if (e.code === kb.moveLeft) move.left = false;
+        if (e.code === kb.moveRight) move.right = false;
+        if (e.code === kb.run) move.run = false;
+        if (e.code === kb.jump) move.jumpHeld = false;
+        if (e.code === kb.interact && !state.isPaused) attemptRecruitInteraction(state);
+        if (e.code === kb.fastForward && !state.isPaused) toggleTimeFastForward(state);
     });
 
     state.renderer.domElement.addEventListener('click', () => {
         if (state.isPaused) return; // don't re-lock the pointer by clicking through the pause panel
         if (state.touchControlsActive) return; // touch devices drive look via the drag zone, not pointer lock — most mobile browsers handle it poorly/not at all anyway
+        if (getViewMode() === 'topdown') return; // fixed isometric angle — no mouselook to lock the pointer for
         state.renderer.domElement.requestPointerLock();
     });
 
@@ -263,11 +270,51 @@ function setupPlayerController() {
     state.player.position.x = 0;
     state.player.position.z = 20;
     state.player.position.y = getElevation(0, 20, state) + state.player.height;
+    state.player.velocityY = 0;
+    state.player.grounded = true;
+    state.player.swimming = false;
+
+    // Top-down mode needs something to actually look down AT — this
+    // project is first-person only otherwise, no player avatar exists at
+    // all. Simple placeholder capsule, not a real character model (out of
+    // scope) — see getViewMode()'s own comment on what this mode does and
+    // doesn't include (fixed isometric camera + a visible body; no click-
+    // to-move pathfinding, no detailed model).
+    const isTopDown = getViewMode() === 'topdown';
+    if (isTopDown) {
+        const avatarGeo = new THREE.CapsuleGeometry(0.35, state.player.height - 0.7, 4, 8);
+        const avatarMat = new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.8 });
+        state.playerAvatar = new THREE.Mesh(avatarGeo, avatarMat);
+        state.playerAvatar.castShadow = false; // shadows are off project-wide (main.js's setupRenderer) — flatShading/no-shadow keeps this consistent rather than half-implementing shadow casting for one mesh
+        state.scene.add(state.playerAvatar);
+    }
+
+    const GRAVITY = 22;
+    const JUMP_SPEED = 8.5;
+    const SWIM_SPEED_MULT = 0.55; // slower than walking — water resistance
+    const SWIM_FLOAT_SPEED = 4; // vertical rise/sink rate while swimming
 
     state._updatePlayer = function updatePlayer(delta) {
         if (state.isPaused) return; // freeze movement entirely rather than just ignoring new key events —
         // keys already held down when Escape was pressed would otherwise keep the player sliding under the pause panel
-        const speed = PLAYER_SPEED * (move.run ? RUN_MULT : 1) * delta;
+        const jumpRequested = move.jumpPressed;
+        move.jumpPressed = false; // consume every frame regardless of outcome — see keydown handler's comment on why this doesn't need a keyup reset too
+
+        // Computed against the PRE-move position, purely to decide this
+        // frame's speed multiplier — re-derived against the POST-move
+        // position below for the actual vertical resolution (matches the
+        // original single-groundY structure, just needs an earlier read
+        // too since swim speed has to apply to the horizontal move itself).
+        const groundYBefore = getElevation(state.player.position.x, state.player.position.z, state) + state.player.height;
+        // "Swimming" = standing over terrain whose surface sits below the
+        // waterline (a lake/ocean floor), not just being near WATER_LEVEL
+        // in general — matches how bushes.js/flowers.js/puddles.js already
+        // gate their own placement off real ground elevation vs WATER_LEVEL.
+        const overWater = groundYBefore < WATER_LEVEL + state.player.height;
+        state.player.swimming = overWater;
+
+        const speedMult = (move.run ? RUN_MULT : 1) * (overWater ? SWIM_SPEED_MULT : 1);
+        const speed = PLAYER_SPEED * speedMult * delta;
         // FIXED: at yaw=0 a Three.js camera looks down -Z by default. The
         // previous forward=(sin(yaw),cos(yaw)) evaluated to (0,0,1) at
         // yaw=0 — that's +Z, the OPPOSITE of the camera's actual look
@@ -291,13 +338,64 @@ function setupPlayerController() {
         state.player.isRunning = move.run && dir.lengthSq() > 0;
 
         const groundY = getElevation(state.player.position.x, state.player.position.z, state) + state.player.height;
-        state.player.position.y += (groundY - state.player.position.y) * Math.min(1, delta * 10); // smoothed, not snapped, so slopes don't feel jittery
 
-        state.camera.position.set(state.player.position.x, state.player.position.y, state.player.position.z);
-        state.camera.rotation.set(pitch, yaw, 0, 'YXZ');
+        if (overWater) {
+            // Float at the water surface instead of sinking to the
+            // underwater terrain floor. Space rises, nothing held sinks
+            // slowly back toward the surface (never below groundY, so you
+            // can still walk out the shallow end onto real ground).
+            const waterSurfaceY = WATER_LEVEL + state.player.height;
+            const targetY = jumpRequested || move.jumpHeld
+                ? state.player.position.y + SWIM_FLOAT_SPEED * delta
+                : waterSurfaceY;
+            state.player.position.y = THREE.MathUtils.clamp(
+                state.player.position.y + (targetY - state.player.position.y) * Math.min(1, delta * 4),
+                groundY, waterSurfaceY + 1.5
+            );
+            state.player.velocityY = 0;
+            state.player.grounded = false;
+        } else if (state.player.grounded && !jumpRequested) {
+            // Normal ground-follow — smoothed, not snapped, so slopes don't feel jittery.
+            state.player.position.y += (groundY - state.player.position.y) * Math.min(1, delta * 10);
+        } else {
+            // Airborne: real ballistic motion (jump arc or falling off a ledge).
+            if (jumpRequested && state.player.grounded) {
+                state.player.velocityY = JUMP_SPEED;
+                state.player.grounded = false;
+            }
+            state.player.velocityY -= GRAVITY * delta;
+            state.player.position.y += state.player.velocityY * delta;
+            if (state.player.position.y <= groundY) {
+                state.player.position.y = groundY;
+                state.player.velocityY = 0;
+                state.player.grounded = true;
+            }
+        }
+
+        if (isTopDown && state.playerAvatar) {
+            // Fixed isometric offset — Disco Elysium's signature high,
+            // steep-angle follow camera, not mouselook. Distance/height
+            // tuned for a wide-ish view without feeling like a minimap.
+            const ISO_DIST = 9, ISO_HEIGHT = 12;
+            state.camera.position.set(
+                state.player.position.x,
+                state.player.position.y + ISO_HEIGHT,
+                state.player.position.z + ISO_DIST
+            );
+            state.camera.lookAt(state.player.position.x, state.player.position.y, state.player.position.z);
+
+            state.playerAvatar.position.set(state.player.position.x, state.player.position.y - state.player.height / 2 + 0.35, state.player.position.z);
+            if (dir.lengthSq() > 0) {
+                // Face the actual movement direction, not the (unused,
+                // always-zero in this mode) mouselook yaw.
+                state.playerAvatar.rotation.y = Math.atan2(dir.x, dir.z);
+            }
+        } else {
+            state.camera.position.set(state.player.position.x, state.player.position.y, state.player.position.z);
+            state.camera.rotation.set(pitch, yaw, 0, 'YXZ');
+        }
     };
 }
-
 async function init() {
     setLoadingProgress(0.02, 'Setting up renderer');
     setupRenderer();
@@ -427,6 +525,7 @@ function animate() {
     updateDustParticles(state, ts);
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
+    updateRadioTowerProximity(state);
     updateInteractPrompt(state);
     updateForestLOD(state, ts); // camera position + leaf-flutter wind uTime feed for forest.js's shaders — see forest.js's export comment
     updateFpsCounter(state);

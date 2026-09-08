@@ -25,8 +25,10 @@
 import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
 import { WORLD_SIZE } from '../core/world-state.js';
+import { getSettings } from '../core/settings.js';
 
 const gerstnerWaveGLSL = `
+    uniform float u_heightMult;
     vec3 gerstnerWave(
         vec4 wave, vec3 p, inout vec3 tangent, inout vec3 binormal
     ) {
@@ -36,7 +38,7 @@ const gerstnerWaveGLSL = `
         float c = sqrt(9.8 / k);
         vec2 d = normalize(wave.xy);
         float f = k * (dot(d, p.xz) - c * u_time * u_speed);
-        float a = steepness / k;
+        float a = (steepness / k) * u_heightMult; // u_heightMult: live "Wave Height" slider + storm-reactivity boost, see updateWater()
         float sinf = sin(f);
         float cosf = cos(f);
         float wa = k * a;
@@ -183,6 +185,7 @@ function buildGerstnerMaterial(presetName) {
         u_foamThreshold: { value: p.foamThreshold },
         u_opacity: { value: p.opacity },
         u_lightDir: { value: new THREE.Vector3(1.0, 1.0, 1.0).normalize() },
+        u_heightMult: { value: 1.0 }, // live "Wave Height" slider + storm-reactivity boost — set each frame in updateWater()
         u_waves: {
             value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]
         }
@@ -197,13 +200,15 @@ function buildGerstnerMaterial(presetName) {
     setWave(2, p.w3_dir, p.w3_steep, p.w3_len);
     setWave(3, p.w4_dir, p.w4_steep, p.w4_len);
 
-    return new THREE.ShaderMaterial({
+    const mat = new THREE.ShaderMaterial({
         vertexShader: waterVertexShader,
         fragmentShader: waterFragmentShader,
         uniforms,
         transparent: true,
         side: THREE.DoubleSide
     });
+    mat.userData.baseSpeed = p.speed; // preset's own baseline speed, kept separate from u_speed's live value so "Wave Speed" can scale it each frame (updateWater) without losing it
+    return mat;
 }
 
 function buildGerstnerMesh(size, segments, presetName) {
@@ -279,14 +284,31 @@ export function updateWater(state, ts) {
     if (state.water) {
         state.water.material.uniforms['time'].value += 1 / 60; // THREE.Water expects a delta-like increment, not absolute ts
     }
+
+    // Wave Height / Wave Speed / Storm Reactivity — live settings sliders
+    // (Modifiers tab), previously unwired (persisted, nothing read them
+    // back). Only the Gerstner-based meshes (lakeFallbackMesh, oceanMesh)
+    // can respond — THREE.Water (state.water, the primary reflection
+    // lake) has no steepness/wavelength uniforms to scale at all.
+    const settings = getSettings();
+    const heightMult = settings.waveHeightMult ?? 1.0;
+    const speedMult = settings.waveSpeedMult ?? 1.0;
+    const stormMult = settings.stormReactivityMult ?? 1.0;
+    const rainIntensity = state.currentRainIntensity || 0;
+    const effectiveHeightMult = heightMult * (1.0 + rainIntensity * stormMult); // continuous rain-linked boost on top of the base slider
+
     if (state.lakeFallbackMesh) {
         const u = state.lakeFallbackMesh.material.uniforms;
         u.u_time.value = ts;
+        u.u_heightMult.value = effectiveHeightMult;
+        u.u_speed.value = state.lakeFallbackMesh.material.userData.baseSpeed * speedMult;
         if (state.sunPosition) u.u_lightDir.value.copy(state.sunPosition).normalize();
     }
     if (state.oceanMesh) {
         const u = state.oceanMesh.material.uniforms;
         u.u_time.value = ts;
+        u.u_heightMult.value = effectiveHeightMult;
+        u.u_speed.value = state.oceanMesh.material.userData.baseSpeed * speedMult;
         if (state.sunPosition) u.u_lightDir.value.copy(state.sunPosition).normalize();
     }
 }

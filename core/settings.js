@@ -34,6 +34,11 @@ const DEFAULT_SETTINGS = {
     antialiasing: true, // reload-tier — passed to the WebGLRenderer constructor, can't be changed on an existing renderer
     showFpsCounter: false, // live — toggles #fps-counter's visibility, see main.js's animate()
     disableWeather: false, // live-ish (checked each updateWeather() call) — forces state.currentRainIntensity toward 0 regardless of the weather cycle's current phase
+    waveHeightMult: 1.0, // live — Modifiers tab, see environment/water.js's updateWater()
+    waveSpeedMult: 1.0,  // live — same
+    stormReactivityMult: 1.0, // live — same, scales how much extra height rain adds on top of waveHeightMult
+    rockDetail: 'med', // reload-tier — see environment/rocks.js's buildRockMesh()
+    rockRoughnessMult: 1.0, // reload-tier (matches the UI label) — multiplies each rock material's PBR roughness at generation time, see buildRockMesh()
     forceTouchControls: false, // shows the mobile touch UI (core/touch-controls.js) even on a device that doesn't report touch support — for testing on desktop, or a hybrid touchscreen laptop that the browser doesn't self-report correctly
 };
 

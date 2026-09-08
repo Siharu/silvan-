@@ -325,6 +325,18 @@ function setInteractPrompt(state, text, visible) {
 // entirely depending on call order. Called once per frame, after both
 // systems have updated their flags, with the tower taking priority on the
 // rare frame a player is in range of both at once.
+// Was read by updateInteractPrompt (below) but never actually set
+// anywhere — environment/radio-tower.js builds the tower mesh/group but
+// has no proximity logic at all, so the "[E] LOOK AT THE TOWER" hint
+// could never trigger. Mirrors the animal proximity check's own distance
+// math, just against state.radioTower.position instead of a rig list.
+export function updateRadioTowerProximity(state) {
+    if (!state.radioTower) { state.nearRadioTower = false; return; }
+    const dx = state.player.position.x - state.radioTower.position.x;
+    const dz = state.player.position.z - state.radioTower.position.z;
+    state.nearRadioTower = Math.hypot(dx, dz) < 8;
+}
+
 export function updateInteractPrompt(state) {
     if (state.cutsceneActive) return; // the cutscene owns #cutscene-caption instead, leave this alone
     if (state.interactPromptTimer) return; // a JOIN/NOT-THIS-TIME result message is still showing, don't stomp it
@@ -405,6 +417,22 @@ export function spawnDemoAnimals(state) {
 // yet); keeps the same odds and outcome text. Called from core/input.js on
 // a raw KeyE edge-trigger, not per-frame, so holding E can't spam rolls.
 export function attemptRecruitInteraction(state) {
+    if (state.nearRadioTower) {
+        // Honest placeholder — no ARG/lore payload wired to this yet
+        // (this project's WNCORE Radio/Cygnus Signal Series tie-in, if
+        // any, isn't specified anywhere in this codebase). Just
+        // acknowledges the interaction actually happened instead of
+        // silently doing nothing, same UI pattern as the animal
+        // JOINS-YOU/NOT-THIS-TIME messages below.
+        setInteractPrompt(state, 'THE TOWER HUMS, BUT SAYS NOTHING YET', true);
+        if (state.interactPromptTimer) clearTimeout(state.interactPromptTimer);
+        state.interactPromptTimer = setTimeout(() => {
+            state.interactPromptTimer = null;
+            setInteractPrompt(state, '', false);
+        }, 1200);
+        return;
+    }
+
     if (!state.demoAnimals || !state.currentInteractableAnimal) return;
     const rig = state.demoAnimals.find(r => r.name === state.currentInteractableAnimal);
     if (!rig || rig.following) return;
