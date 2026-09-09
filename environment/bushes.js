@@ -24,6 +24,8 @@
 import * as THREE from 'three';
 import { getElevation } from './terrain.js';
 import { WORLD_SIZE, WATER_LEVEL } from '../core/world-state.js';
+import { buildChunkedInstancedField } from '../core/chunks.js';
+import { getSettings } from '../core/settings.js';
 
 const LEAF_COUNT = 45000; // fallback if state.quality is missing — createBushes shadows this with a quality-scaled local
 const CLUSTER_COUNT = 700; // fallback if state.quality is missing — same shadowing, see createBushes
@@ -112,12 +114,16 @@ export function createBushes(state) {
     });
     depthMaterial.onBeforeCompile = (shader) => injectWindShader(shader, uniforms, false);
 
-    const leavesMesh = new THREE.InstancedMesh(leafGeometry, leafMaterial, LEAF_COUNT);
-    leavesMesh.customDepthMaterial = depthMaterial;
-    leavesMesh.castShadow = true;
-    leavesMesh.receiveShadow = true;
-
-    const dummy = new THREE.Object3D();
+    // Was a single map-spanning InstancedMesh sized for LEAF_COUNT (up to
+    // 45,000 leaves) with one bounding sphere covering the whole SPREAD
+    // radius — the same single-mesh culling gap flowers.js/fireflies.js
+    // had (see core/chunks.js's header comment) before those two were
+    // wired into chunked instancing. Bushes had the exact same shape of
+    // bug and just hadn't been converted yet. Now collects placements
+    // into a flat array during the growth passes below, then hands them
+    // to buildChunkedInstancedField afterward instead of writing directly
+    // into one instanced mesh.
+    const placements = [];
     const color = new THREE.Color();
     const branchVertices = [];
     let leafIndex = 0;
@@ -149,17 +155,7 @@ export function createBushes(state) {
                 const lx = end.x + (Math.random() - 0.5) * 1.4;
                 const ly = end.y + (Math.random() - 0.5) * 1.4;
                 const lz = end.z + (Math.random() - 0.5) * 1.4;
-
-                dummy.position.set(lx, ly, lz);
-                dummy.rotation.set(
-                    Math.random() * Math.PI,
-                    Math.random() * Math.PI,
-                    Math.random() * Math.PI * 0.2 - 0.1
-                );
                 const scale = 0.14 + Math.random() * 0.22; // shrunk down — was 0.4-0.9, way too large for a bush-scale leaf
-                dummy.scale.set(scale, scale, scale);
-                dummy.updateMatrix();
-                leavesMesh.setMatrixAt(leafIndex, dummy.matrix);
 
                 const mix = Math.random();
                 if (mix < 0.7) {
@@ -169,7 +165,15 @@ export function createBushes(state) {
                 } else {
                     color.setHSL(0.08 + Math.random() * 0.05, 0.4 + Math.random() * 0.2, 0.15 + Math.random() * 0.1);
                 }
-                leavesMesh.setColorAt(leafIndex, color);
+
+                placements.push({
+                    x: lx, y: ly, z: lz,
+                    scaleX: scale, scaleY: scale, scaleZ: scale,
+                    rotX: Math.random() * Math.PI,
+                    rotY: Math.random() * Math.PI,
+                    rotZ: Math.random() * Math.PI * 0.2 - 0.1,
+                    colorHex: color.getHex(),
+                });
                 leafIndex++;
             }
         }
@@ -229,10 +233,23 @@ export function createBushes(state) {
         }
     }
 
-    leavesMesh.count = leafIndex;
-    leavesMesh.instanceMatrix.needsUpdate = true;
-    leavesMesh.instanceColor.needsUpdate = true;
-    state.scene.add(leavesMesh);
+    const leafField = buildChunkedInstancedField({
+        scene: state.scene,
+        geometry: leafGeometry,
+        material: leafMaterial,
+        worldExtent: SPREAD * 2 + 40,
+        cellSize: 40,
+        drawDistance: getSettings().drawDistance || 150,
+        placements,
+    });
+    // customDepthMaterial/castShadow/receiveShadow are per-mesh, so each
+    // chunk needs them set individually — buildChunkedInstancedField
+    // doesn't know about shadow materials, only geometry/material/placement.
+    for (const chunk of leafField.chunks) {
+        chunk.customDepthMaterial = depthMaterial;
+        chunk.castShadow = true;
+        chunk.receiveShadow = true;
+    }
 
     const branchGeo = new THREE.BufferGeometry();
     branchGeo.setAttribute('position', new THREE.Float32BufferAttribute(branchVertices, 3));
@@ -247,7 +264,7 @@ export function createBushes(state) {
     state.scene.add(branchesMesh);
 
     state.bushUniforms = uniforms;
-    state.bushLeavesMesh = leavesMesh;
+    state.bushLeafField = leafField; // update(camPos) called each frame below
     state.bushBranchesMesh = branchesMesh;
 }
 
@@ -255,5 +272,8 @@ export function createBushes(state) {
 export function updateBushes(state, ts) {
     if (state.bushUniforms) {
         state.bushUniforms.time.value = ts;
+    }
+    if (state.bushLeafField && state.camera) {
+        state.bushLeafField.update(state.camera.position);
     }
 }

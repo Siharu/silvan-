@@ -19,6 +19,7 @@ export const DEFAULT_KEYBINDS = {
     jump: 'Space',
     interact: 'KeyE',
     fastForward: 'KeyR',
+    rest: 'KeyG', // 'R' is already claimed by fast-forward — see main.js's rest-handling comment
 };
 
 export const ACTION_LABELS = {
@@ -30,6 +31,7 @@ export const ACTION_LABELS = {
     jump: 'Jump / Swim Up',
     interact: 'Interact',
     fastForward: 'Fast-Forward Time',
+    rest: 'Rest (Sleep to Morning)',
 };
 
 function loadKeybinds() {

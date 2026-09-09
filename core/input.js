@@ -13,13 +13,12 @@
 //              persisted, then location.reload() so main.js's init() picks
 //              them up fresh. Genuinely reload-tier (see quality.js's own
 //              comment), not a shortcut taken here.
-//   - STUBBED: audio volume's actual effect — persisted correctly but
-//              nothing downstream reads it yet (no audio system exists in
-//              this rebuild). Flagged in place, not faked. Rock detail,
-//              top-down view mode, and keybind remapping used to be on
-//              this list too — all three are real now (see
-//              environment/rocks.js, main.js's isTopDown branch, and
-//              core/keybinds.js respectively).
+//   - STUBBED: nothing left in this category — rock detail, top-down view
+//              mode, keybind remapping, and audio volume (core/audio.js's
+//              gain buses) are all real now. Audio still has no actual
+//              sound files to play (see core/audio.js's header), but the
+//              volume controls themselves apply live, same as everything
+//              else on this list.
 
 import { getSettings, setSetting, DEFAULT_DRAW_DISTANCE } from './settings.js';
 import { getQuality, setQuality } from './quality.js';
@@ -349,13 +348,25 @@ export function setupInput(state) {
             if (s.scene && s.scene.fog) s.scene.fog.density = 0.0052 * value; // matches main.js's base FogExp2 density
         },
     });
-    // Volume sliders: persisted correctly, but this rebuild has no audio
-    // system yet (no Howl/Howler usage anywhere in the codebase) — nothing
-    // downstream to push the live value into. Stubbed honestly rather than
-    // pretending a volume control that controls nothing is fully wired.
-    wireLiveControl(state, { titleId: 'title-volume-slider', pauseId: 'pause-volume-slider', key: 'masterVolume' });
-    wireLiveControl(state, { titleId: 'title-ambience-volume-slider', pauseId: 'pause-ambience-volume-slider', key: 'ambienceVolume' });
-    wireLiveControl(state, { titleId: 'title-sfx-volume-slider', pauseId: 'pause-sfx-volume-slider', key: 'sfxVolume' });
+    // Volume sliders: now backed by core/audio.js's real gain buses (was:
+    // persisted correctly but no audio system existed at all to push the
+    // value into — see that file's header for what it does and doesn't do
+    // yet, since no actual sound assets exist in the project). Each slider
+    // pushes straight into its gain node's live .value, same as the FOV/
+    // fog sliders above — audible the instant it moves, once a sound is
+    // actually playing through that bus.
+    wireLiveControl(state, {
+        titleId: 'title-volume-slider', pauseId: 'pause-volume-slider', key: 'masterVolume',
+        onLive: (value, s) => { if (s.audio) s.audio.masterGain.gain.value = value; },
+    });
+    wireLiveControl(state, {
+        titleId: 'title-ambience-volume-slider', pauseId: 'pause-ambience-volume-slider', key: 'ambienceVolume',
+        onLive: (value, s) => { if (s.audio) s.audio.ambienceGain.gain.value = value; },
+    });
+    wireLiveControl(state, {
+        titleId: 'title-sfx-volume-slider', pauseId: 'pause-sfx-volume-slider', key: 'sfxVolume',
+        onLive: (value, s) => { if (s.audio) s.audio.sfxGain.gain.value = value; },
+    });
 
     // --- Reload-tier controls ---
     wireToggleGroup({

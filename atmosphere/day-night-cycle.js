@@ -174,18 +174,23 @@ export function updateDayNightCycle(state, delta) {
 
         state.moonLight.intensity = 0;
 
-        // Ground-bounce lightness/intensity ceilings both lowered — at
-        // intensity=1 (midday) this used to reach RGB (0.75, 0.54, 0.25)
-        // at 1.0 hemisphere intensity: a bright warm-orange ambient wash
-        // over every upward-facing surface (terrain, grass, bushes)
-        // across the whole map, which is what was actually keeping the
-        // ground looking pale/khaki no matter how dark its own albedo was
-        // set — the lighting was overpowering the material, not the
-        // material being wrong. Sky-color (upper hemisphere) ceiling
-        // trimmed to match, so it doesn't look mismatched next to the now-
-        // dimmer ground bounce.
-        state.hemiLight.color.setHSL(0.6, 0.6, 0.35 + intensity * 0.3);
-        state.hemiLight.groundColor.setHSL(0.08, 0.35, 0.05 + intensity * 0.18);
+        // HemisphereLight lights a surface by which way its normal points:
+        // up-facing surfaces (terrain, grass tops, bush tops) are lit by
+        // `color` (the "sky" half); down-facing surfaces (leaf/canopy
+        // undersides) are lit by `groundColor`. The previous pass here
+        // dimmed `groundColor`'s ceiling thinking that was "the ground
+        // bounce" — but the terrain itself faces up, so it was actually
+        // still being lit almost entirely by `color`, which was left at a
+        // fairly saturated sky-blue (hue 0.6, up to 65% lightness at
+        // midday). That blue mixed with the dark olive-green grass albedo
+        // in terrain.js and read as a green/teal cast that tracked the
+        // day-night cycle. Swapped which one gets the lowered/desaturated
+        // ceiling: `color` (lights the terrain) is now dimmer and less
+        // saturated so it doesn't fight the albedo; `groundColor` (lights
+        // undersides) keeps a warm bounce tone since that's the one that
+        // visually reads as ambient occlusion/bounce light there.
+        state.hemiLight.color.setHSL(0.58, 0.3, 0.18 + intensity * 0.18);
+        state.hemiLight.groundColor.setHSL(0.08, 0.4, 0.08 + intensity * 0.2);
         state.hemiLight.intensity = 0.4 + intensity * 0.25;
 
         state.renderer.toneMappingExposure = Math.max(0.4, intensity * 0.65); // was up to 0.8
@@ -195,7 +200,11 @@ export function updateDayNightCycle(state, delta) {
         state.sunLight.intensity = 0;
         state.moonLight.intensity = intensity * 1.8;
 
-        state.hemiLight.color.setHSL(0.65, 0.4, 0.15 + intensity * 0.1);
+        // Same up-facing/down-facing split as the daytime branch above —
+        // `color` lights the terrain at night, so it stays a low-saturation
+        // dark blue instead of a strong one, to avoid the same green/teal
+        // mixing issue with the grass albedo after moonlight is added in.
+        state.hemiLight.color.setHSL(0.6, 0.2, 0.06 + intensity * 0.06);
         state.hemiLight.groundColor.setHSL(0.65, 0.3, 0.05 + intensity * 0.05);
         state.hemiLight.intensity = 0.3 + intensity * 0.2;
 

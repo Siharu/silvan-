@@ -277,3 +277,27 @@ export function createRocks(state) {
     }
     state.scene.add(state.rockGroup);
 }
+
+// Distance-based visibility culling — not the same chunked-InstancedMesh
+// approach flowers.js/bushes.js use (see core/chunks.js's header comment),
+// because rocks aren't instanced: each one is its own Mesh with its own
+// per-instance vertex-displacement shader uniforms (buildRockMesh above),
+// so there's no shared InstancedMesh to chunk in the first place — that's
+// the "bigger refactor" the bug report flagged and explicitly didn't
+// attempt. This is the smaller, real fix that IS in scope without
+// reworking how rocks are generated: rock count is small (default 90,
+// scaled by state.quality.rockCount) so frustum culling was never the
+// expensive part, but every rock mesh was permanently visible/rendered
+// regardless of distance. Hiding ones past draw distance still saves
+// real per-frame draw calls + shader evaluations on lower-end hardware,
+// same motivation as chunks.js's drawDistance parameter.
+export function updateRocks(state) {
+    if (!state.rockGroup || !state.camera) return;
+    const dd = (getSettings().drawDistance || 150) * 1.3; // slightly past the general draw distance — rocks are chunky/solid enough that popping out early reads worse than for grass/flowers
+    const dd2 = dd * dd;
+    const camX = state.camera.position.x, camZ = state.camera.position.z;
+    for (const child of state.rockGroup.children) {
+        const dx = camX - child.position.x, dz = camZ - child.position.z;
+        child.visible = (dx * dx + dz * dz) < dd2;
+    }
+}

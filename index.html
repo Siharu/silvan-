@@ -305,6 +305,19 @@
             line-height: 1.6;
             font-size: 0.875rem;
         }
+        /* #title-logo-text/h2 use Tailwind's text-7xl (4.5rem) + tracking-
+           [0.3em] utility classes in the markup, not the #ui-layer h1
+           fallback rule above — "SILVAN" at that size+tracking runs wide
+           enough (~345-370px) to clip or force horizontal overflow on
+           narrow phones (320-360px viewports), and nothing scaled it down.
+           ID selector here outranks the utility classes' specificity
+           without needing !important. */
+        @media (max-width: 420px) {
+            #title-logo-text {
+                font-size: 2.6rem;
+                letter-spacing: 0.18em;
+            }
+        }
         .water-overlay {
             position: fixed;
             inset: 0;
@@ -495,7 +508,46 @@
             opacity: 0;
             transition: opacity 0.8s ease;
         }
+        @media (max-width: 640px) {
+            .boundary-message {
+                white-space: normal;
+                width: min(24rem, 88vw);
+                font-size: 0.72rem;
+                padding: 0.7rem 1.1rem;
+            }
+        }
         .boundary-message.visible {
+            opacity: 1;
+        }
+        .rest-fade-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background: #000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.4s ease;
+        }
+        .rest-fade-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .rest-fade-text {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 51;
+            color: #cfd8dc;
+            font-weight: 300;
+            letter-spacing: 0.25em;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.4s ease;
+        }
+        .rest-fade-text.active {
             opacity: 1;
         }
         .interact-prompt {
@@ -1064,7 +1116,7 @@
             border-radius: 6px;
             backdrop-filter: blur(10px);
             box-shadow: 0 20px 60px rgba(0,0,0,0.9), inset 0 2px 0 rgba(255,255,255,0.08);
-            min-width: 20rem;
+            min-width: min(20rem, 92vw);
             max-height: 82vh;
             overflow-y: auto;
             font-family: 'VT323', monospace;
@@ -1118,7 +1170,7 @@
         /* Tabbed Settings panel — structure ported from
            silvan_titlescreen.html's tabs-header/settings-content, wrapped
            around the real controls above. */
-        .tabs-panel { padding: 0; overflow: hidden; min-width: 24rem; }
+        .tabs-panel { padding: 0; overflow: hidden; min-width: min(24rem, 92vw); }
         .tabs-header {
             display: flex;
             width: 100%;
@@ -1474,7 +1526,7 @@
         <div id="day-display">DAY: 1</div>
         <div id="weather-display" class="text-blue-300">WEATHER: CLEAR</div>
         <div class="mt-4 text-[11px] text-gray-400" id="hud-pause-hint">ESC TO PAUSE</div>
-        <div class="text-[11px] text-gray-400" id="hud-rest-hint">HOLD 'R' TO REST</div>
+        <div class="text-[11px] text-gray-400" id="hud-rest-hint">HOLD 'G' TO REST</div>
     </div>
 
     <!-- Mobile touch controls — core/touch-controls.js shows/hides this
@@ -1533,6 +1585,8 @@
     <div id="water-overlay" class="water-overlay"></div>
 
     <div id="boundary-message" class="boundary-message">The forest grows stranger past this point — no need to go there yet</div>
+    <div id="rest-fade-overlay" class="rest-fade-overlay"></div>
+    <div id="rest-fade-text" class="rest-fade-text">Resting...</div>
     <div id="interact-prompt" class="interact-prompt"></div>
 
     <div id="cutscene-caption" class="cutscene-caption"></div>

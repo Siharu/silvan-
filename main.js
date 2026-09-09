@@ -20,6 +20,8 @@ import { getQualityCounts } from './core/quality.js';
 import { getViewMode } from './core/view-mode.js';
 import { getKeybinds } from './core/keybinds.js';
 import { setupInput, toggleTimeFastForward } from './core/input.js';
+import { ensureAudioContext } from './core/audio.js';
+import { updateRestHold } from './core/rest.js';
 import { markGameStarted } from './core/save-system.js';
 
 import { createTerrain, getElevation } from './environment/terrain.js';
@@ -33,7 +35,7 @@ import { createDustParticles, updateDustParticles } from './environment/dust.js'
 import { createFerns, updateFoliage } from './environment/foliage.js';
 import { createBushes, updateBushes } from './environment/bushes.js';
 import { generateFractalForest, updateForestLOD } from './environment/forest.js';
-import { createRocks } from './environment/rocks.js';
+import { createRocks, updateRocks } from './environment/rocks.js';
 import { createDetailedPineTrees } from './environment/pine-trees.js';
 import { createWater, updateWater } from './environment/water.js';
 import { createRadioTower, updateRadioTower } from './environment/radio-tower.js';
@@ -215,7 +217,7 @@ function setupPlayerController() {
     // joystick can toggle the exact same booleans the keydown/keyup
     // listeners below set — one movement path, two input methods, per
     // PLAN.md's mobile scope note.
-    const move = { forward: false, back: false, left: false, right: false, run: false, jumpPressed: false, jumpHeld: false };
+    const move = { forward: false, back: false, left: false, right: false, run: false, jumpPressed: false, jumpHeld: false, restHeld: false };
     state.move = move;
     let yaw = 0, pitch = 0;
     const PLAYER_SPEED = 8;
@@ -242,6 +244,7 @@ function setupPlayerController() {
         if (e.code === kb.moveRight) move.right = true;
         if (e.code === kb.run) move.run = true;
         if (e.code === kb.jump) { move.jumpPressed = true; move.jumpHeld = true; }
+        if (e.code === kb.rest) move.restHeld = true;
     });
     document.addEventListener('keyup', (e) => {
         const kb = getKeybinds();
@@ -251,6 +254,7 @@ function setupPlayerController() {
         if (e.code === kb.moveRight) move.right = false;
         if (e.code === kb.run) move.run = false;
         if (e.code === kb.jump) move.jumpHeld = false;
+        if (e.code === kb.rest) move.restHeld = false;
         if (e.code === kb.interact && !state.isPaused) attemptRecruitInteraction(state);
         if (e.code === kb.fastForward && !state.isPaused) toggleTimeFastForward(state);
     });
@@ -260,6 +264,7 @@ function setupPlayerController() {
         if (state.touchControlsActive) return; // touch devices drive look via the drag zone, not pointer lock — most mobile browsers handle it poorly/not at all anyway
         if (getViewMode() === 'topdown') return; // fixed isometric angle — no mouselook to lock the pointer for
         state.renderer.domElement.requestPointerLock();
+        ensureAudioContext(state); // first real user gesture in the game — browsers refuse to start an AudioContext before one, see core/audio.js
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -297,6 +302,7 @@ function setupPlayerController() {
     state._updatePlayer = function updatePlayer(delta) {
         if (state.isPaused) return; // freeze movement entirely rather than just ignoring new key events —
         // keys already held down when Escape was pressed would otherwise keep the player sliding under the pause panel
+        if (state.isResting) return; // same freeze during the sleep/time-skip transition — see core/rest.js
         const jumpRequested = move.jumpPressed;
         move.jumpPressed = false; // consume every frame regardless of outcome — see keydown handler's comment on why this doesn't need a keyup reset too
 
@@ -510,6 +516,7 @@ function animate() {
     const ts = state.clock.elapsedTime;
 
     if (state._updatePlayer) state._updatePlayer(delta);
+    updateRestHold(state, state.move.restHeld || state.touchRestHeld);
 
     updateDayNightCycle(state, delta);
     updateStars(state, delta);
@@ -518,6 +525,7 @@ function animate() {
     updateGrass(state, ts);
     updateFoliage(state, ts);
     updateBushes(state, ts);
+    updateRocks(state);
     updateRain(state, ts);
     updateFlowers(state, ts);
     updatePuddles(state, ts);

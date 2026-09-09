@@ -12,6 +12,8 @@
 // whether you're on mouse or touch. No changes needed to the movement/look
 // math itself — only main.js needed to expose those two hooks on `state`.
 
+import { ensureAudioContext } from './audio.js';
+
 function isTouchCapable() {
     return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 }
@@ -179,12 +181,22 @@ function setupActionButtons(state, attemptRecruitInteraction) {
         }, { passive: false });
     }
 
-    // "Rest" (touch-rest-btn / HUD's "HOLD 'R' TO REST" hint) is left
-    // unwired on purpose: there is no rest mechanic anywhere in this
-    // rebuild — no KeyR listener in main.js, nothing it would call. The
-    // button and HUD hint are leftover UI language from the old modular
-    // project's design, same as the Modifiers tab's water hooks (PLAN.md)
-    // — flagged rather than faked with a handler that does nothing real.
+    // Rest (touch-rest-btn / HUD's "HOLD 'G' TO REST" hint) — same
+    // hold-to-trigger pattern as the jump button above; core/rest.js's
+    // updateRestHold() reads state.touchRestHeld each frame alongside the
+    // keyboard's move.restHeld (see main.js's animate loop).
+    const restBtn = document.getElementById('touch-rest-btn');
+    if (restBtn) {
+        restBtn.addEventListener('touchstart', (e) => {
+            if (state.isPaused) return;
+            state.touchRestHeld = true;
+            restBtn.classList.add('active');
+            e.preventDefault();
+        }, { passive: false });
+        const stopRest = () => { state.touchRestHeld = false; restBtn.classList.remove('active'); };
+        restBtn.addEventListener('touchend', stopRest);
+        restBtn.addEventListener('touchcancel', stopRest);
+    }
 
     // touch-pause-btn is already wired in core/input.js's setupPauseMenu()
     // — not duplicated here.
@@ -203,4 +215,8 @@ export function setupTouchControls(state, { attemptRecruitInteraction }) {
     setupJoystick(state);
     setupLookZone(state);
     setupActionButtons(state, attemptRecruitInteraction);
+
+    // First real user gesture on touch devices — same reason main.js's
+    // pointer-lock click handler calls this on desktop (see core/audio.js).
+    container.addEventListener('touchstart', () => ensureAudioContext(state), { once: true, passive: true });
 }

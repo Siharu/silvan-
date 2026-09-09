@@ -17,7 +17,9 @@
 
 import * as THREE from 'three';
 
-// placements: array of { x, y, z, scaleX, scaleY, scaleZ, rotY, colorHex? }
+// placements: array of { x, y, z, scaleX, scaleY, scaleZ, rotX, rotY, rotZ, colorHex? }
+// rotX/rotZ are optional (default 0) — only bushes.js's leaf clumps need
+// full 3-axis rotation; flowers.js/fireflies.js only ever needed rotY.
 export function buildChunkedInstancedField({ scene, geometry, material, worldExtent, cellSize, drawDistance, placements }) {
     const half = worldExtent / 2;
     const cells = new Map();
@@ -42,7 +44,7 @@ export function buildChunkedInstancedField({ scene, geometry, material, worldExt
             const it = items[i];
             dummy.position.set(it.x, it.y, it.z);
             dummy.scale.set(it.scaleX ?? 1, it.scaleY ?? 1, it.scaleZ ?? 1);
-            dummy.rotation.set(0, it.rotY ?? 0, 0);
+            dummy.rotation.set(it.rotX ?? 0, it.rotY ?? 0, it.rotZ ?? 0);
             dummy.updateMatrix();
             mesh.setMatrixAt(i, dummy.matrix);
             if (it.colorHex !== undefined) {
