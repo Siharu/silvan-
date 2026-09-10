@@ -22,6 +22,7 @@ import { getKeybinds } from './core/keybinds.js';
 import { setupInput, toggleTimeFastForward } from './core/input.js';
 import { ensureAudioContext } from './core/audio.js';
 import { updateRestHold } from './core/rest.js';
+import { initStory, updateStory, tryStoryInteract } from './core/story.js';
 import { markGameStarted } from './core/save-system.js';
 
 import { createTerrain, getElevation } from './environment/terrain.js';
@@ -255,7 +256,15 @@ function setupPlayerController() {
         if (e.code === kb.run) move.run = false;
         if (e.code === kb.jump) move.jumpHeld = false;
         if (e.code === kb.rest) move.restHeld = false;
-        if (e.code === kb.interact && !state.isPaused) attemptRecruitInteraction(state);
+        if (e.code === kb.interact && !state.isPaused) {
+            // Story-critical beats (Bimo's brambles choice, advancing an
+            // open dialogue line, Primo's stream scene) take priority
+            // over the generic recruit coin-flip — see core/story.js's
+            // header comment for why. Only falls through to the normal
+            // system once tryStoryInteract says it didn't handle this
+            // press.
+            if (!tryStoryInteract(state)) attemptRecruitInteraction(state);
+        }
         if (e.code === kb.fastForward && !state.isPaused) toggleTimeFastForward(state);
     });
 
@@ -303,6 +312,7 @@ function setupPlayerController() {
         if (state.isPaused) return; // freeze movement entirely rather than just ignoring new key events —
         // keys already held down when Escape was pressed would otherwise keep the player sliding under the pause panel
         if (state.isResting) return; // same freeze during the sleep/time-skip transition — see core/rest.js
+        if (state.dialogueActive) return; // freeze movement while a story dialogue box is open — see core/dialogue.js
         const jumpRequested = move.jumpPressed;
         move.jumpPressed = false; // consume every frame regardless of outcome — see keydown handler's comment on why this doesn't need a keyup reset too
 
@@ -482,6 +492,7 @@ async function init() {
 
     setLoadingProgress(0.97, 'Waking the animals');
     spawnDemoAnimals(state);
+    initStory(state);
     await afterStep();
 
     setupPlayerController();
@@ -533,6 +544,7 @@ function animate() {
     updateDustParticles(state, ts);
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
+    updateStory(state, delta);
     updateRadioTowerProximity(state);
     updateInteractPrompt(state);
     updateForestLOD(state, ts); // camera position + leaf-flutter wind uTime feed for forest.js's shaders — see forest.js's export comment

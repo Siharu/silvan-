@@ -585,16 +585,66 @@
             font-weight: 300;
             letter-spacing: 0.08em;
             font-size: 1.05rem;
-            font-style: italic;
             text-align: center;
             max-width: 32rem;
-            padding: 0 1rem;
+            padding: 0.9rem 1.4rem;
             text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
             opacity: 0;
-            transition: opacity 1s ease;
+            transition: opacity 0.6s ease;
         }
         .cutscene-caption.visible {
             opacity: 1;
+        }
+        /* Was a single plain text div, never actually wired to anything
+           (state.cutsceneActive was referenced as a guard elsewhere but
+           never set) — core/story.js and core/dialogue.js are the first
+           thing to use this, so it's now a small structured dialogue box
+           (speaker name / line text / optional choice buttons / continue
+           hint) instead of one bare string, built inside the same
+           positioned wrapper so the existing fade/position CSS still
+           applies unchanged. */
+        .cutscene-caption .cutscene-speaker {
+            font-weight: 500;
+            letter-spacing: 0.15em;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: #d9cba0;
+            margin-bottom: 0.35rem;
+        }
+        .cutscene-caption .cutscene-text {
+            font-style: italic;
+            line-height: 1.5;
+        }
+        .cutscene-caption .cutscene-choices {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.9rem;
+            pointer-events: all;
+        }
+        .cutscene-caption .cutscene-choice-btn {
+            background: rgba(20, 22, 18, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #f1f1ea;
+            font-style: normal;
+            font-size: 0.85rem;
+            letter-spacing: 0.03em;
+            padding: 0.55rem 1rem;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+        .cutscene-caption .cutscene-choice-btn:hover {
+            background: rgba(60, 55, 35, 0.85);
+            border-color: rgba(255, 220, 150, 0.5);
+        }
+        .cutscene-caption .cutscene-continue-hint {
+            margin-top: 0.6rem;
+            font-size: 0.7rem;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: #9ca3af;
+            opacity: 0.85;
         }
 
         /* Pause menu — a soft, misty, "floaty" panel rather than a flat
@@ -1589,7 +1639,12 @@
     <div id="rest-fade-text" class="rest-fade-text">Resting...</div>
     <div id="interact-prompt" class="interact-prompt"></div>
 
-    <div id="cutscene-caption" class="cutscene-caption"></div>
+    <div id="cutscene-caption" class="cutscene-caption">
+        <div id="cutscene-speaker" class="cutscene-speaker"></div>
+        <div id="cutscene-text" class="cutscene-text"></div>
+        <div id="cutscene-choices" class="cutscene-choices"></div>
+        <div id="cutscene-continue-hint" class="cutscene-continue-hint">[E] Continue</div>
+    </div>
 
     <div id="pause-layer" class="pause-layer">
         <div class="pause-panel">

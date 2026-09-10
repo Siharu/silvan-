@@ -16,7 +16,7 @@ let holdStart = null;
 // Returns nothing — triggers the actual sleep transition internally once
 // HOLD_DURATION is reached.
 export function updateRestHold(state, held) {
-    if (state.isPaused || state.isResting) { holdStart = null; return; }
+    if (state.isPaused || state.isResting || state.dialogueActive) { holdStart = null; return; }
 
     if (!held) { holdStart = null; return; }
     if (holdStart === null) holdStart = state.clock.elapsedTime;
