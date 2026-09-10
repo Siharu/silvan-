@@ -191,8 +191,23 @@ void main() {
 
 const fragmentShader = `
 varying vec3 vColor;
+uniform vec3 uAmbientColor; // fed each frame from the hemisphere light's actual color/intensity — see updateGrass()
+uniform float uSunFactor;   // 0 at night, up to ~1 at midday — a cheap stand-in for direct light since blades have no per-instance normal to light properly
 void main() {
-    gl_FragColor = vec4(vColor, 1.0);
+    // Was a fully unlit shader — gl_FragColor = vec4(vColor, 1.0), no
+    // light interaction of any kind. Every other surface in the scene
+    // (terrain, trunks, canopy, rocks) responds to the day/night
+    // lighting fixes via MeshStandardMaterial, but grass blades stayed
+    // at a fixed raw-diffuse-texture brightness regardless of time of
+    // day or shade — which is exactly why grass under a dark, shaded
+    // canopy still read as a flat bright green while everything around
+    // it correctly went dark. Not a physically-accurate per-blade normal
+    // lighting model (that needs real per-instance normals this attribute
+    // set doesn't carry) — a cheap ambient+sun multiply that at least
+    // makes grass respond to the same day/night/shade swings as
+    // everything else, instead of ignoring them entirely.
+    vec3 lit = vColor * (uAmbientColor + vec3(uSunFactor * 0.6));
+    gl_FragColor = vec4(lit, 1.0);
 }
 `;
 
@@ -246,6 +261,8 @@ export function createGrass(state) {
         uniforms: {
             uTime: { value: 0 },
             uPlayerPosition: { value: new THREE.Vector3() },
+            uAmbientColor: { value: new THREE.Color(0x333333) },
+            uSunFactor: { value: 0 },
             uHeightMap: { value: heightMap.texture },
             uDiffuseMap: { value: diffuseTexture },
             uNoiseTexture: { value: noiseTexture },
@@ -286,5 +303,17 @@ export function updateGrass(state, ts) {
             state.player.position.y,
             state.player.position.z
         );
+    }
+    // Feeds the same lighting values everything else in the scene already
+    // responds to (see this file's fragment shader comment for why grass
+    // needed this at all) — hemi light's own color+intensity already
+    // tracks day/night correctly (atmosphere/day-night-cycle.js), so
+    // reusing it directly keeps grass in sync with the rest of the scene
+    // without duplicating that day/night math here.
+    if (state.hemiLight) {
+        state.grassMat.uniforms.uAmbientColor.value.copy(state.hemiLight.color).multiplyScalar(state.hemiLight.intensity);
+    }
+    if (state.sunLight) {
+        state.grassMat.uniforms.uSunFactor.value = state.sunLight.intensity / 2.0; // sunLight.intensity maxes at ~2.0 at midday, see day-night-cycle.js
     }
 }
