@@ -189,11 +189,21 @@ export function updateDayNightCycle(state, delta) {
         // saturated so it doesn't fight the albedo; `groundColor` (lights
         // undersides) keeps a warm bounce tone since that's the one that
         // visually reads as ambient occlusion/bounce light there.
-        state.hemiLight.color.setHSL(0.58, 0.3, 0.18 + intensity * 0.18);
+        //
+        // Follow-up: this fixed the green tint (hue/saturation), but the
+        // lightness ceiling got cut too aggressively at the same time
+        // (0.65 -> 0.36 at midday) — combined with the toneMappingExposure
+        // cut just below, the ground and especially the tree canopy (which
+        // sits in its own branch-shadow and leans on hemi ambient more
+        // than direct sun) went a lot darker than intended, verging on
+        // unlit-looking. Keeping saturation low (that's what actually
+        // stops the green cast) but restoring most of the lightness
+        // headroom.
+        state.hemiLight.color.setHSL(0.58, 0.18, 0.28 + intensity * 0.3);
         state.hemiLight.groundColor.setHSL(0.08, 0.4, 0.08 + intensity * 0.2);
         state.hemiLight.intensity = 0.4 + intensity * 0.25;
 
-        state.renderer.toneMappingExposure = Math.max(0.4, intensity * 0.65); // was up to 0.8
+        state.renderer.toneMappingExposure = Math.max(0.5, intensity * 0.78); // was cut to 0.65 alongside the hemi change above — restoring most of that too, since it multiplies the whole render and was compounding the same over-darkening
         state.stars.material.opacity = 0;
     } else {
         const intensity = Math.pow(-sunHeightNormalized, 0.3);

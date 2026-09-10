@@ -93,5 +93,16 @@ export function updateFireflies(state, ts) {
     }
     const dayBlend = Math.max(0, state.sunHeightNormalized || 0); // 0 at night/horizon, up to 1 at midday
     const rainIntensity = state.currentRainIntensity || 0;
-    state.fireflyMat.opacity = Math.max(0, 1.0 - dayBlend * 2.2) * (1.0 - rainIntensity * 0.8);
+    // Was `1.0 - dayBlend * 2.2`, which only reaches 0 once dayBlend climbs
+    // past ~0.45 — the sun has to be nearly half of the way to its peak
+    // height before fireflies fully vanish, leaving them visibly present
+    // (even if dim) through most of the morning/evening. On additive
+    // blending, a low-but-nonzero opacity still reads as a clearly visible
+    // square against any dark background (e.g. tree-shadow areas) — this
+    // was almost certainly the "yellow/tan square artifacts" seen in a
+    // daytime screenshot during the last live test. Steepened so they're
+    // fully gone shortly after actual sunrise instead of lingering deep
+    // into daylight hours.
+    const nightFactor = Math.max(0, 1.0 - dayBlend / 0.08);
+    state.fireflyMat.opacity = nightFactor * (1.0 - rainIntensity * 0.8);
 }
