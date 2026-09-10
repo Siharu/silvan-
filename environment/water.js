@@ -122,7 +122,13 @@ const waterFragmentShader = `
         float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
         fresnel = min(fresnel, 0.55);
         vec3 skyColor = vec3(0.7, 0.8, 0.9);
-        albedo = mix(albedo, skyColor, fresnel * 0.8);
+        // Sky-reflection mix strength — was 0.8, meaning up to 44% of the
+        // final color (0.55 capped fresnel * 0.8) got pulled toward pale
+        // blue-white at grazing angles, which is most of a ground-level
+        // camera's view across a big flat ocean. Lowered alongside the
+        // preset color darkening above so the horizon doesn't wash back
+        // toward "bright sky" even with a genuinely dark base color.
+        albedo = mix(albedo, skyColor, fresnel * 0.4);
         vec3 finalColor = albedo * (diff * 0.8 + 0.2) + vec3(1.0) * spec * 0.6;
         float alpha = mix(u_opacity, 1.0, fresnel);
         alpha = max(alpha, foamMix);
@@ -143,8 +149,19 @@ const PRESETS = {
     },
     ocean: {
         speed: 1.0, elevationScale: 1.0,
-        depthColor: '#0a1d3a', surfaceColor: '#1ca3ec', foamColor: '#ffffff',
-        colorOffset: 0.25, colorMultiplier: 2.0, foamThreshold: 1.2, opacity: 0.7,
+        // Was depthColor '#0a1d3a' / surfaceColor '#1ca3ec' / opacity 0.7 —
+        // surfaceColor especially was a genuinely bright cyan-sky-blue
+        // (ported verbatim from ocean-water.html's demo preset), not a
+        // water color at all. Combined with the fragment shader's
+        // grazing-angle fresnel mix toward pale sky-blue-white below
+        // (also present at up to 44% strength), and the fact that a
+        // ground-level FPS camera looking out over a huge flat ocean
+        // plane spends most of its view at exactly that grazing angle,
+        // the two effects compounded into "looks like sky" rather than
+        // "dark, slightly translucent water". Darkened both colors
+        // toward navy/teal and dropped opacity for actual translucency.
+        depthColor: '#040d1a', surfaceColor: '#0e2f42', foamColor: '#ffffff',
+        colorOffset: 0.25, colorMultiplier: 2.0, foamThreshold: 1.2, opacity: 0.55,
         w1_dir: 45, w1_steep: 0.15, w1_len: 20,
         w2_dir: 120, w2_steep: 0.15, w2_len: 10,
         // w3/w4 were 5 and 2 — far shorter than the ocean mesh's ~12.5

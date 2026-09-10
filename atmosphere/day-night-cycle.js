@@ -85,6 +85,7 @@ export function createDayNightCycle(state) {
     // --- Visual moon mesh + glow ---
     const moonGeo = new THREE.SphereGeometry(1500, 64, 64);
     const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    moonMat.toneMapped = false; // same reasoning as the stars above — the moon should stay a bright visible disc, not dim along with the crushed night exposure
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
     const moonGlow = new THREE.PointLight(0x99aaff, 2.5, 15000);
     moonMesh.add(moonGlow);
@@ -123,6 +124,7 @@ export function createDayNightCycle(state) {
         opacity: 0,
         depthWrite: false
     });
+    starsMat.toneMapped = false; // otherwise crushing toneMappingExposure down for a genuinely dark night sky (see updateDayNightCycle's night branch) would dim the stars right along with it — they're meant to stay bright points regardless of overall scene exposure
     state.stars = new THREE.Points(starsGeo, starsMat);
     state.scene.add(state.stars);
 
@@ -218,7 +220,17 @@ export function updateDayNightCycle(state, delta) {
         state.hemiLight.groundColor.setHSL(0.65, 0.3, 0.05 + intensity * 0.05);
         state.hemiLight.intensity = 0.3 + intensity * 0.2;
 
-        state.renderer.toneMappingExposure = 0.4 + intensity * 0.2;
+        // Night exposure floor was 0.4 (ceiling 0.6 at deepest midnight) —
+        // still fairly bright as a global multiplier, and it's the main
+        // thing actually keeping the night sky from reading as dark: the
+        // Sky dome (Three.js's Preetham-model atmospheric scattering) has
+        // no explicit "go black at night" logic of its own — it just
+        // computes scattering from the sun's below-horizon angle, which
+        // alone doesn't crush to true black. Lowered substantially so the
+        // whole night render (sky included) actually darkens. Stars are
+        // set toneMapped=false below (in createDayNightCycle) so they
+        // don't get crushed along with everything else here.
+        state.renderer.toneMappingExposure = 0.1 + intensity * 0.12;
         state.stars.material.opacity = intensity;
     }
 }
