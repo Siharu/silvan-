@@ -176,8 +176,27 @@ export function createTerrain(state) {
 
             // Fine noise-based color speckle so the surface doesn't read as
             // one flat airbrushed color even within a single band.
+            //
+            // This band also does double duty as fake "distant grass"
+            // texture: real grass blades (environment/grass.js) only exist
+            // in a fixed-size window around the player (see that file's
+            // PATCH_SIZE) — beyond it there's no grass geometry at all,
+            // just this terrain shader's flat albedo, which is what made
+            // the hillside beyond the grass window look like a smooth,
+            // unnaturally flat green wash in live-test screenshots.
+            // Added a finer, stronger third octave specifically over the
+            // grass-color band (gated by grassAmount so it doesn't also
+            // texture rock/sand/dirt) to break up that flatness — costs
+            // one extra noise() sample per fragment, negligible next to
+            // an actual blade draw call, so it's a cheap way to make
+            // ground beyond the real grass radius at least read as
+            // textured/grassy instead of glass-smooth.
             float fine = noiseTerrain(vWorldPosTerrain.xz * 2.2) * 0.5 + noiseTerrain(vWorldPosTerrain.xz * 7.0) * 0.5;
             albedo *= 0.85 + fine * 0.3;
+
+            float grassAmount = smoothstep(0.15, 0.4, 1.0 - slope) * (1.0 - heightBand) * (1.0 - beachMask);
+            float grassFleck = noiseTerrain(vWorldPosTerrain.xz * 22.0) * 0.5 + noiseTerrain(vWorldPosTerrain.xz * 55.0 + vec2(41.0, 17.0)) * 0.5;
+            albedo *= mix(1.0, 0.8 + grassFleck * 0.4, grassAmount);
 
             vec4 diffuseColor = vec4(albedo, opacity);
             `

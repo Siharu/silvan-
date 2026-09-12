@@ -27,7 +27,7 @@
 import * as THREE from 'three';
 import { bakeHeightMapTexture, makeSmoothNoiseTexture, makeGrassDiffuseTexture } from '../core/procedural-textures.js';
 
-const PATCH_SIZE = 30;   // world units per side of the sliding-window patch
+const PATCH_SIZE = 100;  // world units per side of the sliding-window patch — was 30 (only a ~15-unit radius bubble of grass around the player, which is exactly the hard "grass just stops, bare hillside beyond" edge visible in live-test screenshots). Bumped ~3.3x with ZERO added rendering cost: BLADE_COUNT below is unchanged, so it's the exact same number of triangles/draw calls either way — this only spreads them over more ground, trading some close-up density for far more visible coverage. If it ends up looking too sparse up close for taste, that's a density trade-off to tune (raise BLADE_COUNT back up a bit, or split the difference on PATCH_SIZE), not a performance one.
 const BLADE_COUNT = 120000; // fallback if state.quality is missing — see createGrass
 const BLADE_WIDTH = 0.08;
 
