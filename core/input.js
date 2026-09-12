@@ -85,9 +85,14 @@ function startRebindCapture(btn, action) {
 function flashAutosaveIcon() {
     const el = document.getElementById('autosave-indicator');
     if (!el) return;
-    el.classList.add('visible');
+    // Was 'visible' — every bit of this element's CSS (the fade-in reveal
+    // itself, plus the icon's draw-in animation) is keyed to '.active',
+    // so this toggle never matched anything and the indicator has never
+    // actually appeared on screen. Found while replacing the icon SVG,
+    // unrelated bug.
+    el.classList.add('active');
     clearTimeout(flashAutosaveIcon._t);
-    flashAutosaveIcon._t = setTimeout(() => el.classList.remove('visible'), 1600);
+    flashAutosaveIcon._t = setTimeout(() => el.classList.remove('active'), 1600);
 }
 
 // Mirrors one setting across its title/pause slider or checkbox pair,

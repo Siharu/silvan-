@@ -118,6 +118,25 @@
             inset: 0;
             z-index: 12;
         }
+        /* Idle fade — added by core/touch-controls.js after 10s with no
+           touch anywhere on the controls, removed on the next touch. Hit
+           areas (the invisible look/joystick zones) stay fully functional
+           the whole time — only the visible chrome (buttons, joystick
+           base/knob) fades, so the very next touch both wakes the UI back
+           up AND still registers as real input, instead of a "wasted"
+           first tap just to un-hide things. */
+        .touch-controls.idle .touch-joystick-base,
+        .touch-controls.idle .touch-joystick-knob,
+        .touch-controls.idle .touch-action-btn,
+        .touch-controls.idle .touch-pause-btn {
+            opacity: 0.12;
+        }
+        .touch-joystick-base,
+        .touch-joystick-knob,
+        .touch-action-btn,
+        .touch-pause-btn {
+            transition: opacity 0.6s ease;
+        }
         .touch-look-zone {
             position: absolute;
             top: 0;
@@ -238,6 +257,19 @@
             background: rgba(201, 181, 126, 0.35);
             border-color: rgba(201, 181, 126, 0.6);
             color: #f0e6c8;
+        }
+        /* Was a plain ⏩ emoji glyph — replaced with a small custom
+           double-chevron SVG that animates (staggered slide+fade loop)
+           only while fast-forward is actually engaged, static/dim
+           otherwise, instead of a static emoji that gave no feedback
+           either way. */
+        .time-ff-btn { display: flex; align-items: center; justify-content: center; }
+        .ff-chevron { opacity: 0.55; }
+        .time-ff-btn.active .ff-chevron-1 { animation: ff-slide 0.7s ease-in-out infinite; }
+        .time-ff-btn.active .ff-chevron-2 { animation: ff-slide 0.7s ease-in-out infinite 0.18s; }
+        @keyframes ff-slide {
+            0%, 100% { opacity: 0.4; transform: translateX(-2px); }
+            50% { opacity: 1; transform: translateX(2px); }
         }
         .fps-counter {
             position: absolute;
@@ -464,17 +496,35 @@
             transform: translateY(0);
         }
         .autosave-icon {
-            width: 0.6rem;
-            height: 0.6rem;
-            border: 1.5px solid #9cb1c4;
-            border-top-color: transparent;
-            border-radius: 50%;
+            width: 0.85rem;
+            height: 0.85rem;
+            color: #9cb1c4;
+            overflow: visible;
         }
-        .autosave-indicator.active .autosave-icon {
-            animation: autosave-spin 0.9s linear infinite;
+        /* Was a plain CSS spinner (rotating ring) — replaced with a
+           cloud+checkmark SVG where the checkmark draws itself in via a
+           stroke-dashoffset animation, a more purposeful "confirmed
+           saved" motion than a generic loading spinner, which reads more
+           like "still working" than "done". */
+        .autosave-check {
+            stroke-dasharray: 9;
+            stroke-dashoffset: 9;
         }
-        @keyframes autosave-spin {
-            to { transform: rotate(360deg); }
+        .autosave-indicator.active .autosave-check {
+            animation: autosave-draw 0.5s ease-out 0.15s forwards;
+        }
+        .autosave-indicator.active .autosave-cloud {
+            transform-box: fill-box;
+            transform-origin: center;
+            animation: autosave-pop 0.4s ease;
+        }
+        @keyframes autosave-draw {
+            to { stroke-dashoffset: 0; }
+        }
+        @keyframes autosave-pop {
+            0% { transform: scale(0.8); }
+            60% { transform: scale(1.08); }
+            100% { transform: scale(1); }
         }
 
         .save-status {
@@ -1616,7 +1666,12 @@
          screens until the game actually starts and those overlays hide
          themselves — no separate show/hide toggle needed here. -->
     <div id="game-hud-buttons" class="game-hud-buttons">
-        <button id="time-ff-btn" class="time-ff-btn" type="button" aria-label="Fast-forward time">⏩</button>
+        <button id="time-ff-btn" class="time-ff-btn" type="button" aria-label="Fast-forward time">
+            <svg class="ff-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                <polygon class="ff-chevron ff-chevron-1" points="1,3 12,12 1,21"/>
+                <polygon class="ff-chevron ff-chevron-2" points="12,3 23,12 12,21"/>
+            </svg>
+        </button>
         <button id="fullscreen-btn" class="time-ff-btn" type="button" aria-label="Toggle fullscreen" style="right: 7.6rem;">⛶</button>
         <div id="fps-counter" class="fps-counter hidden">0 FPS</div>
     </div>
@@ -1626,7 +1681,10 @@
          independent decorative timer, so it's an honest signal rather than
          UI theater. -->
     <div id="autosave-indicator" class="autosave-indicator">
-        <span class="autosave-icon"></span>
+        <svg class="autosave-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path class="autosave-cloud" d="M7 18a4 4 0 0 1-.4-7.98A5 5 0 0 1 16.9 8.02 4.5 4.5 0 0 1 16.5 18H7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path class="autosave-check" d="M8.3 12.8l2.1 2 4-4.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
         <span>Saved</span>
     </div>
     

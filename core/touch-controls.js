@@ -219,4 +219,27 @@ export function setupTouchControls(state, { attemptRecruitInteraction }) {
     // First real user gesture on touch devices — same reason main.js's
     // pointer-lock click handler calls this on desktop (see core/audio.js).
     container.addEventListener('touchstart', () => ensureAudioContext(state), { once: true, passive: true });
+
+    setupIdleFade(container);
+}
+
+// Fades the visible touch chrome (buttons, joystick base/knob) to near-
+// invisible after 10s with no touch anywhere on #touch-controls, restores
+// it instantly on the next touch. Was a flat request — "controls can stay
+// invisible if the user isn't touching for 10 seconds" — implemented as a
+// fade rather than display:none so hit areas never actually disappear;
+// see the .idle CSS rules in index.html for why that matters for the
+// very next touch after idling.
+function setupIdleFade(container) {
+    const IDLE_MS = 10000;
+    let idleTimer = null;
+
+    function wake() {
+        container.classList.remove('idle');
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => container.classList.add('idle'), IDLE_MS);
+    }
+
+    container.addEventListener('touchstart', wake, { passive: true });
+    wake(); // start the first countdown immediately, controls are visible on load
 }

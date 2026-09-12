@@ -15,7 +15,10 @@
 // showDialogue() again to chain further lines (that's how story.js
 // branches after Kat's brambles choice, the shoreline choice, etc).
 
+import { shouldShowTouchControls } from './touch-controls.js';
+
 let els = null;
+let tapListenerBound = false;
 function getEls() {
     if (els) return els;
     const caption = document.getElementById('cutscene-caption');
@@ -27,6 +30,20 @@ function getEls() {
         choices: document.getElementById('cutscene-choices'),
         continueHint: document.getElementById('cutscene-continue-hint'),
     };
+    // Was "[E] Continue" hardcoded with no way to advance at all on
+    // touch (no keyboard, so the interact key never fires) — the caption
+    // box itself is now tappable to advance whenever there's no keyboard,
+    // same idea as tapping through a visual-novel textbox. Bound once;
+    // guarded against choice-button clicks via stopPropagation on those
+    // buttons below, so a tap on an actual choice doesn't also register
+    // as "advance".
+    if (!tapListenerBound) {
+        els.caption.addEventListener('click', () => {
+            const st = window.__silvanState; // set once in main.js's init — see that file
+            if (st) advanceDialogue(st);
+        });
+        tapListenerBound = true;
+    }
     return els;
 }
 
@@ -49,6 +66,12 @@ export function showDialogue(state, lines, onComplete) {
     if (document.pointerLockElement) document.exitPointerLock();
 
     e.caption.classList.add('visible');
+    // pointer-events stays 'none' by default (index.html's CSS) so the
+    // invisible caption box doesn't swallow clicks/taps meant for touch
+    // controls underneath it while no dialogue is showing — only opened
+    // up while a dialogue is actually visible, and reverted on close
+    // below.
+    e.caption.style.pointerEvents = 'auto';
     renderCurrentLine(state);
 }
 
@@ -71,7 +94,8 @@ function renderCurrentLine(state) {
             btn.className = 'cutscene-choice-btn';
             btn.type = 'button';
             btn.textContent = choice.label;
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (ev) => {
+                ev.stopPropagation(); // otherwise this bubbles up to the caption's own tap-to-advance listener above and double-fires
                 ownerQueue.shift();
                 if (choice.onSelect) choice.onSelect(state);
                 if (state._dialogueQueue === ownerQueue) advanceDialogue(state);
@@ -80,6 +104,7 @@ function renderCurrentLine(state) {
         }
     } else {
         e.continueHint.style.display = 'block';
+        e.continueHint.textContent = shouldShowTouchControls() ? 'Tap to continue' : '[E] Continue';
     }
 }
 
@@ -102,7 +127,10 @@ export function advanceDialogue(state) {
 
 function closeDialogue(state) {
     const e = getEls();
-    if (e) e.caption.classList.remove('visible');
+    if (e) {
+        e.caption.classList.remove('visible');
+        e.caption.style.pointerEvents = 'none'; // revert — see showDialogue's comment on why this isn't left permanently 'auto'
+    }
     state.dialogueActive = false;
     state.cutsceneActive = false;
     const onComplete = state._dialogueOnComplete;

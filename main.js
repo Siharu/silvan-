@@ -45,6 +45,7 @@ import { createDayNightCycle, updateDayNightCycle, updateStars } from './atmosph
 import { setupTouchControls } from './core/touch-controls.js';
 
 const state = createWorldState();
+window.__silvanState = state; // lets core/dialogue.js's tap-to-continue click listener reach state without every module needing to import/thread it through — see that file's getEls() comment
 window._silvanState = state; // console-debuggable, same convenience the old project's main.js had
 
 // Live-mutable settings snapshot — core/input.js writes straight into this
@@ -138,12 +139,29 @@ function setupRenderer() {
     // instead of a bright daytime sky tint.
     state.scene.fog = new THREE.FogExp2(0x1c1f1a, 0.0025);
 
+    // Mobile browsers (Safari/Chrome especially) don't reliably fire a
+    // plain `resize` event when the address-bar/toolbar chrome collapses
+    // or expands, and window.innerWidth/innerHeight can report the full
+    // layout viewport rather than what's actually visible on screen —
+    // together these are the likely cause of "getting half cut" on
+    // mobile: the canvas/camera get sized once against a viewport bigger
+    // than what's actually visible, and nothing corrects it afterward.
+    // window.visualViewport tracks the real visible area (shrinks for the
+    // on-screen keyboard, toolbar collapse, etc.) and fires its own
+    // resize/scroll events independently of window's — falls back to
+    // window.innerWidth/innerHeight on browsers without it.
+    function getViewportSize() {
+        const vv = window.visualViewport;
+        return vv ? { w: vv.width, h: vv.height } : { w: window.innerWidth, h: window.innerHeight };
+    }
+
     const settings = getSettings();
-    state.camera = new THREE.PerspectiveCamera(settings.fov || 75, window.innerWidth / window.innerHeight, 0.1, 20000);
+    const initialSize = getViewportSize();
+    state.camera = new THREE.PerspectiveCamera(settings.fov || 75, initialSize.w / initialSize.h, 0.1, 20000);
     state.camera.position.set(0, 5, 20);
 
     state.renderer = new THREE.WebGLRenderer({ antialias: settings.antialiasing !== false, powerPreference: 'high-performance' });
-    state.renderer.setSize(window.innerWidth, window.innerHeight);
+    state.renderer.setSize(initialSize.w, initialSize.h);
     // resolutionScale (default 1.0) multiplies devicePixelRatio — a cheap,
     // high-impact lever for weak iGPUs: dropping to e.g. 0.75 cuts fragment
     // shader work ~44% (0.75^2) with a much smaller visual cost than
@@ -164,11 +182,18 @@ function setupRenderer() {
 
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
 
-    window.addEventListener('resize', () => {
-        state.camera.aspect = window.innerWidth / window.innerHeight;
+    function handleResize() {
+        const size = getViewportSize();
+        state.camera.aspect = size.w / size.h;
         state.camera.updateProjectionMatrix();
-        state.renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+        state.renderer.setSize(size.w, size.h);
+    }
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', () => setTimeout(handleResize, 100)); // innerWidth/innerHeight can briefly report stale (pre-rotation) values right after the event fires, hence the short delay
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', handleResize);
+        window.visualViewport.addEventListener('scroll', handleResize); // toolbar collapse/expand on scroll fires this on some mobile browsers without a matching plain resize event
+    }
 
     state.clock = new THREE.Clock();
 }
