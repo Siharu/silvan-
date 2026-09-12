@@ -30,7 +30,7 @@ export const ACTION_LABELS = {
     run: 'Run',
     jump: 'Jump / Swim Up',
     interact: 'Interact',
-    fastForward: 'Fast-Forward Time',
+    fastForward: 'Nap (Kat Sleeps 5-6hrs)',
     rest: 'Rest (Sleep to Morning)',
 };
 

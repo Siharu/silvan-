@@ -16,7 +16,7 @@ let holdStart = null;
 // Returns nothing — triggers the actual sleep transition internally once
 // HOLD_DURATION is reached.
 export function updateRestHold(state, held) {
-    if (state.isPaused || state.isResting || state.dialogueActive) { holdStart = null; return; }
+    if (state.isPaused || state.isResting || state.isNapping || state.dialogueActive) { holdStart = null; return; }
 
     if (!held) { holdStart = null; return; }
     if (holdStart === null) holdStart = state.clock.elapsedTime;
@@ -28,11 +28,12 @@ export function updateRestHold(state, held) {
 }
 
 export function startRest(state) {
-    if (state.isResting) return;
+    if (state.isResting || state.isNapping) return;
     state.isResting = true; // read by main.js's _updatePlayer to freeze movement, same pattern as state.isPaused
 
     const overlay = document.getElementById('rest-fade-overlay');
     const text = document.getElementById('rest-fade-text');
+    if (text) text.textContent = 'Resting...';
     if (overlay) overlay.classList.add('active');
     if (text) text.classList.add('active');
 
@@ -49,5 +50,54 @@ export function startRest(state) {
             if (text) text.classList.remove('active');
             state.isResting = false;
         }, 400); // brief hold on full black before fading back in, so the time-jump isn't visible mid-transition
+    }, FADE_MS);
+}
+
+// --- Kat nap (replaces the old continuous fast-forward toggle) --------
+//
+// Your idea: instead of a ">>" speed-up-time toggle, a one-shot nap —
+// Kat's eyes close, gameTime jumps forward a random 5-6 hours, and
+// whatever time that lands on is whatever time it is when she wakes
+// (unlike startRest() above, which always snaps to dawn specifically).
+// Land late enough in the day and the nap crosses into night — that's
+// the intended "sometimes wakes up at night" outcome, it just falls out
+// of the math rather than being a separate rolled chance.
+//
+// Reuses the same #rest-fade-overlay/#rest-fade-text elements as
+// startRest() (screen-to-black already reads as "eyes closing" from a
+// first-person view) rather than adding a second overlay pair. NOTE: I
+// don't have core/player-controller.js in what you gave me, so I can't
+// see whether Kat's own rig/eye mesh (the blink-scale system in
+// environment/animals.js) is even visible in your camera mode. If it
+// is (third-person or a mirror/reflection), driving rig.lEye/rEye scale
+// to ~0.05 for the nap's duration would need a hook added there — happy
+// to wire that once I can see that file.
+const NAP_MIN_HOURS = 5;
+const NAP_RANGE_HOURS = 1; // 5 + [0..1) -> 5-6 hours total
+
+export function triggerKatNap(state) {
+    if (state.isPaused || state.isResting || state.isNapping || state.dialogueActive) return;
+    state.isNapping = true;
+    state.isResting = true; // reuse the same movement-freeze flag main.js's _updatePlayer already checks
+
+    const overlay = document.getElementById('rest-fade-overlay');
+    const text = document.getElementById('rest-fade-text');
+    const clock = document.getElementById('nap-clock');
+    if (text) text.textContent = "Kat's eyes grow heavy...";
+    if (overlay) overlay.classList.add('active');
+    if (text) text.classList.add('active');
+    if (clock) clock.classList.add('active');
+
+    setTimeout(() => {
+        const hoursForward = NAP_MIN_HOURS + Math.random() * NAP_RANGE_HOURS;
+        state.gameTime = (state.gameTime + hoursForward / 24) % 1;
+
+        setTimeout(() => {
+            if (overlay) overlay.classList.remove('active');
+            if (text) text.classList.remove('active');
+            if (clock) clock.classList.remove('active');
+            state.isResting = false;
+            state.isNapping = false;
+        }, 400);
     }, FADE_MS);
 }

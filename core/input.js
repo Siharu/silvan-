@@ -25,6 +25,7 @@ import { getQuality, setQuality } from './quality.js';
 import { getViewMode, setViewMode } from './view-mode.js';
 import { hasStartedGame, exportSaveFile, importSaveFile, startAutosaveLoop } from './save-system.js';
 import { getKeybinds, setKeybind, resetKeybinds, ACTION_LABELS, codeToLabel } from './keybinds.js';
+import { triggerKatNap } from './rest.js';
 
 function renderKeybindList(containerId) {
     const el = document.getElementById(containerId);
@@ -281,19 +282,19 @@ function setupPauseMenu(state) {
     if (touchPauseBtn) touchPauseBtn.addEventListener('click', () => { if (isPaused()) resume(); else pause(); });
 }
 
-const TIME_FF_BASE_SPEED = 0.02; // matches day-night-cycle.js's createDayNightCycle() default
-const TIME_FF_FAST_MULT = 20; // ~20x — full day/night cycle in a couple minutes instead of ~20
-
-// Shared between the on-screen button (below) and main.js's R keydown
-// listener, so pressing R updates the button's active-highlight state too
-// and clicking the button keeps a later R press toggling the right way —
-// single source of truth on state.timeFastForwardActive rather than two
-// separate local booleans that could drift out of sync.
+// Was a toggle that multiplied state.timeSpeed 20x for a continuous
+// fast-forward; replaced per your call with a one-shot nap — see
+// core/rest.js's triggerKatNap() for the actual behavior (eyes-closed
+// fade, random 5-6hr gameTime jump). Kept this wrapper (rather than
+// having main.js/the button import triggerKatNap directly) only so the
+// button's brief press-feedback lives next to the other input-wiring
+// code in this file.
 export function toggleTimeFastForward(state) {
-    state.timeFastForwardActive = !state.timeFastForwardActive;
-    state.timeSpeed = state.timeFastForwardActive ? TIME_FF_BASE_SPEED * TIME_FF_FAST_MULT : TIME_FF_BASE_SPEED;
+    triggerKatNap(state);
     const btn = document.getElementById('time-ff-btn');
-    if (btn) btn.classList.toggle('active', state.timeFastForwardActive);
+    if (!btn) return;
+    btn.classList.add('active');
+    setTimeout(() => btn.classList.remove('active'), 300); // brief press flash, not a persistent toggle state anymore
 }
 
 function setupTimeFastForward(state) {

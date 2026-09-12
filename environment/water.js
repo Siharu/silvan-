@@ -93,6 +93,21 @@ const waterFragmentShader = `
     uniform float u_foamThreshold;
     uniform float u_opacity;
     uniform vec3 u_lightDir;
+    // Real day/night hookup — was missing entirely before. This shader
+    // only ever used u_lightDir (direction only) with a hardcoded
+    // diff*0.5+0.5 floor and a flat 0.8/0.2 mix, so the water's actual
+    // brightness never changed between noon and midnight — it just
+    // rotated which way the fixed-strength highlight pointed. Everything
+    // else in the scene (terrain/rocks/trees) is MeshStandardMaterial and
+    // gets real day/night brightness for free from scene lights +
+    // renderer.toneMappingExposure; this raw ShaderMaterial bypasses both
+    // of those (a custom fragment shader isn't run through Three's
+    // tonemapping/lighting pipeline unless it explicitly says so), so it
+    // needs its own feed of the same values — see updateWater() below.
+    uniform vec3 u_lightColor;      // sun white / moon blue-white, matches day-night-cycle.js's own sunColor/moonLight.color
+    uniform float u_lightIntensity; // sunLight.intensity or moonLight.intensity, whichever is active
+    uniform vec3 u_ambientColor;    // hemiLight.color * hemiLight.intensity, same pattern as grass.js's uAmbientColor
+    uniform float u_exposure;       // state.renderer.toneMappingExposure — matches the same day/night darkening curve every MeshStandardMaterial rides on
     varying vec3 vWorldPosition;
     varying vec3 vNormal;
     varying float vElevation;
@@ -106,7 +121,6 @@ const waterFragmentShader = `
         albedo = mix(albedo, u_foamColor, foamMix);
         vec3 lightDir = normalize(u_lightDir);
         float diff = max(dot(normal, lightDir), 0.0);
-        diff = diff * 0.5 + 0.5;
         vec3 halfwayDir = normalize(lightDir + viewDir);
         float spec = pow(max(dot(normal, halfwayDir), 0.0), 128.0);
         // Fresnel clamped to 0.55 max instead of reaching 1.0 — the
@@ -121,15 +135,23 @@ const waterFragmentShader = `
         // letting it fully whitewash distant geometry.
         float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
         fresnel = min(fresnel, 0.55);
-        vec3 skyColor = vec3(0.7, 0.8, 0.9);
-        // Sky-reflection mix strength — was 0.8, meaning up to 44% of the
-        // final color (0.55 capped fresnel * 0.8) got pulled toward pale
-        // blue-white at grazing angles, which is most of a ground-level
-        // camera's view across a big flat ocean. Lowered alongside the
-        // preset color darkening above so the horizon doesn't wash back
-        // toward "bright sky" even with a genuinely dark base color.
+        // Sky-reflection tint now follows the actual ambient color instead
+        // of a hardcoded daytime-blue vec3(0.7,0.8,0.9) — that fixed value
+        // used to bleed a pale-blue rim into the water at night too, which
+        // is its own small piece of "doesn't match day/night".
+        vec3 skyColor = u_ambientColor + u_lightColor * u_lightIntensity * 0.3;
         albedo = mix(albedo, skyColor, fresnel * 0.4);
-        vec3 finalColor = albedo * (diff * 0.8 + 0.2) + vec3(1.0) * spec * 0.6;
+        // Replaced the old fixed diff*0.5+0.5 floor (always at least
+        // half-lit, day or night) and diff*0.8+0.2 output mix with real
+        // ambient fill (u_ambientColor, already dark at night the same
+        // way terrain's hemi light is) plus an actual sun/moon
+        // contribution scaled by u_lightIntensity — so a calm lake at
+        // real midday can get properly bright, and at real midnight can
+        // go properly dark, instead of both landing in the same narrow
+        // dim band.
+        vec3 finalColor = albedo * (u_ambientColor + u_lightColor * u_lightIntensity * diff)
+            + u_lightColor * spec * u_lightIntensity * 0.6;
+        finalColor *= u_exposure; // same global day/night curve every other material already gets from the renderer
         float alpha = mix(u_opacity, 1.0, fresnel);
         alpha = max(alpha, foamMix);
         gl_FragColor = vec4(finalColor, alpha);
@@ -202,6 +224,10 @@ function buildGerstnerMaterial(presetName) {
         u_foamThreshold: { value: p.foamThreshold },
         u_opacity: { value: p.opacity },
         u_lightDir: { value: new THREE.Vector3(1.0, 1.0, 1.0).normalize() },
+        u_lightColor: { value: new THREE.Color(0xffffff) },
+        u_lightIntensity: { value: 1.0 },
+        u_ambientColor: { value: new THREE.Color(0x333333) },
+        u_exposure: { value: 1.0 },
         u_heightMult: { value: 1.0 }, // live "Wave Height" slider + storm-reactivity boost — set each frame in updateWater()
         u_waves: {
             value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]
@@ -320,6 +346,7 @@ export function updateWater(state, ts) {
         u.u_heightMult.value = effectiveHeightMult;
         u.u_speed.value = state.lakeFallbackMesh.material.userData.baseSpeed * speedMult;
         if (state.sunPosition) u.u_lightDir.value.copy(state.sunPosition).normalize();
+        feedDayNightUniforms(state, u);
     }
     if (state.oceanMesh) {
         const u = state.oceanMesh.material.uniforms;
@@ -327,5 +354,21 @@ export function updateWater(state, ts) {
         u.u_heightMult.value = effectiveHeightMult;
         u.u_speed.value = state.oceanMesh.material.userData.baseSpeed * speedMult;
         if (state.sunPosition) u.u_lightDir.value.copy(state.sunPosition).normalize();
+        feedDayNightUniforms(state, u);
     }
+}
+
+// Shared by both Gerstner meshes — mirrors day-night-cycle.js's own
+// sun/moon handoff logic (state.water's sunDirection/sunColor swap) so
+// this doesn't drift out of sync with what the "real" THREE.Water path
+// does: sun above horizon -> white sun light, otherwise -> the same
+// cool moon-blue day-night-cycle.js's moonLight already uses.
+function feedDayNightUniforms(state, u) {
+    const sunUp = state.sunPosition && state.sunPosition.y > 0;
+    u.u_lightColor.value.setHex(sunUp ? 0xffffff : 0x99aaff);
+    u.u_lightIntensity.value = sunUp
+        ? (state.sunLight ? state.sunLight.intensity : 1.0)
+        : (state.moonLight ? state.moonLight.intensity : 0.0);
+    if (state.hemiLight) u.u_ambientColor.value.copy(state.hemiLight.color).multiplyScalar(state.hemiLight.intensity);
+    if (state.renderer) u.u_exposure.value = state.renderer.toneMappingExposure;
 }
