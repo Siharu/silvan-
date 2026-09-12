@@ -26,6 +26,7 @@
 
 import * as THREE from 'three';
 import { bakeHeightMapTexture, makeSmoothNoiseTexture, makeGrassDiffuseTexture } from '../core/procedural-textures.js';
+import { WATER_LEVEL } from '../core/world-state.js';
 
 const PATCH_SIZE = 100;  // world units per side of the sliding-window patch — was 30 (only a ~15-unit radius bubble of grass around the player, which is exactly the hard "grass just stops, bare hillside beyond" edge visible in live-test screenshots). Bumped ~3.3x with ZERO added rendering cost: BLADE_COUNT below is unchanged, so it's the exact same number of triangles/draw calls either way — this only spreads them over more ground, trading some close-up density for far more visible coverage. If it ends up looking too sparse up close for taste, that's a density trade-off to tune (raise BLADE_COUNT back up a bit, or split the difference on PATCH_SIZE), not a performance one.
 const BLADE_COUNT = 120000; // fallback if state.quality is missing — see createGrass
@@ -44,6 +45,7 @@ uniform sampler2D uDiffuseMap;
 uniform sampler2D uNoiseTexture;
 uniform vec3 uBoundingBoxMin;
 uniform vec3 uBoundingBoxMax;
+uniform float uWaterLevel;
 uniform float uPatchSize;
 uniform float uBladeWidth;
 uniform float uWindDirection;
@@ -131,7 +133,21 @@ void main() {
     // Keep grass off the beach/underwater, unlike the reference (whose
     // landscape had no water) — fades out below waterline + a small
     // margin instead of just clamping to sea level.
-    float shoreFade = smoothstep(0.0, 3.0, displacement - (uBoundingBoxMin.y + 1.0));
+    //
+    // Was smoothstep(0.0, 3.0, displacement - (uBoundingBoxMin.y + 1.0))
+    // — faded relative to uBoundingBoxMin.y, the heightmap's baked overall
+    // MINIMUM elevation across the whole island. Since terrain.js's island
+    // falloff drops all the way to a seabed ~16 units below WATER_LEVEL,
+    // that minimum sits around -18, so this reached full grass height only
+    // ~4 units above the deepest seabed point — around elevation -14,
+    // while the actual water surface is at WATER_LEVEL (-2). Grass was
+    // reaching full height while still ~12 units underwater relative to
+    // the real waterline, which is exactly why it showed up on the beach
+    // and underwater in live-test screenshots. displacement above is
+    // already real-world elevation (it's the un-normalized map() output),
+    // so comparing it directly against the actual WATER_LEVEL constant —
+    // not the heightmap's incidental minimum — is the fix.
+    float shoreFade = smoothstep(uWaterLevel + 0.5, uWaterLevel + 3.5, displacement);
     heightModifier *= shoreFade;
 
     float edgeFade =
@@ -268,6 +284,7 @@ export function createGrass(state) {
             uNoiseTexture: { value: noiseTexture },
             uBoundingBoxMin: { value: heightMap.boundsMin },
             uBoundingBoxMax: { value: heightMap.boundsMax },
+            uWaterLevel: { value: WATER_LEVEL },
             uPatchSize: { value: PATCH_SIZE },
             uBladeWidth: { value: BLADE_WIDTH },
             uWindDirection: { value: Math.PI * 0.25 },

@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { getElevation } from './terrain.js';
 import { applyMoss } from './foliage.js';
 import { getSettings } from '../core/settings.js';
+import { buildChunkedInstancedField } from '../core/chunks.js';
 
 const noise3DGLSL = `
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -103,13 +104,17 @@ const fbmGLSL = `
     }
 `;
 
-// Direct port of generateRock() — builds one displaced-icosahedron mesh
-// per call, given the same param shape rockParams had in the reference.
-function buildRockMesh(params, settings) {
-    // rockDetail setting applies as a delta on top of each ROCK_TYPE's own
-    // base detail level (4 or 5), preserving their relative shape variety
-    // rather than forcing every rock to the same subdivision count.
-    // Clamped to >=1 since IcosahedronGeometry throws on negative detail.
+// Direct port of generateRock() — builds the shared geometry+material for
+// ONE rock "type" (detail/color/displacement recipe). Used to be built
+// per-rock (one Mesh, one material, one u_seed uniform, each instance
+// fully independent) — converted to real instancing: all rocks sharing a
+// type now share this ONE geometry+material, with per-instance variation
+// coming from an `aSeed` instanced attribute (set per-instance in
+// createRocks() via core/chunks.js's extraAttribute) instead of a
+// per-material uniform. See core/chunks.js's own header comment for why a
+// custom instanced attribute needs its own geometry per chunk rather than
+// sharing this one directly — that's handled there, not here.
+function buildRockMaterial(params, settings) {
     const detailDelta = { low: -2, med: 0, high: 1 }[settings.rockDetail] ?? 0;
     const detail = Math.max(1, params.detail + detailDelta);
     const geometry = new THREE.IcosahedronGeometry(1, detail);
@@ -121,7 +126,6 @@ function buildRockMesh(params, settings) {
     });
 
     const customUniforms = {
-        u_seed: { value: params.seed },
         u_displacementStrength: { value: params.displacementStrength },
         u_noiseScale: { value: params.noiseScale },
         u_roughness: { value: params.roughness },
@@ -132,7 +136,6 @@ function buildRockMesh(params, settings) {
     };
 
     material.onBeforeCompile = (shader) => {
-        shader.uniforms.u_seed = customUniforms.u_seed;
         shader.uniforms.u_displacementStrength = customUniforms.u_displacementStrength;
         shader.uniforms.u_noiseScale = customUniforms.u_noiseScale;
         shader.uniforms.u_roughness = customUniforms.u_roughness;
@@ -142,7 +145,7 @@ function buildRockMesh(params, settings) {
         shader.uniforms.u_accentColor = customUniforms.u_accentColor;
 
         shader.vertexShader = `
-            uniform float u_seed;
+            attribute float aSeed;
             uniform float u_displacementStrength;
             uniform float u_noiseScale;
             uniform float u_roughness;
@@ -155,7 +158,7 @@ function buildRockMesh(params, settings) {
             ${fbmGLSL}
 
             vec3 getDisplacedPosition(vec3 pos) {
-                vec3 noisePos = pos + vec3(u_seed);
+                vec3 noisePos = pos + vec3(aSeed);
                 float noise = fbm(noisePos, u_noiseScale, u_roughness, u_lacunarity, u_octaves);
                 return pos + normalize(pos) * (noise * u_displacementStrength);
             }
@@ -189,7 +192,7 @@ function buildRockMesh(params, settings) {
             '#include <begin_vertex>',
             `
             vec3 transformed = getDisplacedPosition(position);
-            vNoiseValue = fbm(position + vec3(u_seed), u_noiseScale, u_roughness, u_lacunarity, u_octaves);
+            vNoiseValue = fbm(position + vec3(aSeed), u_noiseScale, u_roughness, u_lacunarity, u_octaves);
             `
         );
 
@@ -210,10 +213,7 @@ function buildRockMesh(params, settings) {
         );
     };
 
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    return mesh;
+    return { geometry, material };
 }
 
 // A handful of distinct rock "recipes" (detail/color/displacement combos),
@@ -224,14 +224,19 @@ const ROCK_TYPES = [
     { detail: 4, seed: 4.2, displacementStrength: 0.5, noiseScale: 0.9, roughness: 0.6, lacunarity: 2.3, octaves: 4, baseColor: '#6b6255', accentColor: '#4a4238', flatShading: true },
     { detail: 5, seed: 7.7, displacementStrength: 0.28, noiseScale: 1.6, roughness: 0.5, lacunarity: 2.0, octaves: 5, baseColor: '#565b52', accentColor: '#3a3e37', flatShading: false },
 ];
+const MAX_DISPLACEMENT = Math.max(...ROCK_TYPES.map(t => t.displacementStrength)); // 0.5 — used below for chunk bounding-sphere padding
 
 export function createRocks(state) {
     const ROCK_RADIUS = 260;
     const placements = (state.quality && state.quality.rockCount) || 90;
     const settings = getSettings();
-    state.rockGroup = new THREE.Group();
+    state.rockGroup = new THREE.Group(); // moss meshes only now — the rock instances themselves are added straight to state.scene by buildChunkedInstancedField
+    state.rockFields = [];
 
+    const byType = ROCK_TYPES.map(() => []);
+    const mossQueue = [];
     let placed = 0;
+
     for (let i = 0; i < placements * 3 && placed < placements; i++) {
         const r = Math.sqrt(Math.random()) * ROCK_RADIUS;
         const theta = Math.random() * Math.PI * 2;
@@ -241,63 +246,87 @@ export function createRocks(state) {
         if (y < 1.5) continue; // keep out of the lake
         if (Math.hypot(x - 0, z - 20) < 12) continue; // keep clear of player spawn (0, _, 20)
 
-        const params = { ...ROCK_TYPES[Math.floor(Math.random() * ROCK_TYPES.length)], seed: Math.random() * 100 };
-        const rockMesh = buildRockMesh(params, settings);
-
+        const typeIndex = Math.floor(Math.random() * ROCK_TYPES.length);
+        const seed = Math.random() * 100;
         const scale = 0.8 + Math.random() * 2.5;
-        rockMesh.scale.set(scale * (0.8 + Math.random() * 0.4), scale * (0.7 + Math.random() * 0.4), scale * (0.8 + Math.random() * 0.4));
-        rockMesh.position.set(x, y + scale * 0.3, z); // partially bury base in terrain
-        rockMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI * 2, Math.random() * Math.PI);
+        const scaleX = scale * (0.8 + Math.random() * 0.4);
+        const scaleY = scale * (0.7 + Math.random() * 0.4);
+        const scaleZ = scale * (0.8 + Math.random() * 0.4);
+        const rotX = Math.random() * Math.PI, rotY = Math.random() * Math.PI * 2, rotZ = Math.random() * Math.PI;
+        const py = y + scale * 0.3; // partially bury base in terrain
 
-        state.rockGroup.add(rockMesh);
+        byType[typeIndex].push({ x, y: py, z, scaleX, scaleY, scaleZ, rotX, rotY, rotZ, seed });
 
         // Same {x, z, r} circle-collider shape forest.js/pine-trees.js
         // already push — main.js's player controller reads this array
-        // generically, so rocks just needed to start contributing to it.
-        // Base geometry is roughly unit-radius before scaling; average the
-        // asymmetric x/z scale factors for a reasonable circle approximation
-        // (rocks aren't circular, but a slightly-off collision radius on a
-        // static rock is a much smaller problem than no collision at all).
+        // generically. Base geometry is roughly unit-radius before
+        // scaling; average the asymmetric x/z scale factors for a
+        // reasonable circle approximation (rocks aren't circular, but a
+        // slightly-off collision radius on a static rock is a much
+        // smaller problem than no collision at all).
         state.colliders.push({ x, z, r: scale * 0.75 });
 
         // Moss on ~40% of placed rocks, larger ones only — small pebbles
         // shouldn't visually compete with a mossy boulder.
         if (scale > 1.6 && Math.random() < 0.4) {
-            rockMesh.geometry.computeVertexNormals();
-            const moss = applyMoss(state, rockMesh.geometry, 1);
-            if (moss) {
-                moss.scale.copy(rockMesh.scale);
-                moss.position.copy(rockMesh.position);
-                moss.rotation.copy(rockMesh.rotation);
-                state.rockGroup.add(moss);
-            }
+            mossQueue.push({ typeIndex, x, y: py, z, scaleX, scaleY, scaleZ, rotX, rotY, rotZ });
         }
 
         placed++;
     }
+
+    const typeGeometries = [];
+    for (let t = 0; t < ROCK_TYPES.length; t++) {
+        const typePlacements = byType[t];
+        typeGeometries.push(null);
+        if (!typePlacements.length) continue;
+
+        const { geometry, material } = buildRockMaterial(ROCK_TYPES[t], settings);
+        geometry.computeVertexNormals(); // needed for applyMoss()'s upward-facing-vertex check below, same as the pre-instancing version did per-rock — now done once per shared type geometry instead
+        typeGeometries[t] = geometry;
+
+        const field = buildChunkedInstancedField({
+            scene: state.scene,
+            geometry, material,
+            worldExtent: ROCK_RADIUS * 2 + 40,
+            cellSize: 60,
+            drawDistance: (settings.drawDistance || 150) * 1.3, // matches the old per-mesh updateRocks()'s 1.3x margin — rocks are chunky/solid enough that popping out early reads worse than for grass/flowers
+            placements: typePlacements,
+            extraAttribute: { name: 'aSeed', getValue: (item) => item.seed },
+            boundsPadding: MAX_DISPLACEMENT * 3.5, // covers max displacement (0.5) times roughly the largest scale factor rocks get (up to ~3.3), so chunks don't cull out while still partially on-screen
+        });
+        for (const chunk of field.chunks) { chunk.castShadow = true; chunk.receiveShadow = true; }
+        state.rockFields.push(field);
+    }
+
+    // Moss — same applyMoss() call pattern as before the instancing
+    // conversion, just sourcing transform from each queued placement's
+    // plain data instead of an individual rock Mesh object (rocks no
+    // longer exist as individual Mesh instances now that they're
+    // instanced/chunked above). applyMoss() samples the shared TYPE
+    // geometry's un-displaced vertex positions either way — that was
+    // already true before this conversion too (vertex displacement is
+    // GPU-shader-only, never written back to CPU-side geometry data), so
+    // moss placement accuracy is unchanged, not a regression.
+    for (const m of mossQueue) {
+        const baseGeometry = typeGeometries[m.typeIndex];
+        if (!baseGeometry) continue;
+        const moss = applyMoss(state, baseGeometry, 1);
+        if (moss) {
+            moss.scale.set(m.scaleX, m.scaleY, m.scaleZ);
+            moss.position.set(m.x, m.y, m.z);
+            moss.rotation.set(m.rotX, m.rotY, m.rotZ);
+            state.rockGroup.add(moss);
+        }
+    }
+
     state.scene.add(state.rockGroup);
 }
 
-// Distance-based visibility culling — not the same chunked-InstancedMesh
-// approach flowers.js/bushes.js use (see core/chunks.js's header comment),
-// because rocks aren't instanced: each one is its own Mesh with its own
-// per-instance vertex-displacement shader uniforms (buildRockMesh above),
-// so there's no shared InstancedMesh to chunk in the first place — that's
-// the "bigger refactor" the bug report flagged and explicitly didn't
-// attempt. This is the smaller, real fix that IS in scope without
-// reworking how rocks are generated: rock count is small (default 90,
-// scaled by state.quality.rockCount) so frustum culling was never the
-// expensive part, but every rock mesh was permanently visible/rendered
-// regardless of distance. Hiding ones past draw distance still saves
-// real per-frame draw calls + shader evaluations on lower-end hardware,
-// same motivation as chunks.js's drawDistance parameter.
+// Chunk-level distance culling, same idea as chunks.js's other fields —
+// replaces the old per-Mesh distance-visibility loop, since rocks are no
+// longer individual Mesh objects in state.rockGroup.children.
 export function updateRocks(state) {
-    if (!state.rockGroup || !state.camera) return;
-    const dd = (getSettings().drawDistance || 150) * 1.3; // slightly past the general draw distance — rocks are chunky/solid enough that popping out early reads worse than for grass/flowers
-    const dd2 = dd * dd;
-    const camX = state.camera.position.x, camZ = state.camera.position.z;
-    for (const child of state.rockGroup.children) {
-        const dx = camX - child.position.x, dz = camZ - child.position.z;
-        child.visible = (dx * dx + dz * dz) < dd2;
-    }
+    if (!state.rockFields || !state.camera) return;
+    for (const field of state.rockFields) field.update(state.camera.position);
 }

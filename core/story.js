@@ -18,6 +18,7 @@
 
 import { showDialogue, isDialogueActive, advanceDialogue as advanceDialogueUI } from './dialogue.js';
 import { ensureAudioContext } from './audio.js';
+import { findSouthernBluff, findWillowSpot } from './landmarks.js';
 
 const RECRUIT_RANGE = 3.2; // mirrors environment/animals.js's own constant — kept separate rather than exported/shared since it's a proximity threshold specific to that file's animal list, not a shared game constant
 
@@ -27,7 +28,16 @@ export function initStory(state) {
         introShown: false,
         nightsSeen: 0,
         wasNight: true,      // gameTime starts at 0.5 (afternoon-ish) per day-night-cycle.js's default — set true so the very first day doesn't immediately register as a "new night"
+        boundaryWalkDone: false,
+        boneDone: false,
     };
+    // Computed once, right after terrain generation (main.js calls
+    // initStory well after createTerrain — see that file), rather than
+    // hardcoded: real, verified-safe points on this specific generated
+    // island. See core/landmarks.js for why hardcoded coordinates weren't
+    // safe to guess.
+    state.story.bluffPos = findSouthernBluff(state);
+    state.story.willowPos = findWillowSpot(state);
 }
 
 function rigByName(state, name) {
@@ -57,6 +67,22 @@ export function updateStory(state, dt) {
         const bimo = rigByName(state, 'Bimo');
         if (bimo && !isDialogueActive(state) && nearestDistTo(state, bimo) < RECRUIT_RANGE) {
             playBimoBrambles(state, bimo);
+        }
+    }
+
+    // Boundary Walk / Unburied Bone — optional flavor beats from the
+    // script, proximity-triggered once the group has formed. Deliberately
+    // NOT gating story progression on these (a player who never wanders
+    // toward either landmark still reaches the shoreline normally via the
+    // night-escalation timer below) — they're texture, not a checkpoint.
+    if ((s.stage === 'grouped' || s.stage === 'escalating') && !isDialogueActive(state)) {
+        const distToPlayer = (pos) => Math.hypot(state.player.position.x - pos.x, state.player.position.z - pos.z);
+        if (!s.boundaryWalkDone && s.bluffPos && distToPlayer(s.bluffPos) < 6) {
+            s.boundaryWalkDone = true;
+            playBoundaryWalk(state);
+        } else if (!s.boneDone && s.willowPos && distToPlayer(s.willowPos) < 6) {
+            s.boneDone = true;
+            playUnburiedBone(state);
         }
     }
 
@@ -112,6 +138,61 @@ function onBimoFreed(state) {
         { speaker: 'Shu', text: "The grass is warm. The wind doesn't blow hard here. Sit down. You're making the air noisy." },
         { speaker: 'Bimo', text: "She's right. The air is quiet. Too quiet. Hey, kid — Kat, was it? We should look around. Dogs don't just sit in clover. It's against the rules." },
     ], () => { if (shu) shu.following = true; });
+}
+
+function playBoundaryWalk(state) {
+    showDialogue(state, [
+        { text: "The group trots to the edge of the southern bluffs. Below lies an endless, pale blue sea with no sky-line, stretching into infinite haze." },
+        {
+            text: 'A small pebble sits loose at the edge.',
+            choices: [
+                {
+                    label: 'Nudge the pebble over the edge.',
+                    onSelect: (st) => {
+                        showDialogue(st, [
+                            { text: 'It falls silently into the mist. Primo tries to look over, but Bimo grabs his scruff, pulling him back with instinctive protectiveness.' },
+                            { speaker: 'Bimo', text: 'No edge-walking, Primo. There\'s nothing down there. Just... empty.' },
+                        ]);
+                    },
+                },
+                {
+                    label: 'Step back from the edge.',
+                    onSelect: (st) => {
+                        showDialogue(st, [
+                            { speaker: 'Bimo', text: "Good instinct, kid. There's nothing down there worth the look." },
+                        ]);
+                    },
+                },
+            ],
+        },
+    ]);
+}
+
+function playUnburiedBone(state) {
+    showDialogue(state, [
+        { text: 'Under a sun-dappled willow, Primo finds a heavy, pristine wooden stick that smells faintly of lavender. He brings it to Kat.' },
+        {
+            speaker: 'Primo', text: '...',
+            choices: [
+                {
+                    label: 'Initiate a game of tug-o\'-war.',
+                    onSelect: (st) => {
+                        showDialogue(st, [
+                            { text: 'Primo yanks back with everything he has, tail a blur, until the stick finally gives — he tumbles backward, triumphant.' },
+                        ]);
+                    },
+                },
+                {
+                    label: 'Bury it together near the Hearth.',
+                    onSelect: (st) => {
+                        showDialogue(st, [
+                            { text: 'Shu watches intently, finally un-loafing for two seconds to scratch a single line of dirt over the spot. It becomes their first shared mark on the world.' },
+                        ]);
+                    },
+                },
+            ],
+        },
+    ]);
 }
 
 function playPrimoStream(state) {

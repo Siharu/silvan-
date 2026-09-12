@@ -17,10 +17,30 @@
 
 import * as THREE from 'three';
 
-// placements: array of { x, y, z, scaleX, scaleY, scaleZ, rotX, rotY, rotZ, colorHex? }
+// placements: array of { x, y, z, scaleX, scaleY, scaleZ, rotX, rotY, rotZ, colorHex?, extraValue? }
 // rotX/rotZ are optional (default 0) — only bushes.js's leaf clumps need
 // full 3-axis rotation; flowers.js/fireflies.js only ever needed rotY.
-export function buildChunkedInstancedField({ scene, geometry, material, worldExtent, cellSize, drawDistance, placements }) {
+//
+// extraAttribute (optional): { name, getValue } — for fields that need a
+// genuine per-instance shader input beyond transform/color (rocks.js's
+// per-instance displacement seed, which used to be a per-Mesh uniform
+// before rocks were converted to instancing here). getValue(item) reads
+// the value off each placement item; stored as a 1-component
+// InstancedBufferAttribute named `name`, so the material's vertex shader
+// can read it as `attribute float <name>;`.
+//
+// Note on why this needs its own geometry per chunk rather than reusing
+// the single shared `geometry` param directly: instanced custom
+// attributes live on the geometry object, and `geometry` here is shared
+// across every chunk (cheap — no data duplication for the base
+// position/normal/uv/index buffers). Writing a per-chunk attribute
+// straight onto that shared object would have each new chunk silently
+// overwrite the previous chunk's seed data. So when extraAttribute is
+// used, each chunk gets a lightweight BufferGeometry that shares the
+// base geometry's attribute buffers by reference (no copying — index,
+// position, normal, uv all reused as-is) and only owns its own unique
+// instanced attribute.
+export function buildChunkedInstancedField({ scene, geometry, material, worldExtent, cellSize, drawDistance, placements, extraAttribute, boundsPadding = 0 }) {
     const half = worldExtent / 2;
     const cells = new Map();
 
@@ -37,7 +57,25 @@ export function buildChunkedInstancedField({ scene, geometry, material, worldExt
     const chunks = [];
 
     for (const [key, items] of cells) {
-        const mesh = new THREE.InstancedMesh(geometry, material, items.length);
+        let chunkGeometry = geometry;
+        if (extraAttribute) {
+            chunkGeometry = new THREE.BufferGeometry();
+            chunkGeometry.index = geometry.index;
+            for (const attrName in geometry.attributes) chunkGeometry.setAttribute(attrName, geometry.attributes[attrName]);
+            // NOT copying geometry.boundingSphere here — on a freshly
+            // built geometry (e.g. rocks.js's IcosahedronGeometry) it's
+            // null until something computes it, and cloning null would
+            // throw. mesh.computeBoundingSphere() below already computes
+            // it fresh from chunkGeometry's own position attribute (which
+            // is a real shared reference, not a copy, so this is a cheap
+            // one-time-per-chunk read, not duplicated vertex data) if it
+            // isn't already set — no need to pre-seed it here.
+            const values = new Float32Array(items.length);
+            for (let i = 0; i < items.length; i++) values[i] = extraAttribute.getValue(items[i]);
+            chunkGeometry.setAttribute(extraAttribute.name, new THREE.InstancedBufferAttribute(values, 1));
+        }
+
+        const mesh = new THREE.InstancedMesh(chunkGeometry, material, items.length);
         let hasColor = false;
 
         for (let i = 0; i < items.length; i++) {
@@ -61,6 +99,7 @@ export function buildChunkedInstancedField({ scene, geometry, material, worldExt
         // this chunk's cull test is against its actual instance spread,
         // not the single-blade/single-frond geometry bounds.
         mesh.computeBoundingSphere();
+        if (boundsPadding > 0) mesh.boundingSphere.radius += boundsPadding; // for materials that displace vertices in the shader beyond the base geometry's bounds (rocks.js's noise displacement) — computeBoundingSphere() only knows about the undisplaced geometry+transform, so without this, chunks could pop in/out right at the screen edge where the cull test disagrees with what's actually rendered
 
         const [cx, cz] = key.split(',').map(Number);
         mesh.userData.chunkCenterX = (cx + 0.5) * cellSize - half;
