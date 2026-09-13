@@ -44,6 +44,7 @@ import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecru
 import { createDayNightCycle, updateDayNightCycle, updateStars } from './atmosphere/day-night-cycle.js';
 import { createClouds, updateClouds } from './environment/clouds.js';
 import { setupTouchControls } from './core/touch-controls.js';
+import { createMinimap, updateMinimap, toggleMinimap } from './core/minimap.js';
 
 const state = createWorldState();
 window.__silvanState = state; // lets core/dialogue.js's tap-to-continue click listener reach state without every module needing to import/thread it through — see that file's getEls() comment
@@ -259,8 +260,10 @@ function setupPlayerController() {
         yaw -= movementX * sens;
         pitch -= movementY * sens * (state.settings.invertY ? -1 : 1);
         pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+        state.playerYaw = yaw; // exposed for core/minimap.js — yaw itself is a closure var, not otherwise reachable from outside this setup fn
     }
     state._applyLook = applyLook;
+    state.playerYaw = yaw; // initial value before the first look event
 
     document.addEventListener('keydown', (e) => {
         if (state.isPaused) return;
@@ -272,6 +275,7 @@ function setupPlayerController() {
         if (e.code === kb.run) move.run = true;
         if (e.code === kb.jump) { move.jumpPressed = true; move.jumpHeld = true; }
         if (e.code === kb.rest) move.restHeld = true;
+        if (e.code === kb.toggleMap) toggleMinimap(state);
     });
     document.addEventListener('keyup', (e) => {
         const kb = getKeybinds();
@@ -512,6 +516,8 @@ async function init() {
 
     setLoadingProgress(0.93, 'Raising the tower');
     createRadioTower(state, new THREE.Vector3(120, 0, -140));
+    state.mapMarkers = state.mapMarkers || [];
+    state.mapMarkers.push({ x: 120, z: -140, label: 'Radio Tower', color: '#c98a4a' });
     await afterStep();
 
     setLoadingProgress(0.95, 'Lighting fireflies');
@@ -522,6 +528,10 @@ async function init() {
     setLoadingProgress(0.97, 'Waking the animals');
     spawnDemoAnimals(state);
     initStory(state);
+    await afterStep();
+
+    setLoadingProgress(0.98, 'Charting the map');
+    createMinimap(state);
     await afterStep();
 
     setupPlayerController();
@@ -578,6 +588,7 @@ function animate() {
     updateRadioTowerProximity(state);
     updateInteractPrompt(state);
     updateForestLOD(state, ts); // camera position + leaf-flutter wind uTime feed for forest.js's shaders — see forest.js's export comment
+    updateMinimap(state);
     updateFpsCounter(state);
 
     state.renderer.render(state.scene, state.camera);

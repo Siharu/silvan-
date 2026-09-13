@@ -158,6 +158,84 @@ const waterFragmentShader = `
     }
 `;
 
+// Time-of-day / weather color + wave targets — ported from the
+// standalone ocean_for_silvan.html demo (its updateEnvironmentState()
+// switch block), re-keyed off this project's REAL state.gameTime
+// (0..24hr, from atmosphere/day-night-cycle.js) and REAL
+// state.currentRainIntensity (0..1, from atmosphere/weather.js) instead
+// of that file's manual time/weather <select> dropdowns. The demo only
+// ever showed 4 snapped states with no transition; here every value is
+// continuously interpolated so there's no popping as time/weather change.
+const TIME_COLOR_STOPS = [
+    // hour, depthColor, surfaceColor, foamTint (foam stays whitish, just tinted slightly per time-of-day like the demo's sky-blend did)
+    { hr: 5,  depth: 0x0a1a2e, surface: 0x2a5570, foam: 0xffe8cc }, // morning — demo's waterHex 0x004466 lightened/warmed toward its skyHex 0xffa07a
+    { hr: 12, depth: 0x040d1a, surface: 0x0e2f42, foam: 0xffffff }, // noon — matches this file's existing "ocean" preset, demo's waterHex 0x006994 direction
+    { hr: 18, depth: 0x1a0a12, surface: 0x35202c, foam: 0xffd9b3 }, // evening — demo's waterHex 0x002244 warmed toward its skyHex 0xff4500
+    { hr: 22, depth: 0x02030a, surface: 0x050a18, foam: 0xaab8ff }, // night — demo's waterHex 0x000511, foam tinted toward its moonlight sunHex 0x88aaff
+];
+
+const WEATHER_TARGETS = {
+    // Matches the demo's cloudy/stormy branches: sky/water pulled toward
+    // grey/near-black, wave height + speed increased, fog thickened.
+    // rainIntensity 0 = clear (no pull, no override below).
+    cloudyGrey: 0x888888, cloudyWaterGrey: 0x334444,
+    stormyGrey: 0x222222, stormyWaterGrey: 0x111122,
+    // wave height/speed at rainIntensity 0 -> 1, lerped same as the demo's
+    // clear(1.5/1.2) -> cloudy(2.0/1.5) -> stormy(4.0/2.5) staircase,
+    // smoothed into a continuous curve instead of 3 fixed steps.
+    calmHeight: 1.0, stormHeight: 4.0,
+    calmSpeed: 1.0, stormSpeed: 2.5,
+};
+
+// Returns depth/surface/foam THREE.Color for the current gameTime,
+// interpolated between the two nearest TIME_COLOR_STOPS (wrapping
+// midnight->morning), then pulled toward the weather greys by rainIntensity
+// exactly as the demo did with its skyHex/waterHex .lerp() calls.
+// Internal-only scratch (the "b" stop + weather-grey temporaries) — kept
+// separate from the function's `out` param so writing into scratch never
+// aliases the caller's output object (they used to be the same object,
+// which made the lerp below a no-op — b overwrote out before the lerp
+// could blend a->b).
+const _scratch = {
+    b: new THREE.Color(), weatherGrey: new THREE.Color(), weatherWaterGrey: new THREE.Color(),
+};
+// Reused output target, written fresh each updateWater() call and then
+// lerped-toward (not snapped-to) by each mesh's actual uniforms.
+const _timeWeatherTarget = {
+    depth: new THREE.Color(), surface: new THREE.Color(), foam: new THREE.Color(),
+};
+function computeTimeWeatherColors(timeOfDay, rainIntensity, out) {
+    const stops = TIME_COLOR_STOPS;
+    let a = stops[stops.length - 1], b = stops[0];
+    for (let i = 0; i < stops.length; i++) {
+        const cur = stops[i], next = stops[(i + 1) % stops.length];
+        const curHr = cur.hr, nextHr = next.hr > cur.hr ? next.hr : next.hr + 24;
+        let t = timeOfDay >= curHr ? timeOfDay : timeOfDay + 24;
+        if (t >= curHr && t <= nextHr) { a = cur; b = next; break; }
+    }
+    const spanHr = ((b.hr - a.hr) + 24) % 24 || 24;
+    let into = timeOfDay - a.hr; if (into < 0) into += 24;
+    const t = Math.min(1, Math.max(0, into / spanHr));
+
+    out.depth.setHex(a.depth).lerp(_scratch.b.setHex(b.depth), t);
+    out.surface.setHex(a.surface).lerp(_scratch.b.setHex(b.surface), t);
+    out.foam.setHex(a.foam).lerp(_scratch.b.setHex(b.foam), t);
+
+    // Weather pull — 0..0.5 rainIntensity blends toward "cloudy" grey,
+    // 0.5..1 continues on toward "stormy" grey, matching the demo's two
+    // discrete branches but as one continuous ramp.
+    if (rainIntensity > 0) {
+        const cloudyT = Math.min(1, rainIntensity * 2);
+        const stormT = Math.max(0, rainIntensity * 2 - 1);
+        _scratch.weatherGrey.setHex(WEATHER_TARGETS.cloudyGrey).lerp(_scratch.b.setHex(WEATHER_TARGETS.stormyGrey), stormT);
+        _scratch.weatherWaterGrey.setHex(WEATHER_TARGETS.cloudyWaterGrey).lerp(_scratch.b.setHex(WEATHER_TARGETS.stormyWaterGrey), stormT);
+        out.surface.lerp(_scratch.weatherGrey, cloudyT * 0.5);
+        out.depth.lerp(_scratch.weatherWaterGrey, cloudyT * 0.4);
+        out.foam.lerp(_scratch.weatherGrey, cloudyT * 0.3);
+    }
+    return out;
+}
+
 // Exact presets from ocean-water.html, unchanged.
 const PRESETS = {
     calm: {
@@ -338,13 +416,28 @@ export function updateWater(state, ts) {
     const speedMult = settings.waveSpeedMult ?? 1.0;
     const stormMult = settings.stormReactivityMult ?? 1.0;
     const rainIntensity = state.currentRainIntensity || 0;
-    const effectiveHeightMult = heightMult * (1.0 + rainIntensity * stormMult); // continuous rain-linked boost on top of the base slider
+    // Weather-driven height/speed ramp (from the demo's clear/cloudy/stormy
+    // staircase, see WEATHER_TARGETS) layered under the existing user
+    // slider + storm-reactivity multipliers rather than replacing them.
+    const weatherHeightMult = WEATHER_TARGETS.calmHeight + (WEATHER_TARGETS.stormHeight - WEATHER_TARGETS.calmHeight) * rainIntensity;
+    const weatherSpeedMult = WEATHER_TARGETS.calmSpeed + (WEATHER_TARGETS.stormSpeed - WEATHER_TARGETS.calmSpeed) * rainIntensity;
+    const effectiveHeightMult = heightMult * weatherHeightMult * (1.0 + rainIntensity * stormMult); // continuous rain-linked boost on top of the base slider
+    const effectiveSpeedBoost = speedMult * weatherSpeedMult;
+
+    // Real gameTime (0..24) drives the color stops instead of the demo's
+    // manual time-of-day <select>.
+    const timeOfDay = (state.gameTime !== undefined ? state.gameTime : 0.5) * 24;
+    computeTimeWeatherColors(timeOfDay, rainIntensity, _timeWeatherTarget);
+    const colorLerpSpeed = 0.02; // smooth crossfade, mirrors the demo's own lerpSpeed easing so time/weather shifts don't pop
 
     if (state.lakeFallbackMesh) {
         const u = state.lakeFallbackMesh.material.uniforms;
         u.u_time.value = ts;
         u.u_heightMult.value = effectiveHeightMult;
-        u.u_speed.value = state.lakeFallbackMesh.material.userData.baseSpeed * speedMult;
+        u.u_speed.value = state.lakeFallbackMesh.material.userData.baseSpeed * effectiveSpeedBoost;
+        u.u_depthColor.value.lerp(_timeWeatherTarget.depth, colorLerpSpeed);
+        u.u_surfaceColor.value.lerp(_timeWeatherTarget.surface, colorLerpSpeed);
+        u.u_foamColor.value.lerp(_timeWeatherTarget.foam, colorLerpSpeed);
         if (state.sunPosition) u.u_lightDir.value.copy(state.sunPosition).normalize();
         feedDayNightUniforms(state, u);
     }
@@ -352,7 +445,10 @@ export function updateWater(state, ts) {
         const u = state.oceanMesh.material.uniforms;
         u.u_time.value = ts;
         u.u_heightMult.value = effectiveHeightMult;
-        u.u_speed.value = state.oceanMesh.material.userData.baseSpeed * speedMult;
+        u.u_speed.value = state.oceanMesh.material.userData.baseSpeed * effectiveSpeedBoost;
+        u.u_depthColor.value.lerp(_timeWeatherTarget.depth, colorLerpSpeed);
+        u.u_surfaceColor.value.lerp(_timeWeatherTarget.surface, colorLerpSpeed);
+        u.u_foamColor.value.lerp(_timeWeatherTarget.foam, colorLerpSpeed);
         if (state.sunPosition) u.u_lightDir.value.copy(state.sunPosition).normalize();
         feedDayNightUniforms(state, u);
     }

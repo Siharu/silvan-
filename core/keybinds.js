@@ -20,6 +20,7 @@ export const DEFAULT_KEYBINDS = {
     interact: 'KeyE',
     fastForward: 'KeyR',
     rest: 'KeyG', // 'R' is already claimed by fast-forward — see main.js's rest-handling comment
+    toggleMap: 'KeyM',
 };
 
 export const ACTION_LABELS = {
@@ -32,6 +33,7 @@ export const ACTION_LABELS = {
     interact: 'Interact',
     fastForward: 'Nap (Kat Sleeps 5-6hrs)',
     rest: 'Rest (Sleep to Morning)',
+    toggleMap: 'Open Map',
 };
 
 function loadKeybinds() {
