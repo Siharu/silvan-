@@ -152,7 +152,7 @@ export function createTerrain(state) {
             'vec4 diffuseColor = vec4( diffuse, opacity );',
             `
             vec3 dirtColor = vec3(0.06, 0.05, 0.03);
-            vec3 grassColor = vec3(0.028, 0.045, 0.022); // was (0.055, 0.085, 0.045) — still too bright: this is a real PBR MeshStandardMaterial multiplied by an up-to-2.0-intensity DirectionalLight at midday (see day-night-cycle.js), so halving albedo only made it "less lime," not actually dark. grass.js's blades use a much lower-ceiling custom ambient+sun*0.6 model instead, which is the actual source of the brightness mismatch you're seeing. Roughly halved again to compensate for full-daylight multiplication.
+            vec3 grassColor = vec3(1.0, 0.0, 1.0); // TEMP DEBUG — hot magenta, so we can confirm this file is actually the one your build is loading before tuning the real value further
             vec3 rockColor = vec3(0.38, 0.37, 0.34);
             vec3 sandColor = vec3(0.30, 0.26, 0.18);
             vec3 wetSandColor = vec3(0.20, 0.17, 0.12);
