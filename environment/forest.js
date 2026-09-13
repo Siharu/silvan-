@@ -294,18 +294,22 @@ export async function generateFractalForest(state, onProgress) {
         // that briefly lived here has been removed to avoid double-
         // planting pines from two systems at once.
         let leafBase = new THREE.Color(0x244a1f); // Default Green
-        // Threshold was ported verbatim as 0.65 from the reference build,
-        // but that reference used simple value-noise (range spreads across
-        // nearly the full ±1), while this project's noise() (terrain.js)
-        // is true gradient/Perlin noise — its actual output range here is
-        // roughly ±0.65 at best, and empirically NEVER exceeds ~0.5 in
-        // practice. 0.65 was mathematically unreachable: zero trees in
-        // 20,000 sampled positions ever crossed it, so every tree fell
-        // through to the green default — that's why "no color variety"
-        // wasn't a lighting/rendering issue, the autumn branch was dead
-        // code. 0.10 is this noise function's actual ~72nd percentile,
-        // reproducing the reference's ~28% autumn-tree ratio.
-        if (biomeVal > 0.10) {
+        // Threshold history: ported verbatim as 0.65 from the reference
+        // build, but that reference used simple value-noise (range spreads
+        // across nearly the full ±1), while this project's noise()
+        // (terrain.js) is true gradient/Perlin noise whose actual output
+        // here never exceeds ~0.46 (sampled 200k tree-placement positions).
+        // 0.65 was mathematically unreachable — zero autumn trees, ever.
+        // A prior pass "fixed" that by dropping the threshold to 0.10, but
+        // mis-measured that as the ~72nd percentile; resampling against the
+        // real tree-placement distribution puts 0.10 at the 65th percentile
+        // — 35% of all trees, not a rare accent. Worse, this noise is
+        // low-frequency (x*0.008), so that 35% isn't scattered — it forms
+        // whole contiguous autumn regions, which is exactly the solid wall
+        // of neon canopy visible in the live screenshot. 0.35 is the actual
+        // ~95th percentile — a genuinely rare accent (~5% of trees) instead
+        // of over a third of the forest.
+        if (biomeVal > 0.35) {
             // Maple Tree (Autumn colors based on biome)
             const autumn = [0x992211, 0xaa4411, 0xbb8811, 0xcc3311];
             leafBase.setHex(autumn[Math.floor(Math.random()*autumn.length)]);
