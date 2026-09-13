@@ -82,6 +82,8 @@ export function createClouds(state) {
 }
 
 const _tintColor = new THREE.Color();
+const _fallbackHemi = new THREE.Color(0x333344); // was `new THREE.Color(0x333344)` allocated fresh every frame as a fallback arg — cached once since it's only ever used when state.hemiLight is somehow missing
+const _sunHighlight = new THREE.Color(0xfff6e8); // same fix — was allocated fresh every frame inside the .lerp() call below
 
 export function updateClouds(state, delta) {
     if (!state.clouds) return;
@@ -92,8 +94,8 @@ export function updateClouds(state, delta) {
     // moon-ambient boost. No independent "cloud lighting" model, just
     // riding the values everything else already rides.
     const dayBlend = Math.max(0, state.sunHeightNormalized || 0);
-    _tintColor.copy(state.hemiLight ? state.hemiLight.color : new THREE.Color(0x333344));
-    _tintColor.lerp(new THREE.Color(0xfff6e8), dayBlend * 0.7); // warm sunlit highlight on the underside/lit face as the sun climbs
+    _tintColor.copy(state.hemiLight ? state.hemiLight.color : _fallbackHemi);
+    _tintColor.lerp(_sunHighlight, dayBlend * 0.7); // warm sunlit highlight on the underside/lit face as the sun climbs
     const baseOpacity = 0.25 + dayBlend * 0.5; // faint at night, more visible by day — clouds shouldn't be a bright unlit blob against a dark night sky
 
     for (const c of state.clouds) {
