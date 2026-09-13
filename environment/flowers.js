@@ -78,7 +78,11 @@ export function createFlowers(state) {
     const mat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: createFlowerTexture(),
-        transparent: true,
+        // Was transparent:true + alphaTest:0.3 — same translucent-halo bug
+        // fixed in forest.js's leaf/imposter materials this session: the
+        // blended band between the alphaTest cutoff and full opacity
+        // glows against the sky/background instead of cutting cleanly.
+        transparent: false,
         alphaTest: 0.3,
         side: THREE.DoubleSide,
         roughness: 0.9,

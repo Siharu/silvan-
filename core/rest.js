@@ -74,6 +74,14 @@ export function startRest(state) {
 // to wire that once I can see that file.
 const NAP_MIN_HOURS = 5;
 const NAP_RANGE_HOURS = 1; // 5 + [0..1) -> 5-6 hours total
+const HAND_SWEEP_MS = 1400; // matches the CSS transition duration on .clock-hand-hour/.clock-hand-minute in index.html
+
+// Unwrapped (not mod-360'd) so consecutive naps always sweep the hands
+// forward, never snap backward to catch up to a wrapped angle. Lazily
+// initialized to the real current time on the first-ever nap rather than
+// starting at a meaningless 12:00 — see the null check below.
+let hourHandDeg = null;
+let minuteHandDeg = null;
 
 export function triggerKatNap(state) {
     if (state.isPaused || state.isResting || state.isNapping || state.dialogueActive) return;
@@ -83,21 +91,61 @@ export function triggerKatNap(state) {
     const overlay = document.getElementById('rest-fade-overlay');
     const text = document.getElementById('rest-fade-text');
     const clock = document.getElementById('nap-clock');
+    const hourHand = document.getElementById('nap-clock-hour-hand');
+    const minuteHand = document.getElementById('nap-clock-minute-hand');
+
+    if (hourHandDeg === null && hourHand && minuteHand) {
+        // First-ever nap: snap hands to the real current time with no
+        // transition, so they don't visibly sweep in from 12:00 before
+        // the actual time-skip even happens.
+        const hours = state.gameTime * 24;
+        hourHandDeg = (hours % 12) * 30;   // 30deg per hour
+        minuteHandDeg = (hours * 60 % 60) * 6; // 6deg per minute
+        hourHand.style.transition = 'none';
+        minuteHand.style.transition = 'none';
+        hourHand.style.transform = `rotate(${hourHandDeg}deg)`;
+        minuteHand.style.transform = `rotate(${minuteHandDeg}deg)`;
+        void hourHand.offsetHeight; // force reflow so transition:none actually applies before it's cleared below
+        hourHand.style.transition = '';
+        minuteHand.style.transition = '';
+    }
+
     if (text) text.textContent = "Kat's eyes grow heavy...";
     if (overlay) overlay.classList.add('active');
     if (text) text.classList.add('active');
     if (clock) clock.classList.add('active');
 
     setTimeout(() => {
+        // Screen is now fully faded to black. Advance the real gameTime
+        // *and* kick off the hand sweep here (not before) — per your
+        // note, the hands should show real time passing, not spin
+        // decoratively. Starting the sweep only once the screen is black
+        // means it's actually visible for its own ~1.4s instead of
+        // finishing before the fade-in even completes.
         const hoursForward = NAP_MIN_HOURS + Math.random() * NAP_RANGE_HOURS;
         state.gameTime = (state.gameTime + hoursForward / 24) % 1;
 
+        hourHandDeg += hoursForward * 30;   // real clock math: 30deg/hr
+        minuteHandDeg += hoursForward * 360; // 6deg/min * 60min/hr
+        if (hourHand) hourHand.style.transform = `rotate(${hourHandDeg}deg)`;
+        if (minuteHand) minuteHand.style.transform = `rotate(${minuteHandDeg}deg)`;
+
         setTimeout(() => {
-            if (overlay) overlay.classList.remove('active');
+            // Wake-up: a few blinks before fully opening, instead of one
+            // flat fade — see .rest-fade-overlay.waking/@keyframes
+            // rest-wake-blink in index.html. Only the overlay+clock get
+            // the flutter (they're the "eyes"); the text just fades out
+            // normally underneath it, no need for that to blink too.
+            if (overlay) { overlay.classList.remove('active'); overlay.classList.add('waking'); }
+            if (clock) { clock.classList.remove('active'); clock.classList.add('waking'); }
             if (text) text.classList.remove('active');
-            if (clock) clock.classList.remove('active');
-            state.isResting = false;
-            state.isNapping = false;
-        }, 400);
+
+            setTimeout(() => {
+                if (overlay) overlay.classList.remove('waking');
+                if (clock) clock.classList.remove('waking');
+                state.isResting = false;
+                state.isNapping = false;
+            }, 1300); // matches the rest-wake-blink animation duration
+        }, HAND_SWEEP_MS + 300); // let the sweep finish, plus a brief hold on the result, before waking
     }, FADE_MS);
 }

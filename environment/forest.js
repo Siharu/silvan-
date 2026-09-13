@@ -108,7 +108,16 @@ function createTreeImposters(state, treeInstances) {
 
     const imposterMat = new THREE.MeshStandardMaterial({
         map: createTreeCardTexture(),
-        transparent: true,
+        // Was transparent:true + alphaTest:0.08 — that combo doesn't give
+        // a clean cutout: alphaTest only discards fragments BELOW the
+        // threshold, everything above it still alpha-*blends* (since
+        // transparent:true is on), so the whole soft-gradient band between
+        // 0.08 and full opacity renders as translucent white bleeding
+        // into the sky behind it — the glowing white haze around every
+        // leaf/canopy blob in your screenshot. Standard fix for alpha-
+        // tested foliage cards: opaque + alphaTest, no blending at all —
+        // a fragment either passes at full opacity or is discarded.
+        transparent: false,
         alphaTest: 0.08,
         roughness: 0.9,
         side: THREE.DoubleSide
@@ -423,7 +432,12 @@ export async function generateFractalForest(state, onProgress) {
     state.scene.add(branchMesh);
 
     const leafGeo = new THREE.PlaneGeometry(1.4, 1.4);
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide, map: state.globalTextures.leaf, alphaTest: 0.4, transparent: true });
+    // Was transparent:true + alphaTest:0.4 — same translucent-halo bug as
+    // forest.js's tree imposter (see that file's comment): the blended
+    // band between the alphaTest cutoff and full opacity glows white
+    // against the sky on every leaf clump. Opaque + alphaTest gives a
+    // clean hard-edged cutout instead.
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide, map: state.globalTextures.leaf, alphaTest: 0.4, transparent: false });
     leafMat.onBeforeCompile = (shader) => {
         shader.uniforms.uTime = { value: 0 };
         shader.uniforms.uCameraPos = { value: new THREE.Vector3() };

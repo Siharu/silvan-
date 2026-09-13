@@ -574,6 +574,28 @@
             opacity: 1;
             pointer-events: all;
         }
+        /* Wake-up flutter, used only by triggerKatNap() (not the plain
+           dawn-skip startRest()) — a few blinks before fully opening
+           instead of one flat fade back in. Each dip is shallower than
+           the last (1 -> 0.55 -> 1 -> 0.3 -> 0.75 -> 0.12 -> 0.4 -> 0),
+           roughly miming eyes fluttering open rather than a mechanical
+           regular flicker. Needs its own class rather than re-toggling
+           .active, since a CSS transition and a CSS animation fighting
+           over the same opacity property on the same element cancel
+           each other out. */
+        .rest-fade-overlay.waking {
+            animation: rest-wake-blink 1.3s ease-in-out forwards;
+        }
+        @keyframes rest-wake-blink {
+            0%   { opacity: 1; }
+            12%  { opacity: 0.55; }
+            22%  { opacity: 1; }
+            38%  { opacity: 0.3; }
+            50%  { opacity: 0.75; }
+            65%  { opacity: 0.12; }
+            78%  { opacity: 0.4; }
+            100% { opacity: 0; }
+        }
         .rest-fade-text {
             position: fixed;
             top: 50%;
@@ -616,14 +638,22 @@
         .nap-clock.active {
             opacity: 0.9;
         }
+        .nap-clock.waking {
+            animation: rest-wake-blink 1.3s ease-in-out forwards;
+        }
         .nap-clock .clock-hand-hour,
         .nap-clock .clock-hand-minute {
             transform-box: view-box;
             transform-origin: 50px 50px;
+            /* Was an infinite fast CSS keyframe spin — looked like a
+               generic "time is passing" cliché rather than actually
+               showing the 5-6 hours Kat just slept through. Now driven by
+               explicit rotate() values set in core/rest.js's
+               triggerKatNap() (real math: hour hand advances 30deg/hr,
+               minute hand 360deg/hr), and this transition just eases
+               between them — duration matches FADE_MS (1400ms) there. */
+            transition: transform 1.4s ease-in-out;
         }
-        .nap-clock.active .clock-hand-hour { animation: nap-clock-spin 0.85s linear infinite; }
-        .nap-clock.active .clock-hand-minute { animation: nap-clock-spin 0.28s linear infinite; }
-        @keyframes nap-clock-spin { to { transform: rotate(360deg); } }
         .interact-prompt {
             position: fixed;
             bottom: 22%;
@@ -1758,10 +1788,10 @@
                 <polygon points="50,4 52.2,8.6 50,10.2 47.8,8.6" transform="rotate(180 50 50)"/>
                 <polygon points="50,4 52.2,8.6 50,10.2 47.8,8.6" transform="rotate(270 50 50)"/>
             </g>
-            <g class="clock-hand-hour">
+            <g class="clock-hand-hour" id="nap-clock-hour-hand">
                 <rect x="48.6" y="27" width="2.8" height="24" rx="1.2" fill="#cfd8dc" opacity="0.8"/>
             </g>
-            <g class="clock-hand-minute">
+            <g class="clock-hand-minute" id="nap-clock-minute-hand">
                 <rect x="49.1" y="15" width="1.8" height="36" rx="0.9" fill="#cfd8dc" opacity="0.8"/>
             </g>
             <circle cx="50" cy="50" r="2.6" fill="#0c0a09" stroke="#cfd8dc" stroke-width="0.6" stroke-opacity="0.5"/>

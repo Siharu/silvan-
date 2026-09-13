@@ -42,6 +42,7 @@ import { createWater, updateWater } from './environment/water.js';
 import { createRadioTower, updateRadioTower } from './environment/radio-tower.js';
 import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecruitInteraction, updateRadioTowerProximity } from './environment/animals.js';
 import { createDayNightCycle, updateDayNightCycle, updateStars } from './atmosphere/day-night-cycle.js';
+import { createClouds, updateClouds } from './environment/clouds.js';
 import { setupTouchControls } from './core/touch-controls.js';
 
 const state = createWorldState();
@@ -460,6 +461,9 @@ async function init() {
     createDayNightCycle(state);
     await afterStep();
 
+    createClouds(state);
+    await afterStep();
+
     setLoadingProgress(0.28, 'Pouring the lake');
     createWater(state);
     await afterStep();
@@ -556,6 +560,7 @@ function animate() {
 
     updateDayNightCycle(state, delta);
     updateStars(state, delta);
+    updateClouds(state, delta);
     updateWeather(state, delta); // must run before updateRain/updatePuddles/updateFireflies/updateDustParticles — they all read state.currentRainIntensity this same frame
     updateWater(state, ts);
     updateGrass(state, ts);

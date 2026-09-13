@@ -38,9 +38,13 @@ export function createDayNightCycle(state) {
     state.sky = sky;
 
     const skyUniforms = sky.material.uniforms;
-    skyUniforms['turbidity'].value = 4.0;
-    skyUniforms['rayleigh'].value = 1.5;
-    skyUniforms['mieCoefficient'].value = 0.005;
+    // Was turbidity 4.0 / rayleigh 1.5 — turbidity controls atmospheric
+    // haze (higher = paler/whiter sky), rayleigh controls blue-scattering
+    // strength. That combination skewed toward pale grey-blue instead of
+    // a real saturated sky blue. Lowered haze, raised blue scattering.
+    skyUniforms['turbidity'].value = 2.2;
+    skyUniforms['rayleigh'].value = 3.2;
+    skyUniforms['mieCoefficient'].value = 0.003;
     skyUniforms['mieDirectionalG'].value = 0.8;
 
     state.sunPosition = new THREE.Vector3();
@@ -210,27 +214,22 @@ export function updateDayNightCycle(state, delta) {
     } else {
         const intensity = Math.pow(-sunHeightNormalized, 0.3);
         state.sunLight.intensity = 0;
-        state.moonLight.intensity = intensity * 1.8;
+        // Was intensity*1.8 — bumped so the actual directional moonlight
+        // (the one thing that can throw real shadows/highlights at night)
+        // pulls more weight, on top of the ambient floor raise below.
+        state.moonLight.intensity = intensity * 2.6;
 
-        // Same up-facing/down-facing split as the daytime branch above —
-        // `color` lights the terrain at night, so it stays a low-saturation
-        // dark blue instead of a strong one, to avoid the same green/teal
-        // mixing issue with the grass albedo after moonlight is added in.
-        state.hemiLight.color.setHSL(0.6, 0.2, 0.06 + intensity * 0.06);
-        state.hemiLight.groundColor.setHSL(0.65, 0.3, 0.05 + intensity * 0.05);
-        state.hemiLight.intensity = 0.3 + intensity * 0.2;
+        // Was hemiLight lightness 0.06-0.12 / intensity 0.3-0.5 and
+        // renderer exposure 0.1-0.22 — genuinely near-black floors, not
+        // "dim moonlit blue". Per your call: raised all three so there's
+        // an actual cool moon-blue ambient fill to walk by, while keeping
+        // it clearly darker than day's own 0.5-0.78 exposure range so
+        // night still reads as night, not a blue-tinted daytime.
+        state.hemiLight.color.setHSL(0.62, 0.35, 0.16 + intensity * 0.12);
+        state.hemiLight.groundColor.setHSL(0.63, 0.3, 0.10 + intensity * 0.08);
+        state.hemiLight.intensity = 0.55 + intensity * 0.35;
 
-        // Night exposure floor was 0.4 (ceiling 0.6 at deepest midnight) —
-        // still fairly bright as a global multiplier, and it's the main
-        // thing actually keeping the night sky from reading as dark: the
-        // Sky dome (Three.js's Preetham-model atmospheric scattering) has
-        // no explicit "go black at night" logic of its own — it just
-        // computes scattering from the sun's below-horizon angle, which
-        // alone doesn't crush to true black. Lowered substantially so the
-        // whole night render (sky included) actually darkens. Stars are
-        // set toneMapped=false below (in createDayNightCycle) so they
-        // don't get crushed along with everything else here.
-        state.renderer.toneMappingExposure = 0.1 + intensity * 0.12;
+        state.renderer.toneMappingExposure = 0.3 + intensity * 0.25;
         state.stars.material.opacity = intensity;
     }
 }
