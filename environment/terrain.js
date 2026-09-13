@@ -152,7 +152,7 @@ export function createTerrain(state) {
             'vec4 diffuseColor = vec4( diffuse, opacity );',
             `
             vec3 dirtColor = vec3(0.06, 0.05, 0.03);
-            vec3 grassColor = vec3(1.0, 0.0, 1.0); // TEMP DEBUG — hot magenta, so we can confirm this file is actually the one your build is loading before tuning the real value further
+            vec3 grassColor = vec3(0.05, 0.036, 0.022); // dark brown ground, not green — this band is the fallback for everywhere grass.js's real blades don't reach (see comment below), so it reads as bare/dirt-like earth rather than a lawn
             vec3 rockColor = vec3(0.38, 0.37, 0.34);
             vec3 sandColor = vec3(0.30, 0.26, 0.18);
             vec3 wetSandColor = vec3(0.20, 0.17, 0.12);
@@ -192,11 +192,17 @@ export function createTerrain(state) {
             // ground beyond the real grass radius at least read as
             // textured/grassy instead of glass-smooth.
             float fine = noiseTerrain(vWorldPosTerrain.xz * 2.2) * 0.5 + noiseTerrain(vWorldPosTerrain.xz * 7.0) * 0.5;
-            albedo *= 0.85 + fine * 0.3;
+            albedo *= 0.7 + fine * 0.6; // widened from 0.85+fine*0.3 — more contrast so the ground reads as visibly textured dirt/soil, not a flat airbrushed color, now that it's brown instead of green
 
             float grassAmount = smoothstep(0.15, 0.4, 1.0 - slope) * (1.0 - heightBand) * (1.0 - beachMask);
             float grassFleck = noiseTerrain(vWorldPosTerrain.xz * 22.0) * 0.5 + noiseTerrain(vWorldPosTerrain.xz * 55.0 + vec2(41.0, 17.0)) * 0.5;
-            albedo *= mix(1.0, 0.8 + grassFleck * 0.4, grassAmount);
+            albedo *= mix(1.0, 0.65 + grassFleck * 0.7, grassAmount); // widened contrast range to match, plus a couple extra noise octaves below for finer grain
+
+            // Extra fine grit octave — small dark/light specks on top of the
+            // broader fine/grassFleck bands above, so up-close ground reads
+            // as granular dirt rather than a smooth painted gradient.
+            float grit = noiseTerrain(vWorldPosTerrain.xz * 90.0 + vec2(5.3, 71.0));
+            albedo *= 0.9 + grit * 0.2;
 
             vec4 diffuseColor = vec4(albedo, opacity);
             `
