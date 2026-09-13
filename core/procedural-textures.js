@@ -80,14 +80,21 @@ export function makeGrassDiffuseTexture(size = 128) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#2b3a1a';
+    // Was #2b3a1a base (43,58,26) with speckles at g = 58*shade + 18 — the
+    // +18 flat green boost pushed every speckle's green channel well above
+    // r/b regardless of shade, so the texture read as saturated green no
+    // matter how the rest of the lighting/darkening pass was tuned. Base
+    // and speckles below are darker and closer to balanced (olive/brown)
+    // rather than green-dominant, so vColor *= texture sample in grass.js
+    // no longer reintroduces a green cast after the ambient-lighting fix.
+    ctx.fillStyle = '#20281a';
     ctx.fillRect(0, 0, size, size);
     for (let i = 0; i < 900; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const shade = 0.55 + Math.random() * 0.7;
-        const r = Math.round(32 * shade);
-        const g = Math.round(58 * shade + 18);
+        const shade = 0.5 + Math.random() * 0.6;
+        const r = Math.round(28 * shade);
+        const g = Math.round(34 * shade + 6);
         const b = Math.round(16 * shade);
         ctx.fillStyle = `rgba(${r},${g},${b},0.55)`;
         ctx.beginPath();

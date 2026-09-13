@@ -15,19 +15,19 @@ import { getSettings, setSetting } from './settings.js';
 export const QUALITY_PRESETS = {
     high: {
         drawDistance: 220, fogDensityMult: 0.8,
-        treeCount: 380, bladeCount: 120000, rockCount: 90,
+        treeCount: 380, bladeCount: 220000, rockCount: 90,
         bushLeafCount: 45000, bushClusterCount: 700,
         flowerCount: 12000, fireflyCount: 1200, dustCount: 3500, puddleCount: 120,
     },
     medium: {
         drawDistance: 150, fogDensityMult: 1.0,
-        treeCount: 260, bladeCount: 70000, rockCount: 60,
+        treeCount: 260, bladeCount: 130000, rockCount: 60,
         bushLeafCount: 28000, bushClusterCount: 450,
         flowerCount: 7000, fireflyCount: 800, dustCount: 2200, puddleCount: 80,
     },
     low: {
         drawDistance: 90, fogDensityMult: 1.3,
-        treeCount: 150, bladeCount: 30000, rockCount: 35,
+        treeCount: 150, bladeCount: 55000, rockCount: 35,
         bushLeafCount: 12000, bushClusterCount: 220,
         flowerCount: 3000, fireflyCount: 400, dustCount: 1000, puddleCount: 40,
     },
