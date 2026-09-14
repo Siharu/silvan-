@@ -48,6 +48,16 @@ function buildDOM() {
                 <div class="minimap-iso-stage">
                     <canvas id="minimap-panel-canvas" width="${PANEL_SIZE}" height="${PANEL_SIZE}"></canvas>
                 </div>
+                <div class="minimap-info-row">
+                    <div class="minimap-info-block">
+                        <span class="minimap-info-label">Weather</span>
+                        <span id="minimap-weather" class="minimap-info-value">—</span>
+                    </div>
+                    <div class="minimap-info-block">
+                        <span class="minimap-info-label">Party</span>
+                        <span id="minimap-party" class="minimap-info-value">—</span>
+                    </div>
+                </div>
                 <div class="minimap-hint">PRESS M TO CLOSE</div>
             </div>
         </div>
@@ -63,8 +73,14 @@ function injectStyles() {
     style.textContent = `
         .minimap-icon {
             position: fixed;
-            top: 18px;
-            right: 18px;
+            top: 1.6rem;
+            /* Existing top-right HUD row (index.html): touch-pause-btn at
+               right:1.6rem/2.6rem wide, time-ff-btn at right:4.6rem/2.6rem
+               wide — both were already claiming this corner, and the
+               minimap icon was landing directly on top of touch-pause-btn.
+               Slot the icon one more space left of that row instead of
+               reusing right:18px. */
+            right: 7.6rem;
             width: ${ICON_SIZE}px;
             height: ${ICON_SIZE}px;
             border-radius: 50%;
@@ -124,6 +140,32 @@ function injectStyles() {
             text-transform: uppercase;
             color: #9fb0c9;
         }
+        .minimap-info-row {
+            display: flex;
+            justify-content: center;
+            gap: 2.4rem;
+            margin-top: 1.1rem;
+            padding-top: 0.9rem;
+            border-top: 1px solid rgba(210, 225, 255, 0.1);
+        }
+        .minimap-info-block {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            min-width: 7rem;
+        }
+        .minimap-info-label {
+            font-size: 0.6rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #9fb0c9;
+        }
+        .minimap-info-value {
+            font-size: 0.8rem;
+            letter-spacing: 0.05em;
+            color: #dde5f2;
+            text-shadow: 0 0 10px rgba(160, 190, 255, 0.25);
+        }
         /* The isometric tilt — applied to the stage (perspective parent)
            and its canvas child, not the draw code. */
         .minimap-iso-stage {
@@ -153,6 +195,8 @@ export function createMinimap(state) {
         iconCanvas: dom.querySelector('#minimap-icon-canvas'),
         panelCanvas: dom.querySelector('#minimap-panel-canvas'),
         panelLayer: dom.querySelector('#minimap-panel-layer'),
+        weatherEl: dom.querySelector('#minimap-weather'),
+        partyEl: dom.querySelector('#minimap-party'),
     };
     state.mapMarkers = state.mapMarkers || []; // { x, z, label, color } — extension point for future landmarks (see module comment)
     bakeCoastline(state); // one-time real-terrain sample for the expanded panel — see bakeCoastline() comment
@@ -164,7 +208,7 @@ export function toggleMinimap(state) {
     state.minimap.panelLayer.classList.toggle('visible', state.minimap.expanded);
 }
 
-const BAKE_RES = 160; // grid resolution for the one-time real-terrain coastline bake (see bakeCoastline) — independent of PANEL_SIZE's pixel size, then scaled up on draw
+const BAKE_RES = PANEL_SIZE; // matches panel pixel-for-pixel — was 160 then scaled up to 420, which is what was blurring/blobbing out real coastline detail (fbm noise wrinkles, inlets) into a smooth blur. Bake is one-time, so full resolution costs nothing ongoing.
 
 // One-time real-terrain coastline bake for the EXPANDED panel only — the
 // small corner icon keeps the cheap circle approximation (drawMap's
@@ -205,8 +249,9 @@ function drawMap(ctx, canvasSize, state, useRealCoastline) {
     ctx.clearRect(0, 0, canvasSize, canvasSize);
 
     if (useRealCoastline && state.minimap.coastlineCanvas) {
-        // Cached bake, just scaled up — no per-frame terrain sampling.
-        ctx.imageSmoothingEnabled = true;
+        // Cached bake, now sampled 1:1 at panel resolution (BAKE_RES ===
+        // PANEL_SIZE) — no scaling, so no smoothing blur to strip detail.
+        ctx.imageSmoothingEnabled = false;
         ctx.drawImage(state.minimap.coastlineCanvas, 0, 0, canvasSize, canvasSize);
     } else {
         // Cheap circle approximation — used for the always-on corner icon.
@@ -275,11 +320,30 @@ function drawMap(ctx, canvasSize, state, useRealCoastline) {
     }
 }
 
+// Weather label — same intensity bands weather.js/water.js already treat
+// as the effective clear->cloudy->stormy ramp (see water.js's WEATHER_TARGETS
+// comment), just worded for the player instead of used as a shader lerp.
+function weatherLabel(state) {
+    const intensity = state.currentRainIntensity || 0;
+    if (intensity <= 0.02) return 'Clear';
+    if (intensity < 0.5) return 'Cloudy';
+    return state.weather && state.weather.phase === 'raining' ? 'Stormy' : 'Cloudy';
+}
+
+function partyLabel(state) {
+    if (!state.demoAnimals || state.demoAnimals.length === 0) return 'None';
+    const names = state.demoAnimals.filter(r => r.following).map(r => r.name);
+    if (names.length === 0) return 'None';
+    return names.map(n => n.charAt(0).toUpperCase() + n.slice(1)).join(', ');
+}
+
 // Called every frame from main.js's animate() loop.
 export function updateMinimap(state) {
     if (!state.minimap) return;
     drawMap(state.minimap.iconCanvas.getContext('2d'), ICON_SIZE, state, false);
     if (state.minimap.expanded) {
         drawMap(state.minimap.panelCanvas.getContext('2d'), PANEL_SIZE, state, true);
+        state.minimap.weatherEl.textContent = weatherLabel(state);
+        state.minimap.partyEl.textContent = partyLabel(state);
     }
 }

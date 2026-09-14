@@ -852,6 +852,47 @@
         .pause-settings.open {
             display: block;
         }
+        .objective-heading {
+            font-size: 0.65rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #9fb0c9;
+            margin: 0 0 0.4rem;
+            text-align: left;
+        }
+        .objective-heading:not(:first-child) {
+            margin-top: 1rem;
+        }
+        .objective-text {
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: #dde5f2;
+            text-align: left;
+            margin: 0;
+        }
+        .objective-party-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            text-align: left;
+            font-size: 0.8rem;
+        }
+        .objective-party-list li {
+            padding: 0.2rem 0;
+            color: #6f7d90; /* dim by default — .joined below brightens it */
+        }
+        .objective-party-list li.joined {
+            color: #dde5f2;
+        }
+        .objective-party-list li::before {
+            content: '\2717 '; /* ✗ — swapped to a checkmark via .joined below */
+            opacity: 0.6;
+        }
+        .objective-party-list li.joined::before {
+            content: '\2713 '; /* ✓ */
+            color: #8fd18f;
+            opacity: 1;
+        }
         .pause-settings label {
             display: block;
             font-size: 0.65rem;
@@ -1810,6 +1851,13 @@
         <div class="pause-panel">
             <h2>Paused</h2>
             <button id="pause-resume-btn" class="pause-btn">Resume</button>
+            <button id="pause-objectives-btn" class="pause-btn">Objectives</button>
+            <div id="pause-objectives" class="pause-settings">
+                <h3 class="objective-heading">Current Objective</h3>
+                <p id="objective-current-text" class="objective-text">—</p>
+                <h3 class="objective-heading">Party</h3>
+                <ul id="objective-party-list" class="objective-party-list"></ul>
+            </div>
             <button id="pause-settings-btn" class="pause-btn">Settings</button>
             <div id="pause-settings" class="pause-settings">
                 <div class="tabs-header" id="pause-settings-tabs">

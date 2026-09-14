@@ -406,6 +406,15 @@ export function spawnDemoAnimals(state) {
             rig.following = false;
             rig.met = false;
             rig.visits = 0;
+            // Idle "alive" look-around — previously the gap between wander
+            // waypoints (2.5-5.5s, see below) had zero head/body motion at
+            // all, so from a few feet away an animal mid-idle read as a
+            // frozen statue even though the wander timer was quietly
+            // ticking underneath. This drives a small yaw wobble during
+            // idle so there's always some visible motion.
+            rig.idleLookTimer = Math.random() * 2;
+            rig.idleLookTarget = rig.root.rotation.y;
+            rig.idleBaseYaw = rig.root.rotation.y;
         }
 
         state.demoAnimals.push(rig);
@@ -514,7 +523,7 @@ export function updateDemoAnimals(state, dt) {
             const dist = 2 + Math.random() * rig.wanderRadius;
             rig.wanderTargetX = rig.homeX + Math.cos(angle) * dist;
             rig.wanderTargetZ = rig.homeZ + Math.sin(angle) * dist;
-            rig.wanderTimer = 2.5 + Math.random() * 3;
+            rig.wanderTimer = 1.2 + Math.random() * 1.8; // was 2.5-5.5s — that long a gap between waypoints, with nothing else moving in between (see idleLookTimer below), was reading as "no AI at all" rather than a wandering animal
         }
         const toX = rig.wanderTargetX - rig.root.position.x;
         const toZ = rig.wanderTargetZ - rig.root.position.z;
@@ -525,6 +534,19 @@ export function updateDemoAnimals(state, dt) {
             rig.root.position.x += nx * rig.speed * dt;
             rig.root.position.z += nz * rig.speed * dt;
             rig.root.rotation.y = Math.atan2(nx, nz);
+            rig.idleBaseYaw = rig.root.rotation.y; // idle wobble below resumes from wherever movement last left it facing
+        } else {
+            // Standing between waypoints — small head/body yaw wobble so
+            // it reads as "looking around" rather than frozen. Independent
+            // random-interval timer from wanderTimer so the look-around
+            // doesn't always line up with (and get masked by) the next
+            // waypoint pick.
+            rig.idleLookTimer -= dt;
+            if (rig.idleLookTimer <= 0) {
+                rig.idleLookTarget = rig.idleBaseYaw + (Math.random() - 0.5) * 1.4;
+                rig.idleLookTimer = 0.8 + Math.random() * 1.4;
+            }
+            rig.root.rotation.y += (rig.idleLookTarget - rig.root.rotation.y) * Math.min(1, dt * 2.5);
         }
         rig.root.position.y = getElevation(rig.root.position.x, rig.root.position.z, state);
         animateAnimalRig(rig, dt, moving ? 'walk' : 'idle');

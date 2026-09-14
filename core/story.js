@@ -49,6 +49,42 @@ function nearestDistTo(state, rig) {
     return Math.hypot(state.player.position.x - rig.root.position.x, state.player.position.z - rig.root.position.z);
 }
 
+function partyComplete(state) {
+    return ['Bimo', 'Primo', 'Shuu'].every(name => {
+        const r = rigByName(state, name);
+        return r && r.following;
+    });
+}
+
+// Read by core/input.js's pause-menu Objectives panel — plain-language
+// current goal + party roster, derived from the same stage machine driving
+// the actual scripted beats above, so it can never drift out of sync with
+// what's really going on.
+export function getObjectiveInfo(state) {
+    const party = ['Bimo', 'Primo', 'Shuu'].map(name => {
+        const r = rigByName(state, name);
+        return { name, joined: !!(r && r.following) };
+    });
+    const s = state.story;
+    let current = 'Explore the island and see who else is here.';
+    if (s) {
+        if (s.stage === 'bimo_pending') {
+            current = "Something's tangled up in the brambles nearby — go see who it is.";
+        } else if (s.stage === 'primo_pending') {
+            current = (s.nightsSeen >= 3 && !partyComplete(state))
+                ? "The light is waiting at the shore, but the party isn't whole yet. Find Primo — try the stream."
+                : 'Find Primo. He was last heard splashing around near the stream.';
+        } else if (s.stage === 'grouped') {
+            current = 'Rest and watch the horizon after dark. Something out on the water is getting closer each night.';
+        } else if (s.stage === 'shoreline_ready') {
+            current = 'Head to the eastern beach and step into the light with the whole party.';
+        } else if (s.stage === 'transitioning' || s.stage === 'done') {
+            current = '...';
+        }
+    }
+    return { current, party };
+}
+
 // Called every frame from main.js, after updateDemoAnimals().
 export function updateStory(state, dt) {
     const s = state.story;
@@ -71,11 +107,12 @@ export function updateStory(state, dt) {
     }
 
     // Boundary Walk / Unburied Bone — optional flavor beats from the
-    // script, proximity-triggered once the group has formed. Deliberately
-    // NOT gating story progression on these (a player who never wanders
-    // toward either landmark still reaches the shoreline normally via the
-    // night-escalation timer below) — they're texture, not a checkpoint.
-    if ((s.stage === 'grouped' || s.stage === 'escalating') && !isDialogueActive(state)) {
+    // script, proximity-triggered once Bimo/Shu have joined. Was gated on
+    // 'grouped'/'escalating' (i.e. needed Primo too) — widened to include
+    // 'primo_pending' for the same reason the night-escalation gate below
+    // was widened: these shouldn't require every animal to be recruited
+    // first, only for the group to have started forming.
+    if ((s.stage === 'primo_pending' || s.stage === 'grouped' || s.stage === 'escalating') && !isDialogueActive(state)) {
         const distToPlayer = (pos) => Math.hypot(state.player.position.x - pos.x, state.player.position.z - pos.z);
         if (!s.boundaryWalkDone && s.bluffPos && distToPlayer(s.bluffPos) < 6) {
             s.boundaryWalkDone = true;
@@ -86,11 +123,18 @@ export function updateStory(state, dt) {
         }
     }
 
-    // Night escalation — fires automatically once Bimo/Primo/Shu are all
-    // grouped, rather than needing another interact prompt (matches the
-    // script: "Kat wakes up first," it's ambient, not player-triggered).
+    // Night escalation — was gated on 'grouped'/'escalating', which meant
+    // Primo had to already be recruited before the light could ever
+    // appear at all (playPrimoStream is the only thing that sets
+    // 'grouped'). That made an incomplete-party shoreline moment
+    // structurally impossible. Now only requires Bimo/Shu (stage
+    // 'primo_pending' or later) — the light can escalate with Primo still
+    // missing, and playNightBeat's final night checks partyComplete()
+    // itself to decide whether the real transition or the
+    // missing-friend beat plays.
+    const escalationAllowed = s.stage === 'primo_pending' || s.stage === 'grouped' || s.stage === 'escalating';
     const isNight = (state.sunHeightNormalized || 0) <= 0;
-    if ((s.stage === 'grouped' || s.stage === 'escalating') && isNight && !s.wasNight && !isDialogueActive(state)) {
+    if (escalationAllowed && isNight && !s.wasNight && !isDialogueActive(state)) {
         s.nightsSeen++;
         playNightBeat(state, s.nightsSeen);
     }
@@ -222,6 +266,10 @@ function playNightBeat(state, n) {
             { speaker: 'Shu', text: 'It smells like cold air. Not bad cold. Open air.' },
         ]);
     } else {
+        if (!partyComplete(state)) {
+            playIncompletePartyBeat(state);
+            return; // stage intentionally untouched — this repeats on every subsequent night (see updateStory's escalationAllowed gate) until the party is whole, instead of ever reaching the transition below
+        }
         state.story.stage = 'shoreline_ready';
         showDialogue(state, [
             { text: 'The light dominates the night sky now. A towering column of radiance hovers just off the eastern beach. The water beneath it hums, and the pebbles on the beach dance.' },
@@ -236,6 +284,39 @@ function playNightBeat(state, n) {
             },
         ]);
     }
+}
+
+// Plays when the third night's light arrives but the party isn't whole
+// yet (partyComplete() false — currently that can only mean Primo hasn't
+// been recruited, since Bimo/Shu join automatically the moment the player
+// gets near Bimo). Dedicated conversation between whichever animals HAVE
+// joined, naming who's missing, and explicitly refusing to let Kat go —
+// no choices offered here, no transition happens; this is a hard block,
+// not a warning. The player has to go actually find the missing animal
+// and trigger their scripted join (tryStoryInteract still requires that
+// for story-controlled animals), then wait for the next night for this
+// beat to re-check and fall through to the real shoreline choice instead.
+function playIncompletePartyBeat(state) {
+    const missingNames = ['Bimo', 'Primo', 'Shuu'].filter(name => {
+        const r = rigByName(state, name);
+        return !(r && r.following);
+    });
+    const missingList = missingNames.join(' and ');
+    const bimoJoined = !!rigByName(state, 'Bimo')?.following;
+    const shuJoined = !!rigByName(state, 'Shuu')?.following;
+
+    const lines = [
+        { text: 'The light towers over the water, waiting, patient as it always has been. Kat turns toward it — then stops. The group isn\'t whole.' },
+    ];
+    if (bimoJoined) {
+        lines.push({ speaker: 'Bimo', text: `We are not doing this without ${missingList}. I don't care how bright that thing gets. Nobody gets left on this island.` });
+    }
+    if (shuJoined) {
+        lines.push({ speaker: 'Shu', text: 'It has waited three nights. It can wait one more. Go find them.' });
+    }
+    lines.push({ text: `Kat can't bring itself to step into the water — not like this. ${missingList} still needs to be found.` });
+
+    showDialogue(state, lines);
 }
 
 function beginMapTransition(state, choice) {

@@ -26,6 +26,7 @@ import { getViewMode, setViewMode } from './view-mode.js';
 import { hasStartedGame, exportSaveFile, importSaveFile, startAutosaveLoop } from './save-system.js';
 import { getKeybinds, setKeybind, resetKeybinds, ACTION_LABELS, codeToLabel } from './keybinds.js';
 import { triggerKatNap } from './rest.js';
+import { getObjectiveInfo } from './story.js';
 
 function renderKeybindList(containerId) {
     const el = document.getElementById(containerId);
@@ -246,21 +247,40 @@ function setupPauseMenu(state) {
     const resumeBtn = document.getElementById('pause-resume-btn');
     const settingsBtn = document.getElementById('pause-settings-btn');
     const pauseSettings = document.getElementById('pause-settings');
+    const objectivesBtn = document.getElementById('pause-objectives-btn');
+    const pauseObjectives = document.getElementById('pause-objectives');
+    const objectiveCurrentText = document.getElementById('objective-current-text');
+    const objectivePartyList = document.getElementById('objective-party-list');
     const quitBtn = document.getElementById('pause-quit-btn');
     const touchPauseBtn = document.getElementById('touch-pause-btn');
     if (!pauseLayer) return;
 
     function isPaused() { return pauseLayer.classList.contains('visible'); }
 
+    function refreshObjectives() {
+        if (!objectiveCurrentText || !objectivePartyList) return;
+        const info = getObjectiveInfo(state);
+        objectiveCurrentText.textContent = info.current;
+        objectivePartyList.innerHTML = '';
+        for (const member of info.party) {
+            const li = document.createElement('li');
+            li.textContent = member.name;
+            if (member.joined) li.classList.add('joined');
+            objectivePartyList.appendChild(li);
+        }
+    }
+
     function pause() {
         pauseLayer.classList.add('visible');
         state.isPaused = true;
+        refreshObjectives(); // pulled fresh every time the menu opens rather than kept live-updated while hidden — cheap and never stale, since nothing changes story state while actually paused
         if (document.pointerLockElement) document.exitPointerLock();
     }
 
     function resume() {
         pauseLayer.classList.remove('visible');
         if (pauseSettings) pauseSettings.classList.remove('open');
+        if (pauseObjectives) pauseObjectives.classList.remove('open');
         state.isPaused = false;
         // Reacquire pointer lock so movement/look keep working immediately
         // — same click-to-lock element the player controller's own
@@ -277,7 +297,19 @@ function setupPauseMenu(state) {
     });
 
     if (resumeBtn) resumeBtn.addEventListener('click', resume);
-    if (settingsBtn && pauseSettings) settingsBtn.addEventListener('click', () => pauseSettings.classList.toggle('open'));
+    if (settingsBtn && pauseSettings) {
+        settingsBtn.addEventListener('click', () => {
+            if (pauseObjectives) pauseObjectives.classList.remove('open'); // mutually exclusive with Objectives — both reuse .pause-settings's panel styling, showing both at once just looked cluttered
+            pauseSettings.classList.toggle('open');
+        });
+    }
+    if (objectivesBtn && pauseObjectives) {
+        objectivesBtn.addEventListener('click', () => {
+            if (pauseSettings) pauseSettings.classList.remove('open');
+            pauseObjectives.classList.toggle('open');
+            if (pauseObjectives.classList.contains('open')) refreshObjectives(); // catches the rare case the panel's re-opened without a fresh pause() in between
+        });
+    }
     if (quitBtn) quitBtn.addEventListener('click', () => location.reload()); // back to title, freshest possible state
     if (touchPauseBtn) touchPauseBtn.addEventListener('click', () => { if (isPaused()) resume(); else pause(); });
 }
