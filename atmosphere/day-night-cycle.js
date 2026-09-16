@@ -90,6 +90,7 @@ export function createDayNightCycle(state) {
     const moonGeo = new THREE.SphereGeometry(1500, 64, 64);
     const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     moonMat.toneMapped = false; // same reasoning as the stars above — the moon should stay a bright visible disc, not dim along with the crushed night exposure
+    moonMat.fog = false; // the moon orbits at radius 90,000 (see orbitRadius below) — FogExp2's falloff is total at that distance regardless of density, so without this the entire moon disc renders as solid fog color instead of white. This is what was showing up as a huge dark patch dominating the sky — the moon, not the sky itself.
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
     const moonGlow = new THREE.PointLight(0x99aaff, 2.5, 15000);
     moonMesh.add(moonGlow);
@@ -129,6 +130,7 @@ export function createDayNightCycle(state) {
         depthWrite: false
     });
     starsMat.toneMapped = false; // otherwise crushing toneMappingExposure down for a genuinely dark night sky (see updateDayNightCycle's night branch) would dim the stars right along with it — they're meant to stay bright points regardless of overall scene exposure
+    starsMat.fog = false; // stars sit at radius 40,000 — FogExp2's falloff is total at that distance (fog factor ~0 regardless of density), so without this they'd render as pure fog color instead of white points, same bug as the moon below
     state.stars = new THREE.Points(starsGeo, starsMat);
     state.scene.add(state.stars);
 
@@ -196,20 +198,21 @@ export function updateDayNightCycle(state, delta) {
         // undersides) keeps a warm bounce tone since that's the one that
         // visually reads as ambient occlusion/bounce light there.
         //
-        // Follow-up: this fixed the green tint (hue/saturation), but the
-        // lightness ceiling got cut too aggressively at the same time
-        // (0.65 -> 0.36 at midday) — combined with the toneMappingExposure
-        // cut just below, the ground and especially the tree canopy (which
-        // sits in its own branch-shadow and leans on hemi ambient more
-        // than direct sun) went a lot darker than intended, verging on
-        // unlit-looking. Keeping saturation low (that's what actually
-        // stops the green cast) but restoring most of the lightness
-        // headroom.
-        state.hemiLight.color.setHSL(0.58, 0.18, 0.28 + intensity * 0.3);
+        // Follow-up: the lightness/exposure ceilings kept getting cut and
+        // partially restored across several passes here (see the git
+        // history in this comment block), and still landed too dark for
+        // actual daylight — full noon was capped at 0.78 tone-mapping
+        // exposure, i.e. deliberately 22% under neutral even at the
+        // brightest point in the cycle. Raised the ceilings on all three
+        // levers (hemi lightness, hemi intensity, exposure) so midday
+        // actually reads as bright daylight; the LOW end of each range
+        // (dawn/dusk, intensity near 0) is untouched so the sunrise/sunset
+        // transition still feels graduated, not just "suddenly bright."
+        state.hemiLight.color.setHSL(0.58, 0.18, 0.3 + intensity * 0.42);
         state.hemiLight.groundColor.setHSL(0.08, 0.4, 0.08 + intensity * 0.2);
-        state.hemiLight.intensity = 0.4 + intensity * 0.25;
+        state.hemiLight.intensity = 0.45 + intensity * 0.4;
 
-        state.renderer.toneMappingExposure = Math.max(0.5, intensity * 0.78); // was cut to 0.65 alongside the hemi change above — restoring most of that too, since it multiplies the whole render and was compounding the same over-darkening
+        state.renderer.toneMappingExposure = Math.max(0.6, intensity * 1.05);
         state.stars.material.opacity = 0;
     } else {
         const intensity = Math.pow(-sunHeightNormalized, 0.3);
