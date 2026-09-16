@@ -18,18 +18,32 @@ export const QUALITY_PRESETS = {
         treeCount: 380, bladeCount: 220000, rockCount: 90,
         bushLeafCount: 45000, bushClusterCount: 700,
         flowerCount: 12000, fireflyCount: 1200, dustCount: 3500, puddleCount: 120,
+        vegetationRadius: 375, // full range — matches forest.js's original hardcoded WORLD_SIZE/2-50 max
     },
     medium: {
         drawDistance: 150, fogDensityMult: 1.0,
         treeCount: 260, bladeCount: 130000, rockCount: 60,
         bushLeafCount: 28000, bushClusterCount: 450,
         flowerCount: 7000, fireflyCount: 800, dustCount: 2200, puddleCount: 80,
+        vegetationRadius: 300,
     },
     low: {
-        drawDistance: 90, fogDensityMult: 1.3,
+        // The actual "Silent Hill" trick: trees only get placed within a
+        // much smaller radius of world origin (see forest.js's clustering
+        // loop, which now clamps its max spawn radius to this value
+        // instead of always using the full island), and fogDensityMult is
+        // pushed up enough that FogExp2's falloff makes that cutoff ring
+        // solidly invisible well before you'd reach it on foot — you never
+        // see vegetation "end", it's just always past what you can see.
+        // This is a real instance-count win (fewer trees actually exist,
+        // not just cheaper-shaded ones), unlike drawDistance's existing
+        // LOD-collapse trick which only cheapens vertex complexity of
+        // trees that still exist and still get processed every frame.
+        drawDistance: 90, fogDensityMult: 2.0,
         treeCount: 150, bladeCount: 55000, rockCount: 35,
         bushLeafCount: 12000, bushClusterCount: 220,
         flowerCount: 3000, fireflyCount: 400, dustCount: 1000, puddleCount: 40,
+        vegetationRadius: 170,
     },
 };
 

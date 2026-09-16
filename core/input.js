@@ -21,6 +21,7 @@
 //              else on this list.
 
 import { getSettings, setSetting, DEFAULT_DRAW_DISTANCE } from './settings.js';
+import { BASE_FOG_DENSITY } from './world-state.js';
 import { getQuality, setQuality } from './quality.js';
 import { getViewMode, setViewMode } from './view-mode.js';
 import { hasStartedGame, exportSaveFile, importSaveFile, startAutosaveLoop } from './save-system.js';
@@ -383,7 +384,7 @@ export function setupInput(state) {
     wireLiveControl(state, {
         titleId: 'title-fog-density-slider', pauseId: 'pause-fog-density-slider', key: 'fogDensityMult',
         onLive: (value, s) => {
-            if (s.scene && s.scene.fog) s.scene.fog.density = 0.0052 * value; // matches main.js's base FogExp2 density
+            if (s.scene && s.scene.fog) s.scene.fog.density = BASE_FOG_DENSITY * value;
         },
     });
     // Volume sliders: now backed by core/audio.js's real gain buses (was:
@@ -413,18 +414,19 @@ export function setupInput(state) {
         values: ['high', 'medium', 'low'],
         getValue: getQuality, setValue: setQuality,
     });
-    // Resolution scale — multiplies devicePixelRatio (main.js's
-    // setupRenderer()). Separate from the quality preset above: quality
-    // scales geometry/instance counts, this scales render resolution —
-    // independently useful, since a low-end iGPU can be fill-rate bound
-    // (resolution) rather than vertex/draw-call bound (instance counts),
-    // or vice versa.
+    // Resolution target — replaces the old Full/75%/50% percentage scale
+    // with actual target render heights (480p/720p/1080p), which is more
+    // legible than a bare percentage since it doesn't depend on knowing
+    // your own screen's native resolution to guess what "75%" even looks
+    // like. Still the same underlying lever as before (setPixelRatio on
+    // main.js's renderer) — see main.js's setupRenderer() comment for how
+    // the target height gets converted into an actual pixel ratio.
     wireToggleGroup({
-        titleIds: ['title-resolution-full-btn', 'title-resolution-med-btn', 'title-resolution-low-btn'],
-        pauseIds: ['pause-resolution-full-btn', 'pause-resolution-med-btn', 'pause-resolution-low-btn'],
-        values: [1.0, 0.75, 0.5],
-        getValue: () => getSettings().resolutionScale || 1.0,
-        setValue: (v) => setSetting('resolutionScale', v),
+        titleIds: ['title-resolution-1080-btn', 'title-resolution-720-btn', 'title-resolution-480-btn'],
+        pauseIds: ['pause-resolution-1080-btn', 'pause-resolution-720-btn', 'pause-resolution-480-btn'],
+        values: [1080, 720, 480],
+        getValue: () => getSettings().resolutionTarget || 1080,
+        setValue: (v) => setSetting('resolutionTarget', v),
     });
     wireToggleGroup({
         titleIds: ['title-view-firstperson-btn', 'title-view-topdown-btn'],

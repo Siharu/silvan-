@@ -4,6 +4,7 @@
 // systems stay independently testable/swappable during this rebuild.
 
 export const WORLD_SIZE = 800; // matches dynamic_procedural_terrain_engine.html's 800x800 plane
+export const BASE_FOG_DENSITY = 0.0052; // single source of truth for scene.fog's base density — main.js's init and core/input.js's live fogDensityMult slider both multiply this by settings.fogDensityMult, see main.js's fog-setup comment for the bug this fixes
 export const WATER_LEVEL = -2; // matches terrainParams.waterLevel below / environment/rain.js
 
 export function createWorldState() {

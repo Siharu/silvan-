@@ -14,7 +14,7 @@
 // system exist in this rebuild).
 
 import * as THREE from 'three';
-import { createWorldState, WATER_LEVEL } from './core/world-state.js';
+import { createWorldState, WATER_LEVEL, BASE_FOG_DENSITY } from './core/world-state.js';
 import { getSettings } from './core/settings.js';
 import { getQualityCounts } from './core/quality.js';
 import { getViewMode } from './core/view-mode.js';
@@ -33,6 +33,7 @@ import { createFlowers, updateFlowers } from './environment/flowers.js';
 import { createPuddles, updatePuddles } from './environment/puddles.js';
 import { createFireflies, updateFireflies } from './environment/fireflies.js';
 import { createDustParticles, updateDustParticles } from './environment/dust.js';
+import { createGroundMist, updateGroundMist } from './environment/ground-mist.js';
 import { createFerns, updateFoliage } from './environment/foliage.js';
 import { createBushes, updateBushes } from './environment/bushes.js';
 import { generateFractalForest, updateForestLOD } from './environment/forest.js';
@@ -139,7 +140,15 @@ function setupRenderer() {
     // pale green-gray instead of the actual dark soil color underneath.
     // Darker, desaturated tone matches this game's dark-forest atmosphere
     // instead of a bright daytime sky tint.
-    state.scene.fog = new THREE.FogExp2(0x1c1f1a, 0.0025);
+    // Base fog density — single source of truth (was 0.0025 here but
+    // 0.0052 in core/input.js's live fogDensityMult slider handler, so
+    // quality presets' fogDensityMult never actually applied fog at load;
+    // it only took effect once you manually touched the slider, and even
+    // then jumped to a different base than what was on screen). Exported
+    // from world-state.js now so both places read the same number.
+    // getSettings().fogDensityMult is already kept in sync with the
+    // current quality preset by core/quality.js's setQuality().
+    state.scene.fog = new THREE.FogExp2(0x1c1f1a, BASE_FOG_DENSITY * (getSettings().fogDensityMult || 1.0));
 
     // Mobile browsers (Safari/Chrome especially) don't reliably fire a
     // plain `resize` event when the address-bar/toolbar chrome collapses
@@ -164,14 +173,18 @@ function setupRenderer() {
 
     state.renderer = new THREE.WebGLRenderer({ antialias: settings.antialiasing !== false, powerPreference: 'high-performance' });
     state.renderer.setSize(initialSize.w, initialSize.h);
-    // resolutionScale (default 1.0) multiplies devicePixelRatio — a cheap,
-    // high-impact lever for weak iGPUs: dropping to e.g. 0.75 cuts fragment
-    // shader work ~44% (0.75^2) with a much smaller visual cost than
-    // lowering instance counts further. Reload-tier like quality's counts,
-    // not live, since changing a renderer's pixel ratio after creation on
-    // some browsers doesn't reliably resize internal buffers.
-    const resolutionScale = settings.resolutionScale || 1.0;
-    state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * resolutionScale);
+    // resolutionTarget (default 1080) is a target render HEIGHT in px, not
+    // a raw multiplier — converted here into whatever devicePixelRatio
+    // actually produces that many backing-store pixels for the current
+    // window height. Replaces the old plain Full/75%/50% percentage scale:
+    // a percentage means nothing without knowing your own screen's native
+    // resolution, a target height (480p/720p/1080p) is legible on its own.
+    // Same underlying lever either way (setPixelRatio), same reload-tier
+    // caveat: changing a renderer's pixel ratio after creation doesn't
+    // reliably resize internal buffers on some browsers.
+    const resolutionTarget = settings.resolutionTarget || 1080;
+    const targetPixelRatio = THREE.MathUtils.clamp(resolutionTarget / initialSize.h, 0.25, Math.min(window.devicePixelRatio, 2));
+    state.renderer.setPixelRatio(targetPixelRatio);
     state.renderer.shadowMap.enabled = false; // was true (PCFSoftShadowMap,
     // two 2048x2048 maps from sunLight+moonLight) — this was flagged as
     // the single biggest perf cost multiple times while it was being
@@ -523,6 +536,7 @@ async function init() {
     setLoadingProgress(0.95, 'Lighting fireflies');
     createFireflies(state);
     createDustParticles(state);
+    createGroundMist(state);
     await afterStep();
 
     setLoadingProgress(0.97, 'Waking the animals');
@@ -582,6 +596,7 @@ function animate() {
     updatePuddles(state, ts);
     updateFireflies(state, ts);
     updateDustParticles(state, ts);
+    updateGroundMist(state, ts, delta);
     updateRadioTower(state, ts);
     updateDemoAnimals(state, delta);
     updateStory(state, delta);

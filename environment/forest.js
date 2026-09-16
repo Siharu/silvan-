@@ -269,8 +269,15 @@ export async function generateFractalForest(state, onProgress) {
         // groves with open clearings between them creates sightline walls
         // and navigable "rooms", the actual small-island-feels-big trick.
         let x, z, y, attempts = 0, density = 0;
+        // Max spawn radius — capped by quality.vegetationRadius (see
+        // core/quality.js's comment on the Low tier) instead of always
+        // using the full island. Trees simply don't exist past this
+        // radius on Low; fogDensityMult is tuned so you can't see far
+        // enough to notice that edge. WORLD_SIZE/2-25 (375) is the
+        // original unclamped max radius (25 base + WORLD_SIZE/2-50 span).
+        const maxRadius = Math.min(WORLD_SIZE / 2 - 25, (state.quality && state.quality.vegetationRadius) || (WORLD_SIZE / 2 - 25));
         do {
-            const r = 25 + Math.random() * (WORLD_SIZE/2 - 50);
+            const r = 25 + Math.random() * (maxRadius - 25);
             const theta = Math.random() * Math.PI * 2;
             x = Math.cos(theta) * r;
             z = Math.sin(theta) * r;
