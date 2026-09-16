@@ -4,7 +4,7 @@
 // systems stay independently testable/swappable during this rebuild.
 
 export const WORLD_SIZE = 800; // matches dynamic_procedural_terrain_engine.html's 800x800 plane
-export const BASE_FOG_DENSITY = 0.0052; // single source of truth for scene.fog's base density — main.js's init and core/input.js's live fogDensityMult slider both multiply this by settings.fogDensityMult, see main.js's fog-setup comment for the bug this fixes
+export const BASE_FOG_DENSITY = 0.0025; // single source of truth for scene.fog's base density — main.js's init and core/input.js's live fogDensityMult slider both multiply this by settings.fogDensityMult. Was briefly unified on 0.0052 (the slider's old value) instead of this — that was dead/untuned code (the mismatch bug meant it never actually ran until you touched the slider), and turned out roughly 2x too thick with FogExp2's exponential falloff, reading as "everything's dark." 0.0025 is the value that had actually been visually tuned.
 export const WATER_LEVEL = -2; // matches terrainParams.waterLevel below / environment/rain.js
 
 export function createWorldState() {

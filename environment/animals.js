@@ -7,8 +7,10 @@
 //
 // This first pass just gets them INTO Silvan and visible/animated at a
 // standstill-idle near spawn, so we can see how they read in this game's
-// lighting/atmosphere — see spawnDemoAnimals(). Not yet wired to the
-// confused-pet mechanic, follow AI, or dialogue — that's later work.
+// lighting/atmosphere — see spawnDemoAnimals(). Wander/follow AI (see
+// updateDemoAnimals below) and the scripted confused-pet meetings (see
+// core/story.js) were both later work but are implemented now — this
+// comment used to say otherwise and was stale.
 
 import * as THREE from 'three';
 import { getElevation } from './terrain.js';

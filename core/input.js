@@ -20,7 +20,7 @@
 //              volume controls themselves apply live, same as everything
 //              else on this list.
 
-import { getSettings, setSetting, DEFAULT_DRAW_DISTANCE } from './settings.js';
+import { getSettings, setSetting } from './settings.js';
 import { BASE_FOG_DENSITY } from './world-state.js';
 import { getQuality, setQuality } from './quality.js';
 import { getViewMode, setViewMode } from './view-mode.js';

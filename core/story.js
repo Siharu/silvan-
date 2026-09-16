@@ -6,15 +6,15 @@
 // cycle into three nights of a growing light across the water, ending in
 // a forced choice at the shoreline that fades out into Map 2 (Kalyazin).
 //
-// Deliberately NOT implemented here: the Boundary Walk (Day 1, southern
-// bluffs) and Unburied Bone (Day 2, willow tree) beats from the script.
-// Both are proximity-triggered at specific island locations, but this
-// project's terrain is procedurally generated per-seed — there's no
-// fixed "southern bluff" or "willow tree" coordinate to hardcode without
-// either guessing blindly (risking spawning the trigger underwater or
-// inside a rock, same class of bug findDryAnchor() in animals.js was
-// written to avoid) or building real landmark-placement logic first.
-// Flagging rather than faking a placement.
+// Deliberately NOT implemented here at time of writing: the Boundary
+// Walk (Day 1, southern bluffs) and Unburied Bone (Day 2, willow tree)
+// beats from the script. Both are proximity-triggered at specific island
+// locations, and this project's terrain is procedurally generated
+// per-seed — solved by core/landmarks.js's findSouthernBluff()/
+// findWillowSpot(), which scan the actual generated terrain for a
+// plausible spot each run instead of hardcoding a coordinate. Both beats
+// are wired in below (see updateStory's boundary/bone block) — this
+// comment used to say they weren't and was stale.
 
 import { showDialogue, isDialogueActive, advanceDialogue as advanceDialogueUI } from './dialogue.js';
 import { ensureAudioContext } from './audio.js';
@@ -95,6 +95,8 @@ export function updateStory(state, dt) {
         showDialogue(state, [
             { text: "The world doesn't start with sight; it starts with warmth and dust motes." },
             { speaker: 'Kat', text: '...Where...?' },
+            { text: 'Somewhere close, low in the brush, something thrashes — quiet, panicked, trying not to be heard and failing.' },
+            { speaker: 'Kat', text: "That's not me. Someone else is here too." },
         ]);
         s.stage = 'bimo_pending';
     }
