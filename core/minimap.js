@@ -572,8 +572,7 @@ function buildEngine(state) {
     const oceanMesh = new THREE.Mesh(oceanGeo, new THREE.MeshStandardMaterial({ color: 0x09101a, roughness: 0.2, metalness: 0.9, transparent: true, opacity: 0.85, flatShading: true }));
     oceanMesh.position.y = 0.2;
     scene.add(oceanMesh);
-            brick.position.set((Math.random() - 0.5) * 0.15, ccy * 0.4 + 0.2, (Math.random() - 0.5) * 0.15);
-            chimney.add(brick);
+
     // --- Ember particles — rising motes near the Hearth's real position
     // (world origin), not spread across the whole map anymore (the old
     // fictional version scattered them over the full MAP_SIZE since the
