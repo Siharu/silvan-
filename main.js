@@ -20,7 +20,7 @@ import { getQualityCounts } from './core/quality.js';
 import { getViewMode } from './core/view-mode.js';
 import { getKeybinds } from './core/keybinds.js';
 import { setupInput, toggleTimeFastForward } from './core/input.js';
-import { ensureAudioContext } from './core/audio.js';
+import { ensureAudioContext, startAmbience, playFootstep } from './core/audio.js';
 import { updateRestHold } from './core/rest.js';
 import { initStory, updateStory, tryStoryInteract } from './core/story.js';
 import { markGameStarted } from './core/save-system.js';
@@ -45,7 +45,7 @@ import { spawnDemoAnimals, updateDemoAnimals, updateInteractPrompt, attemptRecru
 import { createDayNightCycle, updateDayNightCycle, updateStars } from './atmosphere/day-night-cycle.js';
 import { createClouds, updateClouds } from './environment/clouds.js';
 import { setupTouchControls } from './core/touch-controls.js';
-import { createMinimap, updateMinimap, toggleMinimap } from './core/minimap.js';
+import { createMinimap, updateMinimap, toggleMinimap, updatePoiDiscovery } from './core/minimap.js';
 
 const state = createWorldState();
 window.__silvanState = state; // lets core/dialogue.js's tap-to-continue click listener reach state without every module needing to import/thread it through — see that file's getEls() comment
@@ -317,6 +317,7 @@ function setupPlayerController() {
         if (getViewMode() === 'topdown') return; // fixed isometric angle — no mouselook to lock the pointer for
         state.renderer.domElement.requestPointerLock();
         ensureAudioContext(state); // first real user gesture in the game — browsers refuse to start an AudioContext before one, see core/audio.js
+        startAmbience(state); // safe to call repeatedly — no-ops once already running, see audio.js's activeAmbience guard
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -393,6 +394,18 @@ function setupPlayerController() {
             state.player.position.x += dir.x;
             state.player.position.z += dir.z;
             resolveColliderPush(state);
+
+            // Footsteps — distance-accumulator triggered rather than a
+            // fixed timer, so stepping cadence naturally speeds up while
+            // running instead of needing a separate run-speed case.
+            if (!overWater) { // no footstep thud while swimming — a real splash sound is a separate thing this doesn't attempt
+                state.player.footstepDist = (state.player.footstepDist || 0) + speed;
+                const strideLength = move.run ? 3.4 : 2.2;
+                if (state.player.footstepDist >= strideLength) {
+                    state.player.footstepDist = 0;
+                    playFootstep(state);
+                }
+            }
         }
         state.player.isRunning = move.run && dir.lengthSq() > 0;
 
@@ -604,6 +617,7 @@ function animate() {
     updateInteractPrompt(state);
     updateForestLOD(state, ts); // camera position + leaf-flutter wind uTime feed for forest.js's shaders — see forest.js's export comment
     updateMinimap(state);
+    updatePoiDiscovery(state);
     updateFpsCounter(state);
 
     state.renderer.render(state.scene, state.camera);

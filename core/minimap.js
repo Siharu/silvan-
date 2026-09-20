@@ -7,114 +7,138 @@
 //    can see at that size.
 //
 // 2. Expanded panel (press M): a genuinely separate THREE.js scene, own
-//    camera, own WebGLRenderer — a stylized fictional island (NOT a
-//    render of the live game terrain) built from
-//    the_hearth_isometric_map.html, the reference file you sent. Ported
-//    fairly faithfully (island shape, ember-core pit, instanced
-//    tree/rock scatter, mountain fog, ocean, POI markers + card UI,
-//    drag/zoom isometric camera), reskinned: POIs renamed to Silvan's own
-//    landmarks, day/night lighting now driven by the REAL
-//    state.gameTime/state.currentRainIntensity instead of the
-//    reference's own separate auto-cycle toggle, and the red
-//    tactical-ops HUD chrome is kept (per your call) but blended with a
-//    soft misty floaty glow so it doesn't feel totally disconnected from
-//    the rest of Silvan's UI.
+//    camera, own WebGLRenderer — but the terrain surface now samples the
+//    SAME getElevation() heightfield the live world actually uses
+//    (environment/terrain.js), at real WORLD_SIZE scale, with the real
+//    state.terrainParams seed already sitting on this exact `state`
+//    object. This replaced an earlier version that generated its own
+//    disconnected fictional island — same visual techniques (vertex-color
+//    depth tinting, instanced tree/rock scatter, animated ocean, drag/zoom
+//    isometric camera, red tactical-ops HUD chrome softened with Silvan's
+//    misty glow) but now shaped like the actual game world instead of a
+//    stylized standalone piece.
+//
+// POIs are real-world landmarks now too — Hearth (world origin, matches
+// the actual lake) and Radio Tower (120,-140, matches createRadioTower's
+// real placement in main.js) are fixed; Southern Bluff/Willow pull their
+// coordinates from state.story.bluffPos/willowPos, which
+// core/landmarks.js computes dynamically against the real generated
+// terrain once the story reaches that stage — before that, they're
+// omitted from the map rather than shown at a made-up spot. The Ruined
+// Cabin/Cave from the earlier version are cut entirely: neither exists
+// anywhere in the real live world yet (no built geometry, no real
+// coordinate), so pinning them here would show a landmark you can never
+// actually walk up to. They come back once whatever they build in the
+// cave-entrance session gets a real coordinate in the live world.
+//
+// Names/descriptions are GATED behind discovery — see
+// state.discoveredPois and updatePoiDiscovery() near the bottom of this
+// file, called every frame from main.js's main loop (not just while the
+// map is open) so exploring the real world is what unlocks a pin's name,
+// not clicking around the map itself. An undiscovered POI still shows its
+// pin (so there's something to be curious about) but the card reads
+// "???" until the player has actually been near that real location.
 //
 // The panel's THREE engine is built lazily on first expand, not at
-// createMinimap() time — a few thousand instanced trees + a 128x128
-// terrain mesh is cheap once built, but there's no reason to pay that
-// cost (or hold a second WebGLRenderer, second scene graph, etc.) for a
-// player who never opens the map.
+// createMinimap() time — no reason to pay for a second WebGLRenderer,
+// second scene graph, terrain mesh, or instanced scatter for a player who
+// never opens the map.
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from './world-state.js';
-import { noise } from '../environment/terrain.js'; // reused instead of pulling in the reference file's separate simplex-noise CDN dependency — same hash-based value noise environment/terrain.js's own heightfield already uses
+import { WORLD_SIZE, WATER_LEVEL } from './world-state.js';
+import { getElevation } from '../environment/terrain.js';
 
 const ICON_SIZE = 96; // small corner icon, px
+const DISCOVERY_RADIUS = 28; // real world units — how close the player has to actually get to a POI's real coordinate before its name unlocks
 
 // ---------------------------------------------------------------------
-// Fictional island POIs — renamed from the_hearth_isometric_map.html's
-// generic tactical-ops set to Silvan's own landmarks. Positions are
-// hand-placed within this fictional terrain's own space (MAP_SIZE=240
-// below); they don't correspond 1:1 to the live game's real world
-// coordinates, matching the fact that this whole map is a stylized
-// standalone piece rather than a render of the actual terrain.
-const POI_DATA = [
+// Fixed real-world POIs. Bluff/Willow are added dynamically in
+// getPoiData() below once their real coordinates exist.
+const FIXED_POI_DATA = [
     {
-        id: 'hearth', name: 'The Hearth', x: 0, z: -5,
+        id: 'hearth', name: 'The Hearth', x: 0, z: 0, // real world origin — matches the actual lake's position (see the earlier chat: the lake sits untethered at (0,0), which is also where Kat wakes up)
         desc: "Where Kat first opened its eyes. The warmth here never fully fades, and none of the pets know why.",
         feeling: 'WARM', whisper: 'A low hum, always present, never louder.',
         glowColor: 0xf2843a,
     },
     {
-        id: 'radio_tower', name: 'The Radio Tower', x: 35, z: -45,
+        id: 'radio_tower', name: 'The Radio Tower', x: 120, z: -140, // matches createRadioTower(state, new THREE.Vector3(120, 0, -140)) in main.js — the real placement, not a guess
         desc: "A rusted transmission spire on the eastern ridge. It listens for something that hasn't spoken yet.",
         feeling: 'UNEASY', whisper: 'Static, then silence, then static again.',
         glowColor: 0xef4444,
     },
-    {
-        id: 'bluff', name: 'The Southern Bluff', x: -70, z: 65,
-        desc: 'Where the island ends and the ocean begins. Some nights you can see the horizon glow from here.',
-        feeling: 'CALM', whisper: 'Wind off the water, and nothing else.',
-        glowColor: 0x60a5fa,
-    },
-    {
-        id: 'willow', name: 'The Willow', x: 60, z: 70,
-        desc: 'A lone willow leaning over dark water. Something is buried beneath its roots, and it has never been dug up.',
-        feeling: 'COLD', whisper: 'A creak with no wind to explain it.',
-        glowColor: 0x4ade80,
-    },
-    {
-        id: 'shore', name: 'The Waking Shore', x: 0, z: 95,
-        desc: 'The stretch of beach facing the open water. This is where the light will come, when it comes.',
-        feeling: 'WAITING', whisper: 'Three nights now. It keeps getting closer.',
-        glowColor: 0xffe066,
-    },
-    {
-        id: 'cabin', name: 'The Ruined Cabin', x: 65, z: 50,
-        desc: 'Rotting driftwood beams collapse over dark wet sand. Something used to live here, once, and left in a hurry.',
-        feeling: 'SAD', whisper: 'A floorboard settles. Nobody is standing on it.',
-        glowColor: 0xeab308,
-    },
-    {
-        id: 'cave', name: 'The Cave', x: -25, z: 35,
-        desc: "A jagged maw torn into the western cliff face. The air coming out of it is colder than anything else on the island.",
-        feeling: 'AFRAID', whisper: 'Something breathing, slow, from very far back.',
-        glowColor: 0x3b82f6,
-    },
 ];
+
+// Builds the live POI list each time it's needed (engine build, and
+// discovery checks every frame) rather than a static array, since
+// Bluff/Willow's real coordinates don't exist until core/story.js has
+// actually computed them against this session's generated terrain.
+function getPoiData(state) {
+    const list = [...FIXED_POI_DATA];
+    if (state.story && state.story.bluffPos) {
+        list.push({
+            id: 'bluff', name: 'The Southern Bluff', x: state.story.bluffPos.x, z: state.story.bluffPos.z,
+            desc: 'Where the island ends and the ocean begins. Some nights you can see the horizon glow from here.',
+            feeling: 'CALM', whisper: 'Wind off the water, and nothing else.',
+            glowColor: 0x60a5fa,
+        });
+    }
+    if (state.story && state.story.willowPos) {
+        list.push({
+            id: 'willow', name: 'The Willow', x: state.story.willowPos.x, z: state.story.willowPos.z,
+            desc: 'A lone willow leaning over dark water. Something is buried beneath its roots, and it has never been dug up.',
+            feeling: 'COLD', whisper: 'A creak with no wind to explain it.',
+            glowColor: 0x4ade80,
+        });
+    }
+    return list;
+}
 
 // ===========================================================================
 // SMALL CORNER ICON — cheap flat 2D canvas, unchanged approach from before
 // ===========================================================================
+
+// One-time real-coastline bake for the small icon — cheap (64x64 grid,
+// baked once ever, not per-frame) now that we have real getElevation()
+// sampling in this file anyway for the expanded panel. Replaces the old
+// fake circle, which is what was making the icon "useless" — it bore no
+// actual relationship to the island's real shape or the player's real
+// position on it, just an approximate blob.
+const ICON_BAKE_RES = 64;
+function bakeIconCoastline(state) {
+    const canvas = document.createElement('canvas');
+    canvas.width = ICON_BAKE_RES; canvas.height = ICON_BAKE_RES;
+    const ctx = canvas.getContext('2d');
+    const img = ctx.createImageData(ICON_BAKE_RES, ICON_BAKE_RES);
+    const scale = (ICON_BAKE_RES * 0.42) / (WORLD_SIZE / 2);
+    for (let py = 0; py < ICON_BAKE_RES; py++) {
+        for (let px = 0; px < ICON_BAKE_RES; px++) {
+            const wx = (px - ICON_BAKE_RES / 2) / scale;
+            const wz = (py - ICON_BAKE_RES / 2) / scale;
+            const h = getElevation(wx, wz, state);
+            const i = (py * ICON_BAKE_RES + px) * 4;
+            if (h <= WATER_LEVEL) { img.data[i] = 0x0a; img.data[i + 1] = 0x16; img.data[i + 2] = 0x22; }
+            else { img.data[i] = 0x2a; img.data[i + 1] = 0x38; img.data[i + 2] = 0x22; }
+            img.data[i + 3] = 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    state.minimap.iconCoastline = canvas;
+}
 
 function drawIcon(ctx, state) {
     ctx.clearRect(0, 0, ICON_SIZE, ICON_SIZE);
     const cx = ICON_SIZE / 2, cy = ICON_SIZE / 2;
     const scale = (ICON_SIZE * 0.42) / (WORLD_SIZE / 2);
 
-    // Water — soft radial darkening toward the rim instead of a flat fill,
-    // just enough shading at this size to not read as a single flat color.
-    const waterGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, ICON_SIZE * 0.5);
-    waterGrad.addColorStop(0, '#0f1f30');
-    waterGrad.addColorStop(1, '#060d16');
-    ctx.fillStyle = waterGrad;
-    ctx.fillRect(0, 0, ICON_SIZE, ICON_SIZE);
-
-    // Island — radial shading (lighter center, darker edge) rather than a
-    // flat green disc, plus a thin ember-toned rim echoing the expanded
-    // map's new red/ember identity so the icon reads as "the same place."
-    const landGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, ICON_SIZE * 0.42);
-    landGrad.addColorStop(0, '#2f3d26');
-    landGrad.addColorStop(0.75, '#232f1c');
-    landGrad.addColorStop(1, '#1a2415');
-    ctx.fillStyle = landGrad;
-    ctx.beginPath();
-    ctx.arc(cx, cy, ICON_SIZE * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(224, 90, 58, 0.35)'; // matches the panel's --mm-red
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    if (state.minimap.iconCoastline) {
+        ctx.drawImage(state.minimap.iconCoastline, 0, 0, ICON_SIZE, ICON_SIZE);
+        ctx.beginPath();
+        ctx.arc(cx, cy, ICON_SIZE * 0.42, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(224, 90, 58, 0.35)'; // matches the panel's --mm-red
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
 
     const pulse = 0.75 + Math.sin(performance.now() * 0.004) * 0.25;
 
@@ -214,7 +238,6 @@ function buildDOM() {
                 </div>
 
                 <div class="mm-bottom-row">
-                    <div class="mm-panel mm-poi-buttons" id="mm-poi-buttons"></div>
                     <div class="mm-panel mm-info-panel">
                         <div class="mm-info-line"><span>CLOCK</span><strong id="mm-clock">—</strong></div>
                         <div class="mm-info-line"><span>WEATHER</span><strong id="mm-weather">—</strong></div>
@@ -237,7 +260,14 @@ function injectStyles() {
         .minimap-icon {
             position: fixed;
             top: 1.6rem;
-            right: 7.6rem; /* left of the existing touch-pause-btn/time-ff-btn row — see main.js's HUD corner */
+            /* Top-right HUD row (index.html): touch-pause-btn at right:1.6rem,
+               time-ff-btn at right:4.6rem, fullscreen-btn at right:7.6rem —
+               each 2.6rem wide, 3rem apart. The minimap icon was ALSO at
+               right:7.6rem, landing directly on top of fullscreen-btn
+               (real, confirmed overlap, not just a close call). Moved one
+               more slot left, clear of that whole row's actual span
+               (7.6rem to 10.2rem). */
+            right: 11rem;
             width: ${ICON_SIZE}px;
             height: ${ICON_SIZE}px;
             border-radius: 50%;
@@ -301,6 +331,16 @@ function injectStyles() {
             border: 2px solid var(--mm-red);
             box-shadow: 0 0 14px var(--mm-red-glow);
         }
+        /* Undiscovered — still visible (so there's something to be
+           curious about), just dimmed and colorless compared to a
+           discovered pin, and no pulse ring (that's reserved for "you
+           know what this is"). */
+        .mm-poi-marker-undiscovered .mm-poi-pin {
+            border-color: rgba(180, 180, 190, 0.35);
+            box-shadow: none;
+            background: rgba(10,10,12,0.6);
+        }
+        .mm-poi-marker-undiscovered .mm-poi-pulse { display: none; }
         .mm-poi-pulse {
             position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--mm-red);
             animation: mm-pulse-ring 2s infinite ease-out;
@@ -346,9 +386,7 @@ function injectStyles() {
         .mm-card-stats strong { color: var(--mm-red); }
         .mm-card-stats em { color: #d1d5db; font-style: normal; }
 
-        .mm-bottom-row { display: flex; justify-content: space-between; align-items: flex-end; gap: 0.8rem; flex-wrap: wrap; }
-        .mm-poi-buttons { padding: 0.6rem; display: flex; gap: 0.4rem; flex-wrap: wrap; max-width: 60vw; }
-        .mm-poi-buttons .mm-btn { text-transform: uppercase; }
+        .mm-bottom-row { display: flex; justify-content: flex-end; align-items: flex-end; gap: 0.8rem; flex-wrap: wrap; }
         .mm-info-panel { padding: 0.7rem 1rem; min-width: 180px; }
         .mm-info-line { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.62rem; padding: 0.15rem 0; }
         .mm-info-line span { color: #6b7280; letter-spacing: 0.08em; }
@@ -365,7 +403,12 @@ function injectStyles() {
 
 function buildEngine(state) {
     const container = document.getElementById('minimap-canvas-container');
-    const MAP_SIZE = 240, MAP_SEGMENTS = 128;
+    // Real world scale now (was a separate fictional MAP_SIZE=240) — this
+    // terrain IS the live world's actual shape, so it uses the live
+    // world's actual scale. MAP_SEGMENTS trimmed from the earlier
+    // fictional version's 128 since 800 units is a lot more ground to
+    // cover at the same vertex budget; still plenty for a HUD-scale map.
+    const MAP_SIZE = WORLD_SIZE, MAP_SEGMENTS = 110;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x07090e);
@@ -373,9 +416,9 @@ function buildEngine(state) {
 
     const rect = container.getBoundingClientRect();
     const aspect = rect.width / rect.height || 1;
-    const d = 130;
-    const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 2000);
-    camera.position.set(180, 180, 180);
+    const d = 433; // was 130 for the old 240-unit fictional map — scaled proportionally for the real 800-unit world (130 * 800/240)
+    const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 4000);
+    camera.position.set(600, 600, 600);
     camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -398,29 +441,22 @@ function buildEngine(state) {
     directionalLight.position.set(120, 200, 100);
     scene.add(directionalLight);
 
+    // Real heightfield — same getElevation() the live world's own terrain
+    // mesh samples (environment/terrain.js), against this exact session's
+    // state.terrainParams (seed/scale/octaves), so this genuinely is the
+    // actual island shape, not an approximation of it.
     function sampleElevation(x, z) {
-        const nx = x / MAP_SIZE, nz = z / MAP_SIZE;
-        const dist = Math.sqrt(x * x + z * z) / (MAP_SIZE * 0.45);
-        let noiseVal = noise(nx * 2.2, nz * 2.2) * 1.0 + noise(nx * 5.5, nz * 5.5) * 0.4 + noise(nx * 12.0, nz * 12.0) * 0.15;
-        let islandShape = dist < 1.0 ? Math.pow(1.0 - dist, 1.3) : 0;
-        let elevation = (noiseVal + 1.2) * 18 * islandShape;
-        if (dist < 0.42) {
-            const peakFactor = Math.pow(1.0 - (dist / 0.42), 1.8);
-            elevation += peakFactor * 55;
-            const abyssDist = Math.sqrt(x * x + (z + 5) * (z + 5));
-            if (abyssDist < 16) {
-                const pit = Math.cos((abyssDist / 16) * Math.PI * 0.5);
-                elevation -= pit * 28;
-            }
-        }
-        if (elevation > 0 && elevation < 3.5) elevation += noise(nx * 30, nz * 30) * 0.3;
-        return Math.max(-5, elevation);
+        return getElevation(x, z, state);
     }
 
-    // --- Terrain: island shape + central ember-core pit (was "volcanic
-    // magma abyss" in the reference — recolored/reframed as the Hearth's
-    // ember-heart, which is thematically exactly what "Hearth" already
-    // means, so the terrain concept genuinely fits once renamed).
+    // --- Terrain: real heightfield, vertex-colored by real elevation
+    // bands (same land/water-threshold technique as the earlier real
+    // top-down-snapshot attempt from a previous session, just via direct
+    // numeric sampling instead of rendering-and-reading-back-pixels).
+    // The Hearth still gets a warm ember tint layered on top near its
+    // real position (world origin) — that's a pure lighting/color accent
+    // now (see emberLight below), not a fake pit carved into the mesh;
+    // the real lake is what's actually there.
     const terrainGeo = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, MAP_SEGMENTS, MAP_SEGMENTS);
     terrainGeo.rotateX(-Math.PI / 2);
     const posAttr = terrainGeo.attributes.position;
@@ -430,19 +466,19 @@ function buildEngine(state) {
     const darkLowlandColor = new THREE.Color(0x1a241e);
     const slateHighlandColor = new THREE.Color(0x2f353d);
     const mountainPeakColor = new THREE.Color(0x111317);
-    const emberColor = new THREE.Color(0xdc5a26); // warmed from the reference's 0xdc2626 pure-red magma toward ember-orange
+    const emberColor = new THREE.Color(0xdc5a26); // the Hearth's warm accent tint, applied near world origin only — see comment above
     for (let i = 0; i < posAttr.count; i++) {
         const vx = posAttr.getX(i), vz = posAttr.getZ(i);
         const vy = sampleElevation(vx, vz);
         posAttr.setY(i, vy);
-        const distFromCenter = Math.sqrt(vx * vx + (vz + 5) * (vz + 5));
+        const distFromOrigin = Math.sqrt(vx * vx + vz * vz);
         let c = new THREE.Color();
-        if (vy < 0.5) c.copy(oceanBedColor);
-        else if (vy < 3.5) c.copy(wetSandColor);
+        if (vy <= WATER_LEVEL) c.copy(oceanBedColor);
+        else if (vy < WATER_LEVEL + 3.5) c.copy(wetSandColor);
         else if (vy < 18.0) c.copy(darkLowlandColor);
         else if (vy < 40.0) c.copy(slateHighlandColor);
         else c.copy(mountainPeakColor);
-        if (distFromCenter < 14 && vy < 35) c.lerp(emberColor, Math.min(1.0, (14 - distFromCenter) / 10));
+        if (distFromOrigin < 40 && vy > WATER_LEVEL) c.lerp(emberColor, Math.min(1.0, (40 - distFromOrigin) / 30) * 0.35);
         const grain = (Math.random() - 0.5) * 0.04;
         c.r = THREE.MathUtils.clamp(c.r + grain, 0, 1);
         c.g = THREE.MathUtils.clamp(c.g + grain, 0, 1);
@@ -453,13 +489,16 @@ function buildEngine(state) {
     terrainGeo.computeVertexNormals();
     const terrainMesh = new THREE.Mesh(terrainGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0.1, flatShading: true }));
     scene.add(terrainMesh);
-    const emberLight = new THREE.PointLight(0xe0703a, 4, 60);
-    emberLight.position.set(0, 25, -5);
+    const emberLight = new THREE.PointLight(0xe0703a, 4, 90);
+    emberLight.position.set(0, 15, 0); // the Hearth's real position — world origin
     scene.add(emberLight);
 
-    // --- Instanced trees/dead-trees/rocks scatter (reference used 9000
-    // candidates; trimmed to 4000 — this is a side HUD panel, not a
-    // dedicated fullscreen app, and instanced meshes are cheap either way).
+    // --- Instanced trees/dead-trees/rocks scatter. Count bumped from the
+    // old fictional version's 4000 (over a 240-unit map) to 9000, since
+    // this now covers the real 800-unit world — proportionally similar
+    // density, not exhaustive coverage (this is a stylized decorative
+    // scatter for the map view, not meant to match forest.js's actual
+    // live tree count/positions 1:1).
     const treeGeo = new THREE.ConeGeometry(0.7, 3.5, 5); treeGeo.translate(0, 1.75, 0);
     const deadTreeGeo = new THREE.CylinderGeometry(0.15, 0.4, 2.8, 5); deadTreeGeo.translate(0, 1.4, 0);
     const rockGeo = new THREE.DodecahedronGeometry(1.0, 0); rockGeo.translate(0, 0.5, 0);
@@ -468,12 +507,13 @@ function buildEngine(state) {
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.8, flatShading: true });
     const treeM = [], deadTreeM = [], rockM = [];
     const dummy = new THREE.Object3D();
-    for (let i = 0; i < 4000; i++) {
+    const LAKE_CLEARANCE = 85; // real lake plane is 160x160 (see environment/water.js), centered at origin, and isn't tied to terrain elevation — so getElevation() near origin can return land-height even where the actual lake mesh sits. Keep trees clear of it manually.
+    for (let i = 0; i < 9000; i++) {
         const x = (Math.random() - 0.5) * MAP_SIZE * 0.95;
         const z = (Math.random() - 0.5) * MAP_SIZE * 0.95;
         const y = sampleElevation(x, z);
-        const distFromCenter = Math.sqrt(x * x + z * z);
-        if (y > 1.2 && y < 45 && distFromCenter > 18) {
+        const distFromOrigin = Math.sqrt(x * x + z * z);
+        if (y > WATER_LEVEL + 1.2 && y < 45 && distFromOrigin > LAKE_CLEARANCE) {
             dummy.position.set(x, y, z);
             dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
             if (y < 16 && Math.random() > 0.35) {
@@ -500,7 +540,11 @@ function buildEngine(state) {
     if (deadTreeM.length) { const m = new THREE.InstancedMesh(deadTreeGeo, deadTreeMat, deadTreeM.length); deadTreeM.forEach((mat, i) => m.setMatrixAt(i, mat)); scene.add(m); }
     if (rockM.length) { const m = new THREE.InstancedMesh(rockGeo, rockMat, rockM.length); rockM.forEach((mat, i) => m.setMatrixAt(i, mat)); scene.add(m); }
 
-    // --- Mountain fog ring around the Hearth's peak
+    // --- Mountain fog ring around the Hearth's real high ground (real
+    // terrain's peak height is much more modest than the old fictional
+    // version's invented 55-unit boost — scaled down to match, and
+    // recentered on the real origin instead of the old fictional (0,-5)
+    // pit offset).
     const fogCanvas = document.createElement('canvas'); fogCanvas.width = fogCanvas.height = 128;
     const fctx = fogCanvas.getContext('2d');
     const fgrad = fctx.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -513,8 +557,8 @@ function buildEngine(state) {
         const mat = new THREE.SpriteMaterial({ map: cloudTexture, transparent: true, opacity: 0.45, depthWrite: false });
         const sprite = new THREE.Sprite(mat);
         const angle = (i / 48) * Math.PI * 2 + Math.random() * 0.5;
-        const radius = 16 + Math.random() * 26, height = 46 + Math.random() * 22;
-        sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius - 5);
+        const radius = 90 + Math.random() * 60, height = 20 + Math.random() * 14;
+        sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
         const scale = 22 + Math.random() * 28;
         sprite.scale.set(scale, scale * (0.6 + Math.random() * 0.4), 1);
         sprite.userData = { angle, radius, speed: 0.025 + Math.random() * 0.035, baseY: height, bobSpeed: 0.4 + Math.random() * 0.6, phase: Math.random() * Math.PI * 2 };
@@ -528,129 +572,62 @@ function buildEngine(state) {
     const oceanMesh = new THREE.Mesh(oceanGeo, new THREE.MeshStandardMaterial({ color: 0x09101a, roughness: 0.2, metalness: 0.9, transparent: true, opacity: 0.85, flatShading: true }));
     oceanMesh.position.y = 0.2;
     scene.add(oceanMesh);
-
-    // --- Ruined Cabin — ported from the_hearth_isometric_map.html's
-    // buildRuinedCabin() (cut earlier for scope since the old POI list
-    // didn't include it; restored now that "The Ruined Cabin" is back in
-    // POI_DATA above). Same coordinates as that POI (65, 50) so the pin
-    // actually sits on something.
-    (function buildRuinedCabin() {
-        const cabinGroup = new THREE.Group();
-        const cx = 65, cz = 50;
-        const cy = sampleElevation(cx, cz);
-        cabinGroup.position.set(cx, cy, cz);
-        cabinGroup.rotation.y = -Math.PI / 4;
-        const woodMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.95, flatShading: true });
-        const darkWoodMat = new THREE.MeshStandardMaterial({ color: 0x211510, roughness: 1.0, flatShading: true });
-        const stoneMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.9, flatShading: true });
-        for (let i = -3; i <= 3; i += 0.8) {
-            if (Math.random() > 0.15) {
-                const plank = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.15, 6), woodMat);
-                plank.position.set(i, 0.08, (Math.random() - 0.5) * 0.4);
-                plank.rotation.y = (Math.random() - 0.5) * 0.1;
-                cabinGroup.add(plank);
-            }
-        }
-        const wallPositions = [
-            { x: -3.2, z: 0, rotZ: 0.08, h: 3.2 },
-            { x: 3.2, z: 0, rotZ: -0.15, h: 2.8 },
-            { x: 0, z: -3, rotX: 0.12, h: 3.0 },
-        ];
-        wallPositions.forEach(w => {
-            const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, w.h, 0.4), darkWoodMat);
-            post.position.set(w.x, w.h / 2, w.z);
-            post.rotation.z = w.rotZ || 0;
-            post.rotation.x = w.rotX || 0;
-            cabinGroup.add(post);
-            for (let y = 0.5; y < w.h - 0.3; y += 0.55) {
-                if (Math.random() > 0.3) {
-                    const log = new THREE.Mesh(new THREE.BoxGeometry(w.z !== 0 ? 6.2 : 0.2, 0.4, w.z !== 0 ? 0.2 : 6.2), woodMat);
-                    log.position.set(w.x, y, w.z);
-                    log.rotation.z = (Math.random() - 0.5) * 0.08;
-                    cabinGroup.add(log);
-                }
-            }
-        });
-        const rafters = [-2.5, -1, 0.5, 2];
-        rafters.forEach((rx, idx) => {
-            const rafterL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 4.2), darkWoodMat);
-            rafterL.position.set(rx, 3.8, -1.2);
-            rafterL.rotation.set(0.62, 0, (idx === 1 ? 0.25 : 0));
-            cabinGroup.add(rafterL);
-            if (idx !== 2) {
-                const rafterR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 4.2), darkWoodMat);
-                rafterR.position.set(rx, 3.5, 1.2);
-                rafterR.rotation.set(-0.62, 0, (idx === 0 ? -0.3 : 0));
-                cabinGroup.add(rafterR);
-            }
-        });
-        const chimney = new THREE.Group();
-        chimney.position.set(2.8, 0, -2.2);
-        for (let ccy = 0; ccy < 11; ccy++) {
-            if (ccy > 7 && Math.random() > 0.45) continue;
-            const brick = new THREE.Mesh(new THREE.BoxGeometry(1.4 + (Math.random() - 0.5) * 0.2, 0.4, 1.4 + (Math.random() - 0.5) * 0.2), stoneMat);
             brick.position.set((Math.random() - 0.5) * 0.15, ccy * 0.4 + 0.2, (Math.random() - 0.5) * 0.15);
             chimney.add(brick);
-        }
-        cabinGroup.add(chimney);
-        for (let d = 0; d < 14; d++) {
-            const plank = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 1.8), woodMat);
-            plank.position.set((Math.random() - 0.5) * 11, 0.05, (Math.random() - 0.5) * 11);
-            plank.rotation.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, (Math.random() - 0.5) * 0.4);
-            cabinGroup.add(plank);
-        }
-        const cabinLight = new THREE.PointLight(0xeab308, 1.8, 14);
-        cabinLight.position.set(0, 1.2, 0);
-        cabinGroup.add(cabinLight);
-        scene.add(cabinGroup);
-    })();
-
-    // --- Ember particles rising from the Hearth core (reference's "ash
-    // particles", reframed to rise rather than fall since embers/heat
-    // rise — small physical tweak to match the new framing)
+    // --- Ember particles — rising motes near the Hearth's real position
+    // (world origin), not spread across the whole map anymore (the old
+    // fictional version scattered them over the full MAP_SIZE since the
+    // fictional pit WAS the map's center; the real Hearth is one specific
+    // real location now, so this is a localized accent around it, same
+    // spirit as the real emberLight above).
     const emberCount = 350;
     const emberGeo = new THREE.BufferGeometry();
     const emberPos = new Float32Array(emberCount * 3);
     for (let i = 0; i < emberCount * 3; i += 3) {
-        emberPos[i] = (Math.random() - 0.5) * MAP_SIZE * 0.9;
-        emberPos[i + 1] = Math.random() * 80 + 5;
-        emberPos[i + 2] = (Math.random() - 0.5) * MAP_SIZE * 0.9;
+        emberPos[i] = (Math.random() - 0.5) * 90;
+        emberPos[i + 1] = Math.random() * 40 + 2;
+        emberPos[i + 2] = (Math.random() - 0.5) * 90;
     }
     emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3));
     const emberParticles = new THREE.Points(emberGeo, new THREE.PointsMaterial({ color: 0xe0703a, size: 1.2, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending }));
     scene.add(emberParticles);
 
-    // --- POI markers
+    // --- POI markers — built from getPoiData(state) (real coordinates,
+    // Bluff/Willow only included once core/story.js has actually computed
+    // them) rather than a static list.
     const poisGroup = new THREE.Group();
-    POI_DATA.forEach((poi) => {
+    getPoiData(state).forEach((poi) => {
         const surfaceY = sampleElevation(poi.x, poi.z);
         const group = new THREE.Group();
         group.position.set(poi.x, surfaceY, poi.z);
-        const baseMesh = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.8, 2, 6), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 }));
-        baseMesh.position.y = 1;
+        // Sizes scaled 3x from the old fictional version, same reasoning
+        // as the player marker above — matches the wider real-world camera framing.
+        const baseMesh = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 5.4, 6, 6), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 }));
+        baseMesh.position.y = 3;
         group.add(baseMesh);
-        const orbMesh = new THREE.Mesh(new THREE.OctahedronGeometry(1.5, 0), new THREE.MeshBasicMaterial({ color: poi.glowColor, wireframe: true }));
-        orbMesh.position.y = 4; orbMesh.name = 'beaconOrb';
+        const orbMesh = new THREE.Mesh(new THREE.OctahedronGeometry(4.5, 0), new THREE.MeshBasicMaterial({ color: poi.glowColor, wireframe: true }));
+        orbMesh.position.y = 12; orbMesh.name = 'beaconOrb';
         group.add(orbMesh);
-        const pLight = new THREE.PointLight(poi.glowColor, 2, 25);
-        pLight.position.y = 4;
+        const pLight = new THREE.PointLight(poi.glowColor, 2, 75);
+        pLight.position.y = 12;
         group.add(pLight);
         group.userData = poi;
         poisGroup.add(group);
     });
     scene.add(poisGroup);
 
-    // --- Player marker (proportionally mapped from the REAL world
-    // position — realX/WORLD_SIZE * MAP_SIZE — onto this fictional
-    // terrain's own space. This is a stylized map, not a literal render
-    // of the live world, so it doesn't correspond to real landmarks; the
-    // proportional mapping just keeps "roughly where you are on the
-    // island" legible, the same way a stylized game map usually works.)
+    // --- Player marker — now at the REAL world position 1:1, no mapping
+    // needed (the old fictional version proportionally mapped
+    // realX/WORLD_SIZE*MAP_SIZE onto its own disconnected space; now
+    // MAP_SIZE just IS WORLD_SIZE). Scaled up 3x from the old fictional
+    // version's marker size since the camera's view volume (d=433 vs the
+    // old d=130) is proportionally wider — same screen-relative size as
+    // before, just correct at the new real-world scale.
     const playerMarker = new THREE.Group();
-    const playerCone = new THREE.Mesh(new THREE.ConeGeometry(1.6, 4, 4), new THREE.MeshBasicMaterial({ color: 0xffe9b3 }));
+    const playerCone = new THREE.Mesh(new THREE.ConeGeometry(5, 12, 4), new THREE.MeshBasicMaterial({ color: 0xffe9b3 }));
     playerCone.rotation.x = Math.PI; // point tip toward facing direction, base up
     playerMarker.add(playerCone);
-    const playerLight = new THREE.PointLight(0xffe9b3, 2, 20);
+    const playerLight = new THREE.PointLight(0xffe9b3, 2, 60);
     playerMarker.add(playerLight);
     scene.add(playerMarker);
 
@@ -658,7 +635,7 @@ function buildEngine(state) {
         scene, camera, renderer, container,
         sampleElevation, mountainFogGroup, oceanMesh, emberParticles, poisGroup, playerMarker,
         ambientLight, hemisphereLight, directionalLight,
-        targetCameraPos: new THREE.Vector3(180, 180, 180),
+        targetCameraPos: new THREE.Vector3(600, 600, 600),
         targetLookAt: new THREE.Vector3(0, 0, 0),
         currentLookAt: new THREE.Vector3(0, 0, 0),
         clock: new THREE.Clock(),
@@ -702,49 +679,44 @@ function wireInteraction(state, eng) {
             document.querySelectorAll('#minimap-panel-layer [data-cam]').forEach(b => b.classList.remove('mm-btn-active'));
             btn.classList.add('mm-btn-active');
             const type = btn.dataset.cam;
-            if (type === 'iso') { eng.targetLookAt.set(0, 0, 0); eng.targetCameraPos.set(180, 180, 180); }
-            else if (type === 'hearth') { eng.targetLookAt.set(0, 35, -5); eng.targetCameraPos.set(90, 110, 90); }
-            else if (type === 'top') { eng.targetLookAt.set(0, 0, 0); eng.targetCameraPos.set(0, 240, 0.1); }
+            if (type === 'iso') { eng.targetLookAt.set(0, 0, 0); eng.targetCameraPos.set(600, 600, 600); }
+            else if (type === 'hearth') { eng.targetLookAt.set(0, 15, 0); eng.targetCameraPos.set(300, 260, 300); }
+            else if (type === 'top') { eng.targetLookAt.set(0, 0, 0); eng.targetCameraPos.set(0, 800, 0.1); }
         });
     });
 
     document.getElementById('mm-card-close').addEventListener('click', () => closePOICard());
 
-    const btnContainer = document.getElementById('mm-poi-buttons');
-    POI_DATA.forEach((poi) => {
-        const btn = document.createElement('button');
-        btn.className = 'mm-btn';
-        btn.textContent = poi.name.toUpperCase();
-        btn.id = `mm-quick-${poi.id}`;
-        btn.addEventListener('click', () => selectPOI(state, poi));
-        btnContainer.appendChild(btn);
-    });
-
+    // No quick-select button list — per your call, POI names shouldn't be
+    // browsable from a list at all (defeats the point of gating them
+    // behind discovery). The only way to open a POI's card is clicking
+    // its pin directly, and undiscovered ones show "???" there instead of
+    // the real name — see selectPOI below.
     function selectPOI(st, poi) {
         const eng2 = st.minimap.engine;
         eng2.activePoi = poi;
-        document.querySelectorAll('#mm-poi-buttons button').forEach(b => b.classList.remove('mm-btn-active'));
-        const activeBtn = document.getElementById(`mm-quick-${poi.id}`);
-        if (activeBtn) activeBtn.classList.add('mm-btn-active');
-        document.getElementById('mm-card-tag').textContent = `LANDMARK // ${poi.id.toUpperCase()}`;
-        document.getElementById('mm-card-title').textContent = poi.name;
-        document.getElementById('mm-card-desc').textContent = poi.desc;
-        document.getElementById('mm-card-feeling').textContent = poi.feeling;
-        document.getElementById('mm-card-whisper').textContent = poi.whisper;
+        const discovered = st.discoveredPois && st.discoveredPois.has(poi.id);
+        document.getElementById('mm-card-tag').textContent = discovered ? `LANDMARK // ${poi.id.toUpperCase()}` : 'UNDISCOVERED';
+        document.getElementById('mm-card-title').textContent = discovered ? poi.name : '???';
+        document.getElementById('mm-card-desc').textContent = discovered ? poi.desc : "Kat hasn't been here yet.";
+        document.getElementById('mm-card-feeling').textContent = discovered ? poi.feeling : '—';
+        document.getElementById('mm-card-whisper').textContent = discovered ? poi.whisper : '—';
         document.getElementById('mm-poi-card').classList.remove('hidden');
         const surfaceY = eng2.sampleElevation(poi.x, poi.z);
         eng2.targetLookAt.set(poi.x, surfaceY, poi.z);
-        eng2.targetCameraPos.set(poi.x + 100, surfaceY + 100, poi.z + 100);
+        eng2.targetCameraPos.set(poi.x + 260, surfaceY + 260, poi.z + 260);
     }
 
     function closePOICard() {
         document.getElementById('mm-poi-card').classList.add('hidden');
         eng.activePoi = null;
-        document.querySelectorAll('#mm-poi-buttons button').forEach(b => b.classList.remove('mm-btn-active'));
     }
 
     // 2D-projected POI pin markers (HTML overlay, same technique as the
-    // reference's update2DPOIMarkers)
+    // reference's update2DPOIMarkers). The pin itself is always visible
+    // once a POI's real coordinate exists (so there's something to be
+    // curious about) — only the NAME is gated by discovery, via
+    // selectPOI's discovered check above, not the pin's presence.
     const poiLayer = document.getElementById('minimap-poi-layer');
     eng.updatePOIMarkers = () => {
         eng.poisGroup.children.forEach((group) => {
@@ -758,7 +730,9 @@ function wireInteraction(state, eng) {
                 el.addEventListener('click', (e) => { e.stopPropagation(); selectPOI(state, poi); });
                 poiLayer.appendChild(el);
             }
-            const worldPos = new THREE.Vector3(poi.x, eng.sampleElevation(poi.x, poi.z) + 6, poi.z);
+            const discovered = state.discoveredPois && state.discoveredPois.has(poi.id);
+            el.classList.toggle('mm-poi-marker-undiscovered', !discovered); // dimmer pin (see CSS) until Kat's actually been there
+            const worldPos = new THREE.Vector3(poi.x, eng.sampleElevation(poi.x, poi.z) + 18, poi.z);
             const screenPos = worldPos.clone().project(eng.camera);
             const rect = container.getBoundingClientRect();
             const x = (screenPos.x * 0.5 + 0.5) * rect.width;
@@ -894,7 +868,10 @@ export function createMinimap(state) {
         iconCanvas: dom.querySelector('#minimap-icon-canvas'),
         panelLayer: dom.querySelector('#minimap-panel-layer'),
         engine: null, // built lazily — see buildEngine(), called from toggleMinimap() on first expand
+        iconCoastline: null,
     };
+    bakeIconCoastline(state);
+    state.discoveredPois = state.discoveredPois || new Set();
 }
 
 export function toggleMinimap(state) {
@@ -909,6 +886,18 @@ export function toggleMinimap(state) {
         state.minimap.engine.clock.getDelta(); // discard the "time since panel was last open" delta so the ocean/fog don't jump
         requestAnimationFrame(() => panelAnimate(state));
     }
+}
+
+// Called every frame from main.js's MAIN loop (not gated on the map being
+// open) — exploring the real world is what unlocks a POI's name, whether
+// or not the player has ever even opened the map yet.
+export function updatePoiDiscovery(state) {
+    if (!state.player || !state.discoveredPois) return;
+    getPoiData(state).forEach((poi) => {
+        if (state.discoveredPois.has(poi.id)) return;
+        const dx = state.player.position.x - poi.x, dz = state.player.position.z - poi.z;
+        if (Math.hypot(dx, dz) < DISCOVERY_RADIUS) state.discoveredPois.add(poi.id);
+    });
 }
 
 // Called every frame from main.js's animate() loop — only handles the

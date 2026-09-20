@@ -28,6 +28,7 @@ import { hasStartedGame, exportSaveFile, importSaveFile, startAutosaveLoop } fro
 import { getKeybinds, setKeybind, resetKeybinds, ACTION_LABELS, codeToLabel } from './keybinds.js';
 import { triggerKatNap } from './rest.js';
 import { getObjectiveInfo } from './story.js';
+import { playUiClick } from './audio.js';
 
 function renderKeybindList(containerId) {
     const el = document.getElementById(containerId);
@@ -354,6 +355,16 @@ function setupFullscreenButton() {
 export function setupInput(state) {
     renderKeybindList('title-keybind-list');
     renderKeybindList('pause-keybind-list');
+
+    // One delegated listener for a UI click sound on every menu button
+    // (pause panel, title panel, settings toggles) instead of wiring it
+    // into each individual button handler — audio.js's playUiClick()
+    // no-ops safely if the AudioContext isn't unlocked yet (e.g. clicking
+    // around the title screen before the first real gesture), so this is
+    // safe to attach unconditionally.
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('button')) playUiClick(state);
+    });
 
     setupTitleMenu();
     setupPauseMenu(state);

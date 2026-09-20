@@ -823,7 +823,8 @@
             text-shadow: 0 0 14px rgba(160, 190, 255, 0.35);
         }
         .pause-btn {
-            display: block;
+            display: flex;
+            align-items: center;
             width: 100%;
             margin-bottom: 0.7rem;
             padding: 0.7rem 1rem;
@@ -836,6 +837,41 @@
             text-transform: uppercase;
             cursor: pointer;
             transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+        .pause-btn-icon {
+            display: inline-block;
+            width: 1.4rem;
+            font-size: 0.8rem;
+            opacity: 0.7;
+            text-align: center;
+        }
+        /* Resume was visually identical to every other option even though
+           it's the default/most-used action — no hierarchy at all. Small,
+           permanent (not just on-hover) warm emphasis instead. */
+        .pause-btn-primary {
+            background: rgba(224, 90, 58, 0.08);
+            border-color: rgba(224, 90, 58, 0.35);
+            color: #f3ded4;
+        }
+        .pause-btn-primary:hover {
+            background: rgba(224, 90, 58, 0.16) !important;
+            border-color: rgba(224, 90, 58, 0.6) !important;
+            box-shadow: 0 0 20px rgba(224, 90, 58, 0.2) !important;
+        }
+        .pause-btn-primary .pause-btn-icon { color: #e05a3a; opacity: 1; }
+        /* Quit is destructive relative to the others (leaves the session) —
+           a faint cool-red tint on hover only, not permanent like Resume's,
+           since you shouldn't be able to tell "quit" apart from across the
+           room the way you can with the primary action. */
+        .pause-btn-danger:hover {
+            background: rgba(200, 60, 60, 0.1);
+            border-color: rgba(220, 90, 90, 0.4);
+            box-shadow: 0 0 20px rgba(200, 60, 60, 0.15);
+        }
+        .pause-btn-divider {
+            height: 1px;
+            margin: 0.9rem 0.4rem 1rem;
+            background: linear-gradient(90deg, transparent, rgba(210, 225, 255, 0.18), transparent);
         }
         .pause-btn:hover {
             background: rgba(180, 210, 255, 0.08);
@@ -1850,15 +1886,16 @@
     <div id="pause-layer" class="pause-layer">
         <div class="pause-panel">
             <h2>Paused</h2>
-            <button id="pause-resume-btn" class="pause-btn">Resume</button>
-            <button id="pause-objectives-btn" class="pause-btn">Objectives</button>
+            <button id="pause-resume-btn" class="pause-btn pause-btn-primary"><span class="pause-btn-icon">▶</span>Resume</button>
+            <div class="pause-btn-divider"></div>
+            <button id="pause-objectives-btn" class="pause-btn"><span class="pause-btn-icon">✦</span>Objectives</button>
             <div id="pause-objectives" class="pause-settings">
                 <h3 class="objective-heading">Current Objective</h3>
                 <p id="objective-current-text" class="objective-text">—</p>
                 <h3 class="objective-heading">Party</h3>
                 <ul id="objective-party-list" class="objective-party-list"></ul>
             </div>
-            <button id="pause-settings-btn" class="pause-btn">Settings</button>
+            <button id="pause-settings-btn" class="pause-btn"><span class="pause-btn-icon">⚙</span>Settings</button>
             <div id="pause-settings" class="pause-settings">
                 <div class="tabs-header" id="pause-settings-tabs">
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
@@ -1943,7 +1980,8 @@
                     <div class="save-status" id="pause-save-status"></div>
                 </div>
             </div>
-            <button id="pause-quit-btn" class="pause-btn">Quit to Title</button>
+            <div class="pause-btn-divider"></div>
+            <button id="pause-quit-btn" class="pause-btn pause-btn-danger"><span class="pause-btn-icon">⏻</span>Quit to Title</button>
         </div>
     </div>
 
