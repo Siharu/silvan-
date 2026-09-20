@@ -157,7 +157,18 @@ export function updateDayNightCycle(state, delta) {
     state.moonPosition.y = Math.sin(angle + Math.PI) * orbitRadius;
     state.moonPosition.z = 20000;
 
-    state.sky.material.uniforms['sunPosition'].value.copy(state.sunPosition);
+    state.sky.material.uniforms['sunPosition'].value.copy(state.sunPosition).normalize();
+    // .normalize() is the fix here — THREE.Sky's Rayleigh/Mie scattering
+    // shader expects sunPosition as a unit-length DIRECTION (every
+    // official three.js Sky example uses magnitude 1, via
+    // sun.setFromSphericalCoords(1, phi, theta)). This was feeding it
+    // state.sunPosition directly at its raw orbitRadius magnitude (90,000)
+    // — a massive deviation from what the shader's scattering math
+    // expects, and very plausibly why the sky was rendering wrong/dark
+    // instead of a normal atmospheric gradient. sunLight.position below
+    // still legitimately wants the real huge-magnitude position (that's
+    // what makes it read as a directional light from very far away); only
+    // the sky dome's uniform needed the direction-only version.
 
     if (state.water) {
         if (state.sunPosition.y > 0) {

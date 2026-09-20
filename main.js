@@ -131,15 +131,12 @@ async function afterStep() {
 
 function setupRenderer() {
     state.scene = new THREE.Scene();
-    state.scene.background = new THREE.Color(0x87CEEB);
-    // Was 0x87CEEB (sky blue) — same as scene.background, and never
-    // touched again by day-night-cycle.js or anything else, so it was a
-    // flat pale-blue haze blending into every distant surface regardless
-    // of lighting or time of day. Ground/grass seen through it (especially
-    // up close between grass blades, low camera angle) read as washed-out
-    // pale green-gray instead of the actual dark soil color underneath.
-    // Darker, desaturated tone matches this game's dark-forest atmosphere
-    // instead of a bright daytime sky tint.
+    // Rarely if ever actually visible — atmosphere/day-night-cycle.js adds
+    // a full THREE.Sky atmospheric-scattering dome that covers the whole
+    // background; this is just a fallback color for the moment before
+    // that's added. See that file for the actual sky-rendering fix (the
+    // sunPosition uniform was being fed at the wrong scale).
+    state.scene.background = new THREE.Color(0x0c0f14);
     // Base fog density — single source of truth (was 0.0025 here but
     // 0.0052 in core/input.js's live fogDensityMult slider handler, so
     // quality presets' fogDensityMult never actually applied fog at load;
