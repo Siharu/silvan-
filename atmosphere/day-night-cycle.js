@@ -1,254 +1,126 @@
-// Day/night cycle — DIRECT PORT of day_night_cycle.html. Unlike the old
-// modular project's approach (which kept its own hand-rolled sky gradient/
-// water systems and only borrowed the light-intensity curve), this pulls
-// the reference's actual THREE.Sky atmospheric scattering dome, sun/moon
-// directional lights + shadow cameras, hemisphere light, visual moon mesh
-// + point-light glow, and star field — essentially verbatim, just wired
-// into this project's state-object/module pattern instead of the
-// reference's flat globals.
-//
-// Orbit radius/scale (90000, moonGeo radius 1500, star field radius
-// 40000, shadow camera frustum d=4000) are kept EXACTLY as in the
-// reference rather than rescaled to this project's much smaller
-// WORLD_SIZE=800 — Sky/sun/moon/stars all live effectively "at infinity"
-// relative to gameplay-scale geometry, so the absolute numbers don't need
-// to match world scale, only the ANGLES (which drive actual light
-// direction) do. Only real values ported down: none — this is why it's a
-// "direct port" per your instruction rather than the earlier session's
-// blended/rescaled approach.
-//
-// PERFORMANCE WARNING, same as flagged before: this enables real shadow
-// mapping (2048x2048 x2, PCF soft shadows) exactly as the reference did.
-// On the reported 12fps-on-Intel-UHD hardware this will be expensive
-// layered on top of grass/rocks/ferns/pine-trees. Flagged, not fixed —
-// you said trim later once everything's assembled.
-
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
-import { Water } from 'three/addons/objects/Water.js';
+import { state } from '../core/state.js';
+import { getElevation } from '../core/utils.js';
 
-export function createDayNightCycle(state) {
-    state.gameTime = state.gameTime !== undefined ? state.gameTime : 0.5; // 0..1 -> maps to timeOfDay 0..24 below
-    state.timeSpeed = 0.02; // slow real-time-feeling day cycle; reference's isPlaying speed (0.5 hrs/sec) was tuned for a demo scrubbing through a full day in ~48s — way too fast for actual gameplay pacing
-
-    // --- Sky (Rayleigh & Mie scattering dome) ---
-    const sky = new Sky();
-    sky.scale.setScalar(100000);
-    state.scene.add(sky);
-    state.sky = sky;
-
-    const skyUniforms = sky.material.uniforms;
-    // Was turbidity 4.0 / rayleigh 1.5 — turbidity controls atmospheric
-    // haze (higher = paler/whiter sky), rayleigh controls blue-scattering
-    // strength. That combination skewed toward pale grey-blue instead of
-    // a real saturated sky blue. Lowered haze, raised blue scattering.
-    skyUniforms['turbidity'].value = 2.2;
-    skyUniforms['rayleigh'].value = 3.2;
-    skyUniforms['mieCoefficient'].value = 0.003;
-    skyUniforms['mieDirectionalG'].value = 0.8;
-
-    state.sunPosition = new THREE.Vector3();
-    state.moonPosition = new THREE.Vector3();
-
-    // --- Sun light ---
-    const sunLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 10;
-    sunLight.shadow.camera.far = 15000;
-    const d = 4000;
-    sunLight.shadow.camera.left = -d;
-    sunLight.shadow.camera.right = d;
-    sunLight.shadow.camera.top = d;
-    sunLight.shadow.camera.bottom = -d;
-    sunLight.shadow.bias = -0.001;
-    state.scene.add(sunLight);
-    state.sunLight = sunLight;
-
-    // --- Moon light ---
-    const moonLight = new THREE.DirectionalLight(0x99aaff, 1.5);
-    moonLight.castShadow = true;
-    moonLight.shadow.mapSize.width = 2048;
-    moonLight.shadow.mapSize.height = 2048;
-    moonLight.shadow.camera.near = 10;
-    moonLight.shadow.camera.far = 15000;
-    moonLight.shadow.camera.left = -d;
-    moonLight.shadow.camera.right = d;
-    moonLight.shadow.camera.top = d;
-    moonLight.shadow.camera.bottom = -d;
-    moonLight.shadow.bias = -0.001;
-    state.scene.add(moonLight);
-    state.moonLight = moonLight;
-
-    // --- Hemisphere ambient ---
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.6);
-    state.scene.add(hemiLight);
-    state.hemiLight = hemiLight;
-
-    // --- Visual moon mesh + glow ---
-    const moonGeo = new THREE.SphereGeometry(1500, 64, 64);
-    const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    moonMat.toneMapped = false; // same reasoning as the stars above — the moon should stay a bright visible disc, not dim along with the crushed night exposure
-    moonMat.fog = false; // the moon orbits at radius 90,000 (see orbitRadius below) — FogExp2's falloff is total at that distance regardless of density, so without this the entire moon disc renders as solid fog color instead of white. This is what was showing up as a huge dark patch dominating the sky — the moon, not the sky itself.
-    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
-    const moonGlow = new THREE.PointLight(0x99aaff, 2.5, 15000);
-    moonMesh.add(moonGlow);
-    state.scene.add(moonMesh);
-    state.moonMesh = moonMesh;
-
-    // --- Water reflection uniforms (only meaningful if environment/water.js's
-    // ocean/lake reuses this Water instance — see that module's own
-    // comments for how the two connect; this module just feeds sunDirection/
-    // sunColor into whatever `state.water` turns out to be, same as the
-    // reference's initWater() callback did once its texture loaded). ---
-    // Deliberately NOT creating a THREE.Water plane here — the reference's
-    // was a single flat 30000x30000 ocean plane for its own demo; this
-    // project already has (or will have, see environment/water.js) its own
-    // lake/ocean geometry from ocean-water.html's Gerstner system. This
-    // module only updates sunDirection/sunColor on state.water if it
-    // exists, so water.js can opt in without this module owning the mesh.
-
-    // --- Stars ---
-    const starsGeo = new THREE.BufferGeometry();
-    const starsCount = 5000;
-    const starsPos = new Float32Array(starsCount * 3);
-    for (let i = 0; i < starsCount; i++) {
-        const r = 40000;
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(Math.random() * 2 - 1);
-        starsPos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-        starsPos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-        starsPos[i * 3 + 2] = r * Math.cos(phi);
+export function updateAtmosphere(delta) {
+    state.timeMultiplier = state.keys.r ? 50 : 1;
+    
+    // WEATHER LOGIC
+    state.weatherChangeTimer += delta * state.timeMultiplier;
+    if (state.weatherChangeTimer > 25000) { // Change weather periodically (accelerated by resting)
+        state.weatherChangeTimer = 0;
+        state.targetRainIntensity = Math.random() > 0.5 ? 0.0 : Math.random(); 
     }
-    starsGeo.setAttribute('position', new THREE.BufferAttribute(starsPos, 3));
-    const starsMat = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: 80,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false
-    });
-    starsMat.toneMapped = false; // otherwise crushing toneMappingExposure down for a genuinely dark night sky (see updateDayNightCycle's night branch) would dim the stars right along with it — they're meant to stay bright points regardless of overall scene exposure
-    starsMat.fog = false; // stars sit at radius 40,000 — FogExp2's falloff is total at that distance (fog factor ~0 regardless of density), so without this they'd render as pure fog color instead of white points, same bug as the moon below
-    state.stars = new THREE.Points(starsGeo, starsMat);
-    state.scene.add(state.stars);
+    // Smoothly interpolate rain intensity
+    state.currentRainIntensity += (state.targetRainIntensity - state.currentRainIntensity) * 0.0005 * delta;
+    
+    const weatherText = state.currentRainIntensity > 0.7 ? "HEAVY RAIN" : (state.currentRainIntensity > 0.15 ? "LIGHT RAIN" : "CLEAR");
+    document.getElementById('weather-display').textContent = `WEATHER: ${weatherText}`;
 
-    updateDayNightCycle(state, 0); // set initial lighting/sky state before first render
-}
+    state.gameTime += (delta / DAY_LENGTH_MS) * state.timeMultiplier;
+    if (state.gameTime >= 1.0) { state.gameTime -= 1.0; state.daysPassed++; document.getElementById('day-display').textContent = `DAY: ${state.daysPassed}`; }
+    const hrs = Math.floor(state.gameTime * 24).toString().padStart(2, '0');
+    const mins = Math.floor((state.gameTime * 24 * 60) % 60).toString().padStart(2, '0');
+    document.getElementById('time-display').textContent = `TIME: ${hrs}:${mins}`;
 
-// Direct port of updateEnvironment(), driven by state.gameTime (0..1) ->
-// timeOfDay (0..24) instead of the reference's standalone timeOfDay var.
-export function updateDayNightCycle(state, delta) {
-    if (delta) {
-        state.gameTime += delta * state.timeSpeed / 24; // timeSpeed is hrs/real-sec in the reference; gameTime is 0..1
-        if (state.gameTime >= 1.0) state.gameTime -= 1.0;
-    }
-    const timeOfDay = state.gameTime * 24;
+    const angle = state.gameTime * Math.PI * 2 - Math.PI / 2;
+    const sy = Math.sin(angle); const sx = Math.cos(angle);
+    state.sunLight.position.set(sx * 600, sy * 600, -200);
+    state.moonLight.position.set(-sx * 600, -sy * 600, 200);
+    if(state.moonSprite) { state.moonSprite.position.set(-sx*550, -sy*550, 200); state.moonSprite.material.opacity = Math.max(0, -sy + 0.3); }
 
-    const angle = (timeOfDay / 24) * Math.PI * 2 - Math.PI / 2;
-    const orbitRadius = 90000;
+    const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
+    state.sunLight.intensity = Math.max(0, sy) * 1.5;
+    state.moonLight.intensity = Math.max(0, -sy) * 0.5;
 
-    state.sunPosition.x = Math.cos(angle) * orbitRadius;
-    state.sunPosition.y = Math.sin(angle) * orbitRadius;
-    state.sunPosition.z = -20000;
-
-    state.moonPosition.x = Math.cos(angle + Math.PI) * orbitRadius;
-    state.moonPosition.y = Math.sin(angle + Math.PI) * orbitRadius;
-    state.moonPosition.z = 20000;
-
-    state.sky.material.uniforms['sunPosition'].value.copy(state.sunPosition).normalize();
-    // .normalize() is the fix here — THREE.Sky's Rayleigh/Mie scattering
-    // shader expects sunPosition as a unit-length DIRECTION (every
-    // official three.js Sky example uses magnitude 1, via
-    // sun.setFromSphericalCoords(1, phi, theta)). This was feeding it
-    // state.sunPosition directly at its raw orbitRadius magnitude (90,000)
-    // — a massive deviation from what the shader's scattering math
-    // expects, and very plausibly why the sky was rendering wrong/dark
-    // instead of a normal atmospheric gradient. sunLight.position below
-    // still legitimately wants the real huge-magnitude position (that's
-    // what makes it read as a directional light from very far away); only
-    // the sky dome's uniform needed the direction-only version.
-
-    if (state.water) {
-        if (state.sunPosition.y > 0) {
-            state.water.material.uniforms['sunDirection'].value.copy(state.sunPosition).normalize();
-            state.water.material.uniforms['sunColor'].value.setHex(0xffffff);
-        } else {
-            state.water.material.uniforms['sunDirection'].value.copy(state.moonPosition).normalize();
-            state.water.material.uniforms['sunColor'].value.setHex(0x7c93ff);
-        }
-    }
-
-    state.sunLight.position.copy(state.sunPosition);
-    state.moonLight.position.copy(state.moonPosition);
-    state.moonMesh.position.copy(state.moonPosition);
-
-    const sunHeightNormalized = Math.sin(angle);
-    state.sunHeightNormalized = sunHeightNormalized; // exposed for other systems (fireflies.js, dust.js) that need day/night blend without redoing this angle math
-
-    if (sunHeightNormalized > 0) {
-        const intensity = Math.pow(sunHeightNormalized, 0.3);
-        state.sunLight.intensity = intensity * 2.0; // was 2.5 — direct sun alone was already enough to wash out dark ground albedo
-
-        state.moonLight.intensity = 0;
-
-        // HemisphereLight lights a surface by which way its normal points:
-        // up-facing surfaces (terrain, grass tops, bush tops) are lit by
-        // `color` (the "sky" half); down-facing surfaces (leaf/canopy
-        // undersides) are lit by `groundColor`. The previous pass here
-        // dimmed `groundColor`'s ceiling thinking that was "the ground
-        // bounce" — but the terrain itself faces up, so it was actually
-        // still being lit almost entirely by `color`, which was left at a
-        // fairly saturated sky-blue (hue 0.6, up to 65% lightness at
-        // midday). That blue mixed with the dark olive-green grass albedo
-        // in terrain.js and read as a green/teal cast that tracked the
-        // day-night cycle. Swapped which one gets the lowered/desaturated
-        // ceiling: `color` (lights the terrain) is now dimmer and less
-        // saturated so it doesn't fight the albedo; `groundColor` (lights
-        // undersides) keeps a warm bounce tone since that's the one that
-        // visually reads as ambient occlusion/bounce light there.
-        //
-        // Follow-up: the lightness/exposure ceilings kept getting cut and
-        // partially restored across several passes here (see the git
-        // history in this comment block), and still landed too dark for
-        // actual daylight — full noon was capped at 0.78 tone-mapping
-        // exposure, i.e. deliberately 22% under neutral even at the
-        // brightest point in the cycle. Raised the ceilings on all three
-        // levers (hemi lightness, hemi intensity, exposure) so midday
-        // actually reads as bright daylight; the LOW end of each range
-        // (dawn/dusk, intensity near 0) is untouched so the sunrise/sunset
-        // transition still feels graduated, not just "suddenly bright."
-        state.hemiLight.color.setHSL(0.58, 0.18, 0.3 + intensity * 0.42);
-        state.hemiLight.groundColor.setHSL(0.08, 0.4, 0.08 + intensity * 0.2);
-        state.hemiLight.intensity = 0.45 + intensity * 0.4;
-
-        state.renderer.toneMappingExposure = Math.max(0.6, intensity * 1.05);
-        state.stars.material.opacity = 0;
+    const skyDay = new THREE.Color(0x5a6a7a); const skyNight = new THREE.Color(0x0a0f1c);
+    const horDay = new THREE.Color(0x8a9aa8); const horSunset = new THREE.Color(0xa86c42); const horNight = new THREE.Color(0x040810);
+    let topC, botC, fogC, cloudC;
+    if (sy > -0.2 && sy < 0.2) {
+        const t = (sy + 0.2) / 0.4;
+        topC = skyNight.clone().lerp(skyDay, t);
+        botC = horNight.clone().lerp(horSunset, t<0.5?t*2:1).lerp(horDay, t>0.5?(t-0.5)*2:0);
+        fogC = horNight.clone().lerp(horSunset, t);
+        cloudC = new THREE.Color(0x222233).lerp(new THREE.Color(0x887777), t<0.5?t*2:1).lerp(new THREE.Color(0xa0a5ab), t>0.5?(t-0.5)*2:0);
+    } else if (sy >= 0.2) {
+        topC = skyDay; botC = horDay; fogC = new THREE.Color(0x607080); cloudC = new THREE.Color(0x9098a0);
     } else {
-        const intensity = Math.pow(-sunHeightNormalized, 0.3);
-        state.sunLight.intensity = 0;
-        // Was intensity*1.8 — bumped so the actual directional moonlight
-        // (the one thing that can throw real shadows/highlights at night)
-        // pulls more weight, on top of the ambient floor raise below.
-        state.moonLight.intensity = intensity * 2.6;
+        topC = skyNight; botC = horNight; fogC = new THREE.Color(0x040810); cloudC = new THREE.Color(0x111125);
+    }
+    
+    // Darken the atmosphere when it's raining
+    fogC.lerp(new THREE.Color(0x2a3038), state.currentRainIntensity * 0.6);
+    topC.lerp(new THREE.Color(0x3a4048), state.currentRainIntensity * 0.7);
+    
+    state.scene.fog.color.copy(fogC); state.skyMat.uniforms.topColor.value.copy(topC); state.skyMat.uniforms.bottomColor.value.copy(botC);
+    if(state.cloudMat) {
+        cloudC.lerp(new THREE.Color(0x2a2a2a), state.currentRainIntensity * 0.8);
+        state.cloudMat.uniforms.cloudColor.value.copy(cloudC);
+    }
 
-        // Was hemiLight lightness 0.06-0.12 / intensity 0.3-0.5 and
-        // renderer exposure 0.1-0.22 — genuinely near-black floors, not
-        // "dim moonlit blue". Per your call: raised all three so there's
-        // an actual cool moon-blue ambient fill to walk by, while keeping
-        // it clearly darker than day's own 0.5-0.78 exposure range so
-        // night still reads as night, not a blue-tinted daytime.
-        state.hemiLight.color.setHSL(0.62, 0.35, 0.16 + intensity * 0.12);
-        state.hemiLight.groundColor.setHSL(0.63, 0.3, 0.10 + intensity * 0.08);
-        state.hemiLight.intensity = 0.55 + intensity * 0.35;
+    const ts = performance.now() * 0.001;
+    state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader) c.material.userData.shader.uniforms.uTime.value = ts; });
+    if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
+        state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
+        state.rainMaterial.color.set(new THREE.Color(0xffffff).lerp(new THREE.Color(0x334466), 1 - dayBlend));
+        
+        state.rainMaterial.opacity = 0.15 * Math.min(1.0, state.currentRainIntensity * 2.0);
+        state.rainMesh.count = Math.max(0, Math.floor(45000 * state.currentRainIntensity));
+        state.rainMesh.visible = state.currentRainIntensity > 0.01;
+    }
 
-        state.renderer.toneMappingExposure = 0.3 + intensity * 0.25;
-        state.stars.material.opacity = intensity;
+    if (state.rainSplashMat) {
+        state.rainSplashMat.opacity = 0.5 * Math.min(1.0, state.currentRainIntensity * 1.8);
+        state.rainSplashMesh.visible = state.currentRainIntensity > 0.15; // match the CLEAR/LIGHT RAIN threshold above
+    }
+
+    // Feed the water shader its fake-reflection sun/moon glint direction & strength
+    if (state.waterMaterial && state.waterMaterial.userData && state.waterMaterial.userData.shader) {
+        const wU = state.waterMaterial.userData.shader.uniforms;
+        wU.uSunDir.value.copy(state.sunLight.position).normalize();
+        wU.uMoonDir.value.copy(state.moonLight.position).normalize();
+        wU.uSunStrength.value = Math.max(0, sy);
+        wU.uMoonStrength.value = Math.max(0, -sy);
+        wU.uSkyColor.value.copy(topC);
+    }
+
+    // Update puddle shader uniforms and opacity based on rain intensity
+    if (state.puddleMaterial && state.puddleMaterial.userData && state.puddleMaterial.userData.shader) {
+        state.puddleMaterial.userData.shader.uniforms.uTime.value = ts;
+        state.puddleMaterial.userData.shader.uniforms.uRainIntensity.value = state.currentRainIntensity;
+        state.puddleMaterial.opacity = Math.min(0.85, state.currentRainIntensity * 1.2);
+    }
+    
+    // Fireflies hide in heavy rain
+    if (state.fireflyMat) state.fireflyMat.opacity = Math.max(0, 1.0 - dayBlend * 2.2) * (1.0 - state.currentRainIntensity * 0.8);
+    
+    // Update Stars
+    if (state.starMat) {
+        const starVisibility = Math.max(0, -sy * 1.5); // Visible only at night
+        const weatherClearance = 1.0 - (state.currentRainIntensity * 1.2); // Hidden by rain
+        state.starMat.uniforms.uOpacity.value = Math.max(0, starVisibility * weatherClearance);
+        state.starMat.uniforms.uTime.value = ts;
+    }
+
+    // Update Dust
+    if (state.dustMat) {
+        state.dustMat.uniforms.uTime.value = ts;
+        state.dustMat.uniforms.uCameraPos.value.copy(state.camera.position);
+        const dustWeatherVisibility = Math.max(0, 1.0 - state.currentRainIntensity * 1.5);
+        const lightVisibility = Math.max(0.3, sy); // More visible in day
+        state.dustMat.uniforms.uVisibility.value = dustWeatherVisibility * lightVisibility;
+    }
+
+    if (state.isPlaying) { 
+        state.dayAmbientAudio.volume(dayBlend * 0.45);
+        state.nightAmbientAudio.volume((1 - dayBlend) * 0.35);
+        state.windAudio.volume(0.08 + state.currentRainIntensity * 0.07); // Subtle always-on breeze, swells a bit with weather
+        state.rainAudio.volume(0.35 * state.currentRainIntensity); 
+
+        // Fade water ambience in as the state.player nears the lake shoreline elevation
+        const playerGroundY = getElevation(state.player.position.x, state.player.position.z);
+        const waterProximity = Math.max(0, 1.0 - Math.abs(playerGroundY - 1.6) / 20.0);
+        state.waterAudio.volume(waterProximity * 0.4);
     }
 }
 
-// Called every frame from main.js's animate() loop.
-export function updateStars(state, delta) {
-    state.stars.rotation.y += delta * 0.005;
-}

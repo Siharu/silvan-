@@ -1,223 +1,11 @@
-// Recursive fractal branch generator (trunk -> branches -> leaves) for
-// deciduous/maple trees. Uses state.branchMatrices/leafMatrices/
-// branchColors/leafColors as instancing scratch buffers and pushes trunk
-// colliders onto state.colliders. Reads state.globalTextures.leafTex.
-//
-// Pines are no longer generated here — the old low-poly layered-cone pine
-// variant was replaced by the sparse detailed pine trees in
-// environment/pine-trees.js (see PINE_TREE_COUNT there).
-//
-// Distant-tree billboard imposters (see createTreeImposters below): each
-// full-detail tree is a recursive branch walk rendered as real 3D geometry,
-// which is the right call up close but wasteful once a tree is 150+ units
-// away and only a handful of pixels tall. Rather than rewriting instance
-// matrices from the CPU every frame to swap detail levels (expensive at
-// this instance count, and this codebase's InstancedMesh usage elsewhere
-// never does per-frame CPU rewrites either), the swap happens entirely in
-// the vertex shader: every tree exists simultaneously as full-detail
-// geometry AND as a camera-facing billboard card, and each shader collapses
-// its own vertices to a degenerate (clipped) point on the wrong side of
-// uSwitchDist. One uCameraPos uniform, updated once per frame by the
-// generic feed in atmosphere/day-night-cycle.js, drives both.
-
 import * as THREE from 'three';
-import { WORLD_SIZE } from '../core/world-state.js';
-// GROVE_CENTER/GROVE_BLEND_RADIUS don't exist in this rebuild (no flattened
-// grove concept ported over) — dropped the grove-density-boost block below,
-// same call made for environment/animals.js's GROVE_CENTER usage.
-import { getElevation, noise } from './terrain.js';
-// addDynamicFog import removed — dynamic fog itself was removed for performance, see main.js.
+import { state } from '../core/state.js';
+import { getElevation } from '../core/utils.js';
 
-// Beyond this distance, full-detail trees collapse and their billboard
-// imposter takes over. Tuned to sit past where the branch/leaf silhouette
-// detail is actually resolvable rather than at some perf-driven number —
-// see LOD_FADE below for how the pop is softened.
-const LOD_SWITCH_DIST = 150.0;
-// The switch itself is a hard clip (see collapseVertexGLSL), but fading the
-// imposter's opacity in over this many units right around the switch point
-// stops it from hard-popping into existence — the collapse is still exact,
-// only the imposter's visibility ramps.
-const LOD_FADE = 25.0;
-
-// Shared collapse snippet: pushes gl_Position outside the clip volume
-// (rather than zeroing it, which risks a w=0 divide) when `hide` is true.
-// Appended after #include <project_vertex> so it overrides whatever
-// gl_Position that chunk already computed.
-const collapseVertexGLSL = (hideExpr) => `
-    if (${hideExpr}) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
-`;
-
-function createTreeCardTexture() {
-    // Baked once, tinted per-instance via instanceColor (see
-    // createTreeImposters) — a few overlapping soft blobs read as a canopy
-    // silhouette at the distance these are actually visible from, no need
-    // for anything more detailed than that.
-    const size = 128;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, size, size);
-    ctx.fillStyle = '#2b1c10';
-    ctx.fillRect(size * 0.46, size * 0.60, size * 0.08, size * 0.4);
-    ctx.fillStyle = '#ffffff'; // multiplied by instanceColor (the tree's own leaf tint) in the shader
-    const blobs = [[0.5, 0.32, 0.30], [0.30, 0.42, 0.20], [0.70, 0.42, 0.20], [0.5, 0.52, 0.24]];
-    for (const [bx, by, br] of blobs) {
-        const grad = ctx.createRadialGradient(size * bx, size * by, 0, size * bx, size * by, size * br);
-        grad.addColorStop(0, 'rgba(255,255,255,1)');
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(size * bx, size * by, size * br, 0, Math.PI * 2);
-        ctx.fill();
-    }
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.needsUpdate = true;
-    return tex;
-}
-
-function createLeafTexture() {
-    // state.globalTextures.leaf was referenced by the leaf InstancedMesh
-    // material below but nothing in this rebuild ever generated it (the
-    // old project must have built this elsewhere) — same
-    // canvas-baked-texture approach as createTreeCardTexture above, just a
-    // single soft round leaf blob instead of a multi-blob canopy, since
-    // this is tiled per-leaf-quad rather than once per whole tree card.
-    const size = 64;
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, size, size);
-    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.7, 'rgba(255,255,255,1)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(size / 2, size / 2, size / 2, size / 2.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.needsUpdate = true;
-    return tex;
-}
-
-function createTreeImposters(state, treeInstances) {
-    if (treeInstances.length === 0) return;
-
-    const cardGeo = new THREE.PlaneGeometry(1, 1);
-    cardGeo.translate(0, 0.5, 0); // pivot at the base, not the center, so it sits on the ground like the real tree does
-
-    const imposterMat = new THREE.MeshStandardMaterial({
-        map: createTreeCardTexture(),
-        // Was transparent:true + alphaTest:0.08 — that combo doesn't give
-        // a clean cutout: alphaTest only discards fragments BELOW the
-        // threshold, everything above it still alpha-*blends* (since
-        // transparent:true is on), so the whole soft-gradient band between
-        // 0.08 and full opacity renders as translucent white bleeding
-        // into the sky behind it — the glowing white haze around every
-        // leaf/canopy blob in your screenshot. Standard fix for alpha-
-        // tested foliage cards: opaque + alphaTest, no blending at all —
-        // a fragment either passes at full opacity or is discarded.
-        transparent: false,
-        alphaTest: 0.08,
-        roughness: 0.9,
-        side: THREE.DoubleSide
-    });
-    imposterMat.onBeforeCompile = (shader) => {
-        shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
-        state.lodCameraUniforms.push(shader.uniforms.uCameraPos); // fed real camera position each frame by updateForestLOD() below — was frozen at (0,0,0) forever, see world-state.js's comment
-        shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
-        state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
-        imposterMat.userData.shader = shader;
-
-        shader.vertexShader = shader.vertexShader.replace('#include <common>', `
-            #include <common>
-            uniform vec3 uCameraPos;
-            uniform float uSwitchDist;
-            attribute float aScale;
-            varying float vFadeAlpha;
-        `);
-        // Y-axis ("cylindrical") billboard: only yaws to face the camera,
-        // stays upright — the standard technique for tree/foliage
-        // imposters specifically (unlike a full spherical billboard, which
-        // would tilt trees off-vertical as the camera looks up/down at
-        // them). Left as a pure LOCAL offset here (no instPos added) so
-        // the standard #include <project_vertex> right after this still
-        // does its normal instanceMatrix multiply to place it — adding
-        // instPos here too would double-translate it, since this
-        // instanceMatrix is otherwise just a plain translation (identity
-        // rotation/scale, see createTreeImposters' dummy setup below).
-        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
-            #include <begin_vertex>
-            vec3 instPos = vec3(instanceMatrix[3][0], instanceMatrix[3][1], instanceMatrix[3][2]);
-            vec3 toCam = uCameraPos - instPos;
-            float distToCam = length(toCam);
-            float yaw = atan(toCam.x, toCam.z);
-            float ca = cos(yaw), sa = sin(yaw);
-            vec3 localOffset = transformed * aScale;
-            transformed = vec3(localOffset.x * ca, localOffset.y, localOffset.x * sa);
-            vFadeAlpha = smoothstep(uSwitchDist - ${LOD_FADE.toFixed(1)}, uSwitchDist, distToCam);
-        `);
-        shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `
-            #include <project_vertex>
-            ${collapseVertexGLSL(`distToCam < uSwitchDist - ${LOD_FADE.toFixed(1)}`)}
-        `);
-
-        shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `
-            #include <common>
-            varying float vFadeAlpha;
-        `);
-        shader.fragmentShader = shader.fragmentShader.replace(
-            'vec4 diffuseColor = vec4( diffuse, opacity );',
-            'vec4 diffuseColor = vec4( diffuse, opacity * vFadeAlpha );'
-        );
-    };
-    // addDynamicFog(imposterMat, ...) removed — dynamic fog removed for performance, see main.js.
-
-    const imposterMesh = new THREE.InstancedMesh(cardGeo, imposterMat, treeInstances.length);
-    imposterMesh.castShadow = false; // billboards casting shadows would just be a rotating flat shadow card — not worth it at a distance where the imposter itself is barely resolvable
-    imposterMesh.receiveShadow = false;
-    imposterMesh.frustumCulled = false; // instances span the whole map; per-object frustum culling on the bounding box of ALL of them would almost never cull anything anyway
-
-    const colorArray = new Float32Array(treeInstances.length * 3);
-    const scaleArray = new Float32Array(treeInstances.length);
-    const dummy = new THREE.Object3D();
-    treeInstances.forEach((t, i) => {
-        dummy.position.copy(t.position);
-        dummy.scale.set(1, 1, 1);
-        dummy.rotation.set(0, 0, 0);
-        dummy.updateMatrix();
-        imposterMesh.setMatrixAt(i, dummy.matrix);
-        colorArray[i * 3] = t.color.r; colorArray[i * 3 + 1] = t.color.g; colorArray[i * 3 + 2] = t.color.b;
-        // Card sized against the same growBranch() scale (s) and canopy
-        // radius (7.5*s trunk length -> roughly a 9-10 unit tall canopy) so
-        // the imposter roughly matches the silhouette it's replacing.
-        scaleArray[i] = t.scale * 9.5;
-    });
-    imposterMesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
-    // InstancedBufferAttribute is already instanced (per-instance, not
-    // per-vertex) by construction — no extra flags needed beyond setting it
-    // via setAttribute, same as instanceColor above.
-    cardGeo.setAttribute('aScale', new THREE.InstancedBufferAttribute(scaleArray, 1));
-
-    state.scene.add(imposterMesh);
-    state.treeImposterMesh = imposterMesh;
-}
-
-export function updateForestLOD(state, ts) {
-    if (!state.camera) return;
-    for (const u of state.lodCameraUniforms) u.value.copy(state.camera.position);
-    if (state.forestLeafMat && state.forestLeafMat.userData.shader) {
-        state.forestLeafMat.userData.shader.uniforms.uTime.value = ts;
-    }
-}
-
-export async function generateFractalForest(state, onProgress) {
-    // Lazily create+cache on state so a second call (e.g. regenerating the
-    // forest without a full reload) doesn't rebake the texture pointlessly.
-    if (!state.globalTextures) state.globalTextures = {};
-    if (!state.globalTextures.leaf) state.globalTextures.leaf = createLeafTexture();
-
+export function generateFractalForest() {
     const baseTrunkColor = new THREE.Color(0x28201a);
+    const pineLeafMatrices = [];
+    const pineLeafColors = [];
 
     function growBranch(matrix, depth, maxDepth, length, radius, leafBaseColor) {
         const branchMat = matrix.clone();
@@ -236,7 +24,7 @@ export async function generateFractalForest(state, onProgress) {
                 const leafRot = new THREE.Matrix4().makeRotationFromEuler(
                     new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI)
                 );
-                const leafScale = new THREE.Matrix4().makeScale(length*3.2, length*3.2, length*3.2); // reverted to original size per request — big round canopy clumps kept, only bushes.js ground leaves were meant to be small
+                const leafScale = new THREE.Matrix4().makeScale(length*3.2, length*3.2, length*3.2);
                 state.leafMatrices.push(endMat.clone().multiply(leafRot).multiply(leafScale));
                 const lColor = leafBaseColor.clone().offsetHSL(Math.random()*0.1-0.05, Math.random()*0.2, Math.random()*0.1-0.05);
                 state.leafColors.push(lColor.r, lColor.g, lColor.b);
@@ -253,81 +41,53 @@ export async function generateFractalForest(state, onProgress) {
         }
     }
 
-    // Each tree is a recursive fractal branch walk (depth up to 5, 2-4 way
-    // splits per node) — cheap individually but 780 of them (High quality)
-    // back-to-back was the same kind of multi-second unbroken block as
-    // grass's 1.1M instances. Yielding every 40 trees keeps it smooth
-    // without the yields themselves costing anything meaningful.
-    const treeInstances = []; // fed to createTreeImposters() after the loop — position/color/scale only, not the full branch geometry
-    const YIELD_EVERY = 40;
-    const treeCount = (state.quality && state.quality.treeCount) || 350; // default since this rebuild has no core/quality.js yet
-    for (let i = 0; i < treeCount; i++) {
-        // Grove/clearing clustering: rejection-sample against a low-frequency
-        // density mask instead of placing every tree at a uniformly random
-        // spot. Pure uniform scatter is exactly why the forest read as
-        // featureless haze in every direction — clustering trees into dense
-        // groves with open clearings between them creates sightline walls
-        // and navigable "rooms", the actual small-island-feels-big trick.
-        let x, z, y, attempts = 0, density = 0;
-        // Max spawn radius — capped by quality.vegetationRadius (see
-        // core/quality.js's comment on the Low tier) instead of always
-        // using the full island. Trees simply don't exist past this
-        // radius on Low; fogDensityMult is tuned so you can't see far
-        // enough to notice that edge. WORLD_SIZE/2-25 (375) is the
-        // original unclamped max radius (25 base + WORLD_SIZE/2-50 span).
-        const maxRadius = Math.min(WORLD_SIZE / 2 - 25, (state.quality && state.quality.vegetationRadius) || (WORLD_SIZE / 2 - 25));
-        do {
-            const r = 25 + Math.random() * (maxRadius - 25);
-            const theta = Math.random() * Math.PI * 2;
-            x = Math.cos(theta) * r;
-            z = Math.sin(theta) * r;
-            y = getElevation(x, z, state);
-            density = noise(x * 0.006 + 300, z * 0.006 - 300);
-            attempts++;
-        } while (Math.random() > density * 1.5 && attempts < 12);
-
+    for (let i = 0; i < TREE_COUNT; i++) {
+        const r = 25 + Math.random() * (WORLD_SIZE/2 - 50);
+        const theta = Math.random() * Math.PI * 2;
+        const x = Math.cos(theta) * r;
+        const z = Math.sin(theta) * r;
+        const y = getElevation(x, z);
+        
         if (y < 1.4) continue; // Keep trees out of the deep lake
-        if (Math.hypot(x - 0, z - 20) < 12) continue; // keep clear of player spawn (0, _, 20)
 
         const baseMatrix = new THREE.Matrix4().makeTranslation(x, y - 0.3, z);
         baseMatrix.multiply(new THREE.Matrix4().makeRotationY(Math.random() * Math.PI * 2));
         const s = 0.85 + Math.random() * 1.3;
         
         const biomeVal = noise(x * 0.008, z * 0.008);
-
-        // Pines are placed separately as detailed landmark trees again —
-        // see environment/pine-trees.js (now optimized, see its needle-
-        // density fix). The inline biome-mixed simple-cone pine branch
-        // that briefly lived here has been removed to avoid double-
-        // planting pines from two systems at once.
-        let leafBase = new THREE.Color(0x244a1f); // Default Green
-        // Threshold history: ported verbatim as 0.65 from the reference
-        // build, but that reference used simple value-noise (range spreads
-        // across nearly the full ±1), while this project's noise()
-        // (terrain.js) is true gradient/Perlin noise whose actual output
-        // here never exceeds ~0.46 (sampled 200k tree-placement positions).
-        // 0.65 was mathematically unreachable — zero autumn trees, ever.
-        // A prior pass "fixed" that by dropping the threshold to 0.10, but
-        // mis-measured that as the ~72nd percentile; resampling against the
-        // real tree-placement distribution puts 0.10 at the 65th percentile
-        // — 35% of all trees, not a rare accent. Worse, this noise is
-        // low-frequency (x*0.008), so that 35% isn't scattered — it forms
-        // whole contiguous autumn regions, which is exactly the solid wall
-        // of neon canopy visible in the live screenshot. 0.35 is the actual
-        // ~95th percentile — a genuinely rare accent (~5% of trees) instead
-        // of over a third of the forest.
-        if (biomeVal > 0.35) {
-            // Maple Tree (Autumn colors based on biome)
-            const autumn = [0x992211, 0xaa4411, 0xbb8811, 0xcc3311];
-            leafBase.setHex(autumn[Math.floor(Math.random()*autumn.length)]);
-        }
-        growBranch(baseMatrix, 0, Math.random() > 0.8 ? 5 : 4, 7.5 * s, 0.75 * s, leafBase);
-        state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
-        treeInstances.push({ position: new THREE.Vector3(x, y - 0.3, z), color: leafBase, scale: s });
-
-        if (i > 0 && i % YIELD_EVERY === 0) {
-            if (onProgress) onProgress(i / treeCount);
-            await new Promise((resolve) => requestAnimationFrame(resolve));
+        
+        if (biomeVal < 0.35 && y > 3.5) {
+            // PINE TREE (Prefers higher ground and specific biome noise)
+            const trunkHeight = 16 * s;
+            const trunkMat = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, trunkHeight/2, 0)).multiply(new THREE.Matrix4().makeScale(0.7*s, trunkHeight, 0.7*s));
+            state.branchMatrices.push(trunkMat);
+            state.branchColors.push(0.18, 0.14, 0.11); // Darker, slightly different trunk
+            
+            // Generate dense, drooping, jagged layers for the pine tree
+            const numLayers = 6 + Math.floor(Math.random()*4);
+            for(let j=0; j<numLayers; j++) {
+                const h = trunkHeight * (0.15 + (j / numLayers) * 0.85); // Leaves start lower
+                const lScale = (trunkHeight * 0.35) * (1.0 - Math.pow(j/numLayers, 1.2)); // Curve taper
+                const layerMat = baseMatrix.clone()
+                    .multiply(new THREE.Matrix4().makeTranslation(0, h, 0))
+                    .multiply(new THREE.Matrix4().makeScale(lScale, lScale * 0.9, lScale))
+                    .multiply(new THREE.Matrix4().makeRotationY(Math.random()*Math.PI));
+                pineLeafMatrices.push(layerMat);
+                const pc = new THREE.Color(0x1a3320).offsetHSL(Math.random()*0.03-0.015, 0.1, Math.random()*0.05-0.025);
+                pineLeafColors.push(pc.r, pc.g, pc.b);
+            }
+            state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
+            
+        } else {
+            // DECIDUOUS OR MAPLE TREE
+            let leafBase = new THREE.Color(0x244a1f); // Default Green
+            if (biomeVal > 0.65) {
+                // Maple Tree (Autumn colors based on biome)
+                const autumn = [0x992211, 0xaa4411, 0xbb8811, 0xcc3311];
+                leafBase.setHex(autumn[Math.floor(Math.random()*autumn.length)]);
+            }
+            growBranch(baseMatrix, 0, Math.random() > 0.8 ? 5 : 4, 7.5 * s, 0.75 * s, leafBase);
+            state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
         }
     }
 
@@ -362,16 +122,9 @@ export async function generateFractalForest(state, onProgress) {
     
     // Add custom shader to procedurally blend bark grooves and dynamic moss
     trunkMat.onBeforeCompile = (shader) => {
-        shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
-        state.lodCameraUniforms.push(shader.uniforms.uCameraPos); // fed real camera position each frame by updateForestLOD() below — was frozen at (0,0,0) forever, see world-state.js's comment
-        shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
-        state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
-        trunkMat.userData.shader = shader;
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
-            uniform vec3 uCameraPos;
-            uniform float uSwitchDist;
             varying vec3 vLocalPos;
             varying vec3 vWorldNormal;
             varying vec3 vWorldPos;`
@@ -387,15 +140,6 @@ export async function generateFractalForest(state, onProgress) {
             `#include <defaultnormal_vertex>
             // Transform normal to world space for realistic directional moss
             vWorldNormal = normalize(mat3(instanceMatrix) * objectNormal);`
-        );
-        // Full-detail geometry collapses past LOD_SWITCH_DIST, where its
-        // billboard imposter (createTreeImposters, above) takes over —
-        // opposite condition from the imposter's own collapse, so exactly
-        // one of the two is ever visible for a given tree/camera distance.
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <project_vertex>',
-            `#include <project_vertex>
-            ${collapseVertexGLSL('distance(vWorldPos, uCameraPos) > uSwitchDist')}`
         );
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <common>',
@@ -429,13 +173,6 @@ export async function generateFractalForest(state, onProgress) {
         );
     };
 
-    // Trees near the boundary are the main thing whose silhouettes read as
-    // a hard edge against the sky — melt them into the actual sky/mountain
-    // color behind them instead of a flat fog tint (fx/dynamic-fog.js).
-    // Called after the bark/moss onBeforeCompile above so it wraps rather
-    // than replaces it.
-    // addDynamicFog(trunkMat, ...) removed — dynamic fog removed for performance, see main.js.
-
     const branchMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, state.branchMatrices.length);
     branchMesh.castShadow = true; branchMesh.receiveShadow = true;
     branchMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(state.branchColors), 3);
@@ -443,46 +180,23 @@ export async function generateFractalForest(state, onProgress) {
     state.scene.add(branchMesh);
 
     const leafGeo = new THREE.PlaneGeometry(1.4, 1.4);
-    // Was transparent:true + alphaTest:0.4 — same translucent-halo bug as
-    // forest.js's tree imposter (see that file's comment): the blended
-    // band between the alphaTest cutoff and full opacity glows white
-    // against the sky on every leaf clump. Opaque + alphaTest gives a
-    // clean hard-edged cutout instead.
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide, map: state.globalTextures.leaf, alphaTest: 0.4, transparent: false });
+    const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide, map: state.globalTextures.leaf, alphaTest: 0.4, transparent: true });
     leafMat.onBeforeCompile = (shader) => {
         shader.uniforms.uTime = { value: 0 };
-        shader.uniforms.uCameraPos = { value: new THREE.Vector3() };
-        state.lodCameraUniforms.push(shader.uniforms.uCameraPos); // fed real camera position each frame by updateForestLOD() below — was frozen at (0,0,0) forever, see world-state.js's comment
-        shader.uniforms.uSwitchDist = { value: LOD_SWITCH_DIST };
-        state.lodUniforms.push(shader.uniforms.uSwitchDist); // lets core/input.js's draw-distance slider mutate every LOD material live, see world-state.js
         leafMat.userData.shader = shader;
         shader.vertexShader = shader.vertexShader.replace(
             '#include <common>',
             `#include <common>
-            uniform float uTime;
-            uniform vec3 uCameraPos;
-            uniform float uSwitchDist;
-            varying vec3 vLeafWorldPos;`
+            uniform float uTime;`
         );
         shader.vertexShader = shader.vertexShader.replace(
             '#include <begin_vertex>',
             `#include <begin_vertex>
             vec4 leafWorldPos = instanceMatrix * vec4(position, 1.0);
-            vLeafWorldPos = leafWorldPos.xyz;
             float flutter = sin(leafWorldPos.x * 4.0 + uTime * 2.5) * cos(leafWorldPos.z * 4.0 + uTime * 1.8) * 0.08;
             transformed.xyz += flutter;`
         );
-        // Same LOD collapse as trunkMat — leaves and branches share one
-        // switch distance so a tree's canopy and trunk always swap to the
-        // imposter together, never one without the other.
-        shader.vertexShader = shader.vertexShader.replace(
-            '#include <project_vertex>',
-            `#include <project_vertex>
-            ${collapseVertexGLSL('distance(vLeafWorldPos, uCameraPos) > uSwitchDist')}`
-        );
     };
-    state.forestLeafMat = leafMat; // fed uTime each frame by updateForestLOD() below — was frozen at 0 forever, so the flutter shader never actually moved leaves
-
     const leafMesh = new THREE.InstancedMesh(leafGeo, leafMat, state.leafMatrices.length);
     // Optimized: Disabled leaf shadows. Overlapping transparent shadows on millions of instances causes severe overdraw
     leafMesh.castShadow = false; 
@@ -490,6 +204,44 @@ export async function generateFractalForest(state, onProgress) {
     leafMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(state.leafColors), 3);
     for(let i=0; i < state.leafMatrices.length; i++) leafMesh.setMatrixAt(i, state.leafMatrices[i]);
     state.scene.add(leafMesh);
-
-    createTreeImposters(state, treeInstances);
+    
+    // PROCEDURAL JAGGED PINE LEAVES
+    const pineGeo = new THREE.ConeGeometry(1, 1, 9, 3, true); 
+    pineGeo.translate(0, 0.5, 0); // Anchor to bottom
+    const pPos = pineGeo.attributes.position;
+    // Distort vertices to create an organic, drooping pine needle silhouette
+    for(let i=0; i < pPos.count; i++) {
+        let y = pPos.getY(i);
+        let x = pPos.getX(i);
+        let z = pPos.getZ(i);
+        if (y < 0.9) { 
+            let angle = Math.atan2(z, x);
+            // Jagged star pattern
+            let radiusVar = 1.0 + 0.25 * Math.sin(angle * 7.0); 
+            pPos.setX(i, x * radiusVar);
+            pPos.setZ(i, z * radiusVar);
+            // Droop the edges heavily to look like heavy pine branches
+            pPos.setY(i, y - 0.25 - Math.random() * 0.15);
+        }
+    }
+    pineGeo.computeVertexNormals();
+    
+    const pineMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true });
+    pineMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 };
+        pineMat.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nuniform float uTime;`);
+        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+            #include <begin_vertex>
+            vec4 pWorldPos = instanceMatrix * vec4(position, 1.0);
+            // Slower, heavier wind sway for pines
+            transformed.x += sin(pWorldPos.x * 2.0 + uTime * 0.8) * 0.05 * position.y; 
+        `);
+    };
+    const pineMesh = new THREE.InstancedMesh(pineGeo, pineMat, pineLeafMatrices.length);
+    pineMesh.castShadow = true; pineMesh.receiveShadow = true;
+    pineMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(pineLeafColors), 3);
+    for(let i=0; i < pineLeafMatrices.length; i++) pineMesh.setMatrixAt(i, pineLeafMatrices[i]);
+    state.scene.add(pineMesh);
 }
+
