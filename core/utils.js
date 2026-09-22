@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state } from './state.js';
+import { state, WORLD_SIZE } from './state.js';
 
 export function hash(x, y) {
     let dot = x * 12.9898 + y * 78.233;
