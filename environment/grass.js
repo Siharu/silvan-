@@ -37,10 +37,10 @@ const BLADE_COUNT = 130000; // fallback if state.quality is missing — matches 
 const BLADE_WIDTH = 0.08;
 
 const vertexShader = `
-attribute vec3 aYaw;
-attribute vec3 aBladeOrigin;
+in vec3 aYaw;
+in vec3 aBladeOrigin;
 
-varying vec3 vColor;
+out vec3 vColor;
 
 uniform float uTime;
 uniform vec3 uPlayerPosition;
@@ -107,16 +107,16 @@ void main() {
     vec2 uvCeil = ceil(uvTexel) / texSize;
     vec2 uvFrac = fract(uvTexel);
 
-    float h00 = texture2D(uHeightMap, uvFloor).r;
-    float h10 = texture2D(uHeightMap, vec2(uvCeil.x, uvFloor.y)).r;
-    float h01 = texture2D(uHeightMap, vec2(uvFloor.x, uvCeil.y)).r;
-    float h11 = texture2D(uHeightMap, uvCeil).r;
+    float h00 = texture(uHeightMap, uvFloor).r;
+    float h10 = texture(uHeightMap, vec2(uvCeil.x, uvFloor.y)).r;
+    float h01 = texture(uHeightMap, vec2(uvFloor.x, uvCeil.y)).r;
+    float h11 = texture(uHeightMap, uvCeil).r;
 
     float terrainHeight = mix(mix(h00, h10, uvFrac.x), mix(h01, h11, uvFrac.x), uvFrac.y);
     float displacement = map(terrainHeight, 0.0, 1.0, uBoundingBoxMin.y, uBoundingBoxMax.y);
     transformed.y += displacement;
 
-    vec3 heightNoise = texture2D(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency)).rgb;
+    vec3 heightNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency)).rgb;
     float heightModifier = ((heightNoise.r + heightNoise.g + heightNoise.b) * uMaxBladeHeight) * uHeightNoiseAmplitude;
     heightModifier += random(uv) * (uRandomHeightAmount * 0.1);
 
@@ -147,8 +147,8 @@ void main() {
     float width = smoothstep(0.5, 1.0, heightModifier * 2.0) * uBladeWidth;
     transformed += aYaw * (width / 2.0) * factor;
 
-    vColor = texture2D(uDiffuseMap, uv * 10.0).rgb * color;
-    vec3 colorNoise = texture2D(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
+    vColor = texture(uDiffuseMap, uv * 10.0).rgb * color;
+    vec3 colorNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
     vColor *= (colorNoise.r + colorNoise.g + colorNoise.b) / 3.0;
 
     float distanceFromCenter = length(origin.xz) / halfPatchSize;
@@ -162,7 +162,7 @@ void main() {
         sin(uWindDirection), cos(uWindDirection)
     );
     vec2 rotatedNoiseUV = rotation * noiseUV + uTime * vec2(uWindSpeed);
-    vec3 windNoise = texture2D(uNoiseTexture, rotatedNoiseUV).rgb;
+    vec3 windNoise = texture(uNoiseTexture, rotatedNoiseUV).rgb;
 
     vec3 axis = vec3(windNoise.g, 0.0, windNoise.b);
     float angle = radians(map(windNoise.g + windNoise.b, 0.0, 2.0, -uMaxBendAngle, uMaxBendAngle)) * color.g;
@@ -182,12 +182,13 @@ void main() {
 `;
 
 const fragmentShader = `
-varying vec3 vColor;
+in vec3 vColor;
 uniform vec3 uAmbientColor;
 uniform float uSunFactor;
+out vec4 fragColor;
 void main() {
     vec3 lit = vColor * (uAmbientColor + vec3(uSunFactor * 0.6));
-    gl_FragColor = vec4(lit, 1.0);
+    fragColor = vec4(lit, 1.0);
 }
 `;
 
@@ -238,6 +239,13 @@ export function createGrass() {
         fragmentShader,
         vertexColors: true,
         side: THREE.DoubleSide,
+        // Required for the vertex shader's textureSize() call below — that's
+        // a GLSL ES 3.00 built-in, but THREE.ShaderMaterial compiles as
+        // GLSL ES 1.00 by default. Without this, the shader fails to
+        // *compile* (a console warning, not a thrown JS error) and the mesh
+        // just never draws — which is exactly why everything else in the
+        // scene renders fine and only grass is missing.
+        glslVersion: THREE.GLSL3,
         uniforms: {
             uTime: { value: 0 },
             uPlayerPosition: { value: new THREE.Vector3() },
