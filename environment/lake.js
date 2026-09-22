@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
+import { state, WORLD_SIZE, WATER_LEVEL } from '../core/state.js';
+import { getElevation } from '../core/utils.js';
 
 export function createLake() {
     const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 48, 48);
@@ -117,32 +118,8 @@ export function createLake() {
     state.waterMesh.position.y = 1.6; // Water surface level
     state.waterMesh.receiveShadow = true;
     state.scene.add(state.waterMesh);
-    
-    // Add stylized Lily Pads to the lake
-    const lilyCount = 350;
-    // Cylinder with a slice removed to look like a pac-man lily pad
-    const lilyGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.05, 14, 1, false, 0, Math.PI * 1.8);
-    const lilyMat = new THREE.MeshStandardMaterial({ color: 0x3d7a31, roughness: 0.9 });
-    const lilyMesh = new THREE.InstancedMesh(lilyGeo, lilyMat, lilyCount);
-    lilyMesh.receiveShadow = true;
-    
-    const lilyDummy = new THREE.Object3D();
-    let lIdx = 0;
-    for(let i=0; i < lilyCount * 3 && lIdx < lilyCount; i++) {
-        const r = Math.random() * 150; 
-        const th = Math.random() * Math.PI * 2;
-        const x = Math.cos(th)*r; const z = Math.sin(th)*r;
-        const y = getElevation(x,z);
-        if(y < 1.4) { // Only place in the water basin
-            lilyDummy.position.set(x, 1.62, z); // Sits on water
-            lilyDummy.rotation.set(0, Math.random()*Math.PI*2, 0);
-            const s = 0.4 + Math.random()*0.7;
-            lilyDummy.scale.set(s, 1, s);
-            lilyDummy.updateMatrix();
-            lilyMesh.setMatrixAt(lIdx++, lilyDummy.matrix);
-        }
-    }
-    lilyMesh.count = lIdx;
-    state.scene.add(lilyMesh);
+    // Lily pads dropped here — this is now open ocean around The Hearth's
+    // island, not a lake basin, so lily-pad set dressing no longer fits.
+    // (Vegetation/set-dressing passes for Map 1 are being handled separately.)
 }
 

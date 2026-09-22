@@ -1,288 +1,124 @@
-# Silvan Remake — Open Issues Plan
+# Silvan (Modular Restart) — Plan
 
-## 1. W/S movement reversed — FIXED this session
-Root cause: `main.js`'s player controller computed `forward` as
-`(sin(yaw), 0, cos(yaw))`, which at yaw=0 evaluates to `(0,0,1)` — that's
-+Z, the opposite of a Three.js camera's default -Z look direction. W
-(`move.forward`) was pushing the player backward relative to view, S
-forward. `right` had the same class of sign error.
+Restart of the Silvan animal-afterlife walking sim, module-per-system
+architecture. Map 1 is **The Hearth**, sourced from
+`the_hearth_isometric_map__1_.html` (final version), with two reverts:
+Radio Tower and Ruined Cabin keep their plain original names/flavor text,
+not the "Iron Antler"/"Sunken Ribcage" lore reskins from that file.
 
-Fixed to `forward=(-sin(yaw),-cos(yaw))`, `right=(cos(yaw),-sin(yaw))` —
-the correct pair for a camera using `rotation.set(pitch, yaw, 0, 'YXZ')`.
-No longer an open issue.
+## Terrain, ocean, grass — DONE
+`core/utils.js`'s `getElevation()`: island radial falloff → central
+volcanic peak ("The Serpent's Coil", dist < 0.38 of half-map) → offset
+crater pit → shoreline dune texture, ported from the mockup's
+`sampleElevation()` and re-derived for this project's `WORLD_SIZE = 800`
+(mockup used 320). `environment/terrain.js` colors per-vertex by
+elevation band with a magma blend near the crater. `environment/lake.js`
+is now conceptually the ocean (already spans the full world plane and
+shades by depth via `getElevation()` — no reshaping needed once the
+terrain flipped from basin to island); lily pads removed.
 
-## 2. Radio tower texture looks worse than the reference
-NOT a porting error — checked `createProceduralTexture`'s params
-(canvas size, density values, repeat) against `radio.html` byte-for-byte;
-they match exactly. The actual cause: this session disabled
-`renderer.shadowMap.enabled` entirely (previous turn, to fix reported
-lag). The tower's strut/platform geometry was built with
-`castShadow`/`receiveShadow` specifically so its rust/steel textures
-would read with real depth and grime in the shadowed crevices between
-lattice struts — with shadows off globally, all of that geometry reads
-flatter, which is what's showing up as "texture looks less than
-original" even though the texture data itself is unchanged.
+Grass: old billboard `InstancedMesh` scatter replaced with the
+GhibliGrass sliding-window shader system, ported from `silvan-main`.
+New `core/procedural-textures.js` bakes its heightmap straight from
+`getElevation()`. Wired into the animate loop via `updateGrass()`.
 
-This is a genuine tradeoff (fps vs. tower fidelity), not a bug. Options,
-not yet decided:
-- Leave shadows off globally (current state) — tower stays flatter.
-- Re-enable shadows ONLY for the tower's own light-casting needs via a
-  second small-frustum shadow-casting light scoped just to the tower
-  (cheap since it's one static structure, not the whole scene) — matches
-  the "compromise, don't just re-enable everything" approach used
-  earlier for the sun/moon shadow camera sizing.
-- Accept the flatter look as the perf-mode tradeoff and move on.
+Player spawn: `(200, 0)` — verified stable lowland.
 
-**Needs a decision from you before implementing.**
+Three blocking `ReferenceError`-class import bugs fixed along the way
+(`terrain.js`/`forest.js`/`lake.js` each used a name from another module
+without importing it).
 
-## 3. No in-gameplay settings menu
-Real gap, not yet touched this session. The old modular project's
-`index.html` markup for the pause menu / settings tabs
-(`core/input.js`, `core/save-system.js`, `core/quality.js`,
-`core/view-mode.js`) was never ported into this rebuild — `main.js`
-only wires the title screen's "Remember" button. Right now there's no
-Escape-to-pause, no in-game settings access, no quality/view-mode
-toggle, no save system at all.
+**Deferred on purpose:** vegetation placement bands (forest/rocks/
+flowers/grass elevation thresholds still reference old lake-basin
+assumptions in places).
 
-This is the single biggest remaining piece of unported functionality
-from the old project. Scope, roughly:
-- `core/input.js` — Escape key -> pause menu open/close, pointer-lock
-  release/reacquire on pause
-- Wiring index.html's already-present (but currently non-functional)
-  pause panel markup to actual state (FOV, sensitivity, quality preset,
-  view mode, volume sliders)
-- `core/save-system.js` if you want settings/progress to persist across
-  sessions (localStorage), vs. just in-session settings that reset on
-  reload
+## Playable-state foundation — DONE
+`main.js` used to run its entire heavy scene build (`init()`) directly on
+`window.onload`, before the title screen could even be interacted with —
+meaning the whole terrain/grass/forest generation froze the tab before
+the browser could paint anything, loading screen included. Restructured:
+- `init()` is now `async` and only runs after the Remember click, with
+  `nextFrame()` yields between each heavy step so the loading screen's
+  progress bar (`setLoadingProgress()`) actually repaints between them
+  instead of just jumping to 100% at the end.
+- Pointer lock is requested synchronously inside the click handler itself
+  (`input.js`'s `wireTitleScreen()`), *before* any of the async loading
+  work starts — browsers only honor `requestPointerLock()` as a direct
+  continuation of a user gesture, and the loading `await`s would have
+  broken that if the lock request had stayed inside the post-init
+  "enter game" logic.
+- `setupInput()` (keydown/mousemove/pointerlockchange) now wires
+  immediately on `DOMContentLoaded`, not at the end of `init()` — pointer
+  lock can succeed and fire `pointerlockchange` while the loading screen
+  is still up, so the listener has to already exist by then or the title
+  UI never hides. `mousemove` gained a `state.camera` null-guard for the
+  same reason (camera doesn't exist yet during that window).
 
-**Not started. Needs explicit go-ahead and, given the size, will take a
-dedicated pass rather than a quick fix alongside other bugs.**
+Net effect: title screen → Remember → loading screen with real progress →
+game world, pointer already locked, no dead frozen tab in between.
 
-## Also flagged, unresolved
-- Shadow mapping is globally off (see #2) — real fps win, real visual
-  cost across every shadow-cast-dependent surface, not just the tower
-  (grass root shading, rock crevices, forest canopy gaps all lose some
-  depth too).
-- No collision beyond the `state.colliders` array being populated by
-  pine-trees.js/forest.js — nothing currently reads it, so you can walk
-  through tree trunks.
-- No swim/jump state on the player controller (placeholder, flagged when
-  first written).
+**Correction to an earlier note in this file:** HUD time/day/weather text
+was already fully wired before this — `atmosphere/day-night-cycle.js`
+writes `#time-display`/`#day-display`/`#weather-display` directly every
+frame. An earlier version of this plan incorrectly listed it as an open
+item; it isn't.
 
-## 4. Island/beach + culling/LOD pass — DONE this session
-`terrain.js`'s heightfield ran edge-to-edge across the full 800x800
-plane before this — no coastline, land everywhere, the ocean plane just
-sat around/under it. Fixed:
-- Radial falloff in `getElevation()`: land holds full height inside
-  ~220u of center, blends to a real seabed trench (`waterLevel - 16`) by
-  ~370u. Actual island now, not a heightfield that happens to have water
-  nearby.
-- Sand/wet-sand band added to the terrain fragment shader, slope-gated
-  so cliffs stay cliffs and only gentle shoreline reads as beach.
+New `core/settings.js` — quality presets (High/Med/Low, persisted via
+localStorage, read at the start of `init()` so `state.quality.bladeCount`
+exists before `createGrass()` needs it — only `bladeCount` is actually
+quality-driven so far, other quality-scalable values aren't wired yet),
+fullscreen toggle button, and a twice-a-second FPS counter — all backing
+controls that already existed in `index.html` with nothing behind them.
 
-Culling: before this, only `forest.js` had real LOD (billboard imposter
-swap past 150u). Everything else — grass especially — had zero
-effective frustum culling: one `InstancedMesh` spanning the whole map
-has one bounding sphere covering every instance, so it's never culled
-regardless of camera angle. Rocks (90 individual meshes) and pine trees
-(per-tree meshes) already cull fine on their own — small object count,
-tight per-object bounds — left alone.
+## Points of Interest
+Workflow: each POI gets designed/built as its own standalone Three.js
+HTML mockup first (or, for Broken Shell, delivered as a real `.glb`);
+once ready, ported into `silvan-modular` as its own module under
+`environment/`, registered in `environment/pois.js`, placed at its map
+coordinate scaled from the mockup's 320-unit map to this project's
+800-unit `WORLD_SIZE` (factor 2.5x).
 
-Built `core/chunks.js` — splits a scattered instanced field into a grid,
-each chunk gets its own real bounding sphere (frustum-cullable) and gets
-hidden outright past a draw distance. Wired into the *old* grass system
-before it was replaced (see #5) — kept in the codebase since
-rocks/foliage could use the same treatment later if they get heavier.
+`environment/pois.js` is the central registry + interact system:
+per-frame proximity check against the player, `#interact-prompt` shows
+`[E] <name>` in range, pressing E drops the POI's description into the
+existing `#cutscene-caption` box for a few seconds. Deliberately simple —
+not real branching dialogue, that's a later phase.
 
-True occlusion culling (hiding geometry blocked by nearer geometry) was
-evaluated and skipped on purpose — Three.js has no native GPU occlusion
-query path, and a hand-rolled version isn't worth the complexity next to
-what frustum + distance culling already buys.
+| # | POI | Status |
+|---|-----|--------|
+| 1 | Radio Tower | **Ported** (`environment/poi-radio-tower.js`) — 3-legged tapering lattice tower, broken/tilted viewing platform, antennas + bent damaged one + dish, pulsing red beacon, 3 drooping guy-wires with ground anchors, rusted base shack with flickering porch light. Unlike the other ported POIs this one has real per-frame animation (beacon throb + shack-light flicker), wired via a new `update` field on the POI entry and a generic `updatePOIs()` called from `main.js`'s animate loop. Dropped from the port: the mockup's own textured ground plane and ambient dust field — those belonged to its standalone scene, not the tower prop. |
+| 2 | The Warm Paw (campfire) | **Ported** (`environment/poi-warm-paw.js`) — much larger than the name suggests: fenced palisade compound (permanently ajar gate, no click-to-open wiring — see file header), stone ring, log stack + ash/coal/twig/chip debris, central billboarded fire + rising embers, cooking tripod/pot, 2 benches, 2 stumps, sleeping bed, candle-lit lantern, ring of 6 torches (each with its own small fire system + light), 35 drifting fireflies, paw prints leading up to camp. All particle/light animation (fire flicker, ember spawn/rise, firefly drift, lantern-flame sway, torch color shift) wired via `update`, same pattern as Radio Tower/Howling Maw. Dropped: the mockup's own ground plane, canvas-noise stone/wood textures (flat colors instead, matching this project's other ported POIs), and the raycaster-driven gate-toggle button (no UI hookup for it in-game). |
+| 3 | Ruined Cabin | **Ported** (`environment/poi-ruined-cabin.js`) — deck planks, 3 broken wall sections, crumbling stone chimney, warm point light. |
+| 4 | The Howling Maw (cave) | **Ported** (`environment/poi-howling-maw.js`) — clustered fang-shard cave mouth (front fangs, arch, backing wall/arch, 25 scattered outlying rocks) built from a shared `createCraggyFang()` distorted-dodecahedron helper, a bottomless tunnel void behind the mouth, roof + ground icicle fields. Animated: unsteady red "dread" glow (`dreadLight`) plus a rarer reddish-violet "pulse" flash on a random cycle, same `update`-field pattern as Radio Tower. Dropped from the port: the mockup's own terrain pit / rock bump texture (this map has its own terrain) and its custom-shader mist + ash particle systems — left as a possible later `fx/` pass using the simpler `PointsMaterial` approach already used elsewhere in this project, rather than porting the bespoke shader. |
+| 5 | The Serpent's Coil (crater) | **Done** — this one is terrain, not a prop; built into `getElevation()`/`terrain.js`'s crater + magma blend + red point light. (A standalone `SERPENT_COIL.html` mountain model also exists but wasn't needed — the terrain-level version already covers this POI.) |
+| 6 | The Broken Shell (sunken freighter) | **Ported** (`environment/poi-broken-shell.js`) — the only POI delivered as a real authored model (`broken_shell.glb`, copied into `assets/`) rather than a procedural build; loads via `GLTFLoader`, positioned relative to `WATER_LEVEL` (open-ocean floor) rather than `getElevation()` since it sits away from the island. |
+| 7 | The Chrysalis (overgrown bunker) | **Ported** (`environment/poi-chrysalis.js`) — half-buried curved shell, blast door, red security light. |
+| 8 | The Obsidian Wing (ancient monolith) | **Ported** (`environment/poi-obsidian-wing.js`) — obsidian pillar, 6 floating fragments, purple lighting. |
+| 9 | Greenite Mouth | **Ported** (`environment/poi-greenite-mouth.js`) — asymmetric rock-fang archway, dark void interior, 9 glowing crystal spikes, green lighting. |
 
-## 5. Grass replaced with the GhibliGrass technique — DONE this session
-User linked a reference (Peter Adams' `ghibli-grass` /
-medium.com/antaeus-ar "Making Grass with Triangles in GLSL using
-Three.js") and the actual source zip. Old grass (scattered 400k-instance
-field, then chunked per #4) replaced entirely with a straight port of
-that technique in `environment/grass.js`:
-- Fixed pool of 120,000 blade "slots" whose world XZ is
-  `mod(origin - playerPos, patchSize)` — a sliding window that tiles
-  infinitely around the player instead of scattering across a fixed
-  radius. No pop-in, no per-frame regeneration, no scatter-radius edge.
-- Height comes from a heightmap texture baked directly from this
-  project's own `getElevation()` (`core/procedural-textures.js`,
-  `bakeHeightMapTexture()`) — pixel-exact against the real terrain, no
-  separate Blender export/asset step like the reference used. Same file
-  also bakes a smooth value-noise texture (wind/height variation, stands
-  in for the reference's curl-noise) and a mottled green diffuse
-  texture.
-- One structural adaptation: the reference parents the grass mesh to a
-  player rig `Object3D` and lets `modelMatrix` add the player position
-  for free. This project has no such rig (`main.js` moves
-  `state.camera` directly) — mesh sits in the scene at identity, and the
-  shader adds `uPlayerPosition` into the transformed position itself
-  instead (see comments at the top of `grass.js`).
-- One addition beyond the reference: a shoreline fade so grass doesn't
-  grow across the new beach/underwater band from #4.
+An `animated_ocean_scene_tutorial_example_1.glb` was also uploaded — not
+one of the 9 POIs, likely reference/replacement material for the ocean
+surface itself. Not yet evaluated or used.
 
-`state.grassMesh`/`state.grassMat` names kept the same on purpose, so
-nothing else in the project needed touching. `core/chunks.js` is no
-longer used by grass (a small fixed-size patch has nothing worth
-frustum-culling) but is kept in the codebase for rocks/foliage if they
-need it later.
-
-## 6. Rain replaced with a point-sprite system — DONE this session
-User linked another reference + source zip (Peter Adams' `rain-demo`,
-rain-demo.vercel.app). Old rain (instanced billboard quads with
-hand-built cylindrical camera-facing alignment) replaced with the
-reference's actual technique in `environment/rain.js`:
-- GPU point sprites (`gl.POINTS`), not instanced quads — Y wraps via
-  `mod()` in the vertex shader so a small fixed drop pool loops through
-  a vertical band forever, no respawn logic needed. Point size
-  attenuates with distance; the drop texture's UV squashes horizontally
-  as the camera tilts up/down so looking down doesn't read as long
-  streaks.
-- The actual `rainDrop.png` from the reference's assets is now in
-  `environment/textures/rainDrop.png` and loaded from there.
-- Adaptation: reference parents the rain group to a player rig; this
-  project has none, so `updateRain()` copies `state.camera.position`
-  onto the rain mesh every frame instead — same effect.
-- Kept from the previous implementation (the reference has no water, so
-  there was nothing to port for this): the water-level discard/fade —
-  now reading world Y off `modelMatrix[3].y` plus the wrapped local Y,
-  cheaper than a separate synced uniform — and the lake-surface splash
-  ring system (`createRainSplashes()`), untouched.
-
-`state.currentRainIntensity` still drives visibility/opacity the same
-way it did before; nothing else in the project needed to change.
-
-## 7. Bush/undergrowth layer added — DONE this session
-User provided a standalone `FoliageSystem` module (procedural branch +
-leaf-clump generator with wind-shader injection). As given it was
-tree-canopy scale (150k leaves, 2500 full trees, flat `y=0` ground) —
-would have duplicated what `forest.js`/`pine-trees.js` already do rather
-than adding an undergrowth layer. Adapted into `environment/bushes.js`:
-- Leaf count 150k -> 45k, clump count 2500 -> 700, branch recursion
-  depth 2 -> 1, clump height range 12 -> ~1.2-3.5 — shrub-sized, not
-  tree-sized.
-- Every placement now goes through this project's `getElevation(x, z,
-  state)` instead of assuming flat ground, and skips the beach/
-  underwater band from #4.
-- New second placement pass seeds small extra clumps directly around
-  existing `state.colliders` entries (populated by
-  `forest.js`/`pine-trees.js`) — bushes actually cluster around the
-  trees that are already there, not just scattered independently over
-  the island.
-
-Wind shader injection, leaf geometry/bend, color-variation logic, and
-the branch `LineSegments` rendering are otherwise unchanged from the
-source module. Wired into `main.js`: `createBushes(state)` runs after
-the forest/pine pass (so colliders exist to seed around) and before
-rocks; `updateBushes(state, ts)` added to the animate loop.
-
-## 2. Radio tower shadow tradeoff — DECIDED this session
-Went with "accept the flatter look as the perf-mode tradeoff" — the
-zero-code option. Shadow mapping stays globally off
-(`renderer.shadowMap.enabled = false` in `main.js`); the tower's texture
-data was always correct, only its shadowed depth reads flatter. Not
-revisiting unless the fps budget changes enough to afford shadows again.
-
-## 3. In-gameplay settings menu — WIRED this session
-Built `core/input.js`, `core/save-system.js`, `core/quality.js`,
-`core/view-mode.js` and wired all four into `main.js`. What's real:
-- Escape-to-pause with pointer-lock release/reacquire, player movement
-  frozen while paused (not just new input ignored — held keys stop too).
-- FOV, mouse sensitivity, invert-Y, tree draw distance, and fog density
-  are genuinely LIVE — no reload needed. Draw distance required a small
-  `environment/forest.js` patch (LOD shader uniforms now pushed onto
-  `state.lodUniforms` at build time) and a new `state.lodUniforms` array
-  in `core/world-state.js`.
-- Quality preset and view mode are RELOAD-tier by design (persist +
-  `location.reload()`) — matches index.html's own "(applies on reload)"
-  labels, since grass/tree/rock counts are baked in at generation time,
-  not live uniforms.
-- Export/Import save (title screen) and Export save (pause) work against
-  the real settings blob; autosave runs every 30s and flashes the
-  existing `#autosave-indicator`.
-- Title screen's Settings/Credits panels, Regain button visibility, and
-  the Quit "farewell" flourish are wired too — `setupInput(state)` runs
-  immediately on load, before the title screen's own "Remember" click,
-  not gated behind engine start.
-
-Honestly stubbed, not faked — persisted correctly but nothing downstream
-reads them yet:
-- Rock detail toggle (`environment/rocks.js` has no detail param).
-- Top-down view mode (no top-down camera/controller exists at all).
-- Keybind "Reset to Defaults" (keys aren't remappable in the first place).
-- Audio volume sliders (no Howler/audio system exists anywhere yet).
-- Modifiers tab (wave height/speed, storm reactivity) — `water.js` has no
-  exported modifier hook to wire against; left completely untouched this
-  session, unlike the others above which at least persist a value.
-
-## Collision (trees, rocks) — WIRED this session
-`state.colliders` was populated (forest.js/pine-trees.js) but nothing read
-it. Now:
-- `environment/rocks.js` pushes its own `{x, z, r}` entries too — rocks
-  were the one placement pass that didn't contribute to `state.colliders`
-  at all before this.
-- `main.js` gained `resolveColliderPush(state)`: simple circle-vs-circle
-  push-out, run against every collider (not just the nearest) so standing
-  between two trees resolves against both instead of tunneling through
-  the second after the first push. Runs after XZ movement, before the
-  ground-height snap and camera update, each frame.
-- XZ-only, ignores Y — matches the colliders' own shape (ground-level,
-  no height data) and is fine given there's still no jump, so nothing can
-  currently get above a trunk/rock to test vertical cases anyway.
-- Bush clumps (environment/bushes.js) still aren't collidable — flagged
-  again below, unchanged.
-
-## Mobile / touch — WIRED this session
-Built `core/touch-controls.js` and hooked it into `main.js`. What's real:
-- `setupPlayerController()` now exposes `state.move` (the same booleans
-  the WASD keydown/keyup listeners already set) and `state._applyLook`
-  (the same yaw/pitch function the mousemove listener calls) instead of
-  keeping both as private closures — the only change `main.js` needed to
-  support a second input method without a parallel movement system.
-- Joystick (bottom-left): drag toggles `state.move`'s booleans by screen-
-  space quadrant (not world-space — same as WASD, relative to camera
-  facing); pushing past ~75% of the joystick's radius sets `run`, same
-  hold-to-run feel as Shift. Deadzone so a stationary thumb doesn't drift.
-- Look-drag zone (right two-thirds of screen): calls `state._applyLook`
-  directly, so sensitivity/invert-Y from Settings > Camera apply
-  identically to mouse and touch — one math path, not two.
-- Sprint/Interact buttons wired to the same `state.move.run` and
-  `attemptRecruitInteraction(state)` the keyboard uses. Pause button was
-  already wired (`core/input.js`'s `setupPauseMenu`), not duplicated.
-- Shown via touch-capability detection (`ontouchstart`/`maxTouchPoints`)
-  OR the existing `forceTouchControls` setting — both already read
-  correctly on the reload that toggling that setting triggers.
-- Canvas click no longer requests pointer lock when touch controls are
-  active (most mobile browsers handle Pointer Lock poorly or not at all).
-- Added `.touch-active` CSS (index.html): hides the crosshair and the
-  keyboard-only "ESC TO PAUSE" hint, shrinks/repositions the HUD, and
-  moves the interact/boundary-message prompts up so they clear the
-  joystick's footprint.
-
-Stubbed, not faked: `touch-rest-btn` (and the HUD's "HOLD 'R' TO REST"
-hint) still do nothing — there is no rest mechanic anywhere in this
-rebuild, no `KeyR` listener in `main.js` for it to mirror. Left inert
-rather than wired to a handler that doesn't do anything real.
-
-Not touched this session: broader responsive layout beyond the
-`.touch-active` rules above and one `pause-panel` padding tweak at
-≤640px — title menu, credits panel, and settings-tab layout at very
-narrow/short viewports (e.g. landscape phone) haven't been audited.
-
-## Still open, unchanged by this session
-- Modifiers tab (wave height/speed, storm reactivity) — needs a `water.js`
-  hook before it can be wired at all, even at the stub level.
-- Rock detail / top-down mode / keybind remapping / audio — need their
-  underlying systems built before their already-wired settings do anything.
-- Rest mechanic (`touch-rest-btn`, "HOLD 'R' TO REST" HUD hint) — no
-  implementation anywhere, keyboard or touch.
-- Bush clumps have no colliders (bushes.js's own placements never push to
-  `state.colliders`).
-- No swim/jump state on the player controller.
-- Full responsive audit beyond the touch-control layout fixes above —
-  narrow/short viewport layout for title menu, credits, and settings tabs
-  hasn't been checked.
+## Next steps
+All 9 POIs are now ported. Remaining work:
+1. Real pause menu (ESC currently just re-shows the title screen wholesale
+   rather than a distinct paused-game overlay — the HTML/CSS for a proper
+   one already exists in `index.html`, just unwired).
+2. Vegetation placement-band pass (deferred, see Terrain section above).
+3. Extend quality presets beyond grass blade count (shadow map size,
+   tree/rock counts) now that `core/settings.js`'s pattern exists for it.
+   Warm Paw in particular is the heaviest POI by far (35 fireflies + 15+6×6
+   fire particles + fence geometry) and is a good first target for a
+   quality-scaled particle/instance count.
+4. Wire the Resolution buttons (1080p/720p/480p) — same panel as Quality,
+   not yet touched.
+5. Optional: port the Howling Maw's frost-mist/ash atmosphere and the
+   Radio Tower's dust field into `fx/` using this project's existing
+   `PointsMaterial` particle pattern (see fx/fireflies.js), rather than
+   the mockups' bespoke shaders — dropped during porting, see the POI
+   table above.
+6. Deferred indefinitely, not required for playability: Save/Continue
+   (Regain) + autosave indicator, rest/nap mechanic, touch controls, full
+   camera/audio/keybind settings persistence, underwater screen overlay,
+   boundary message.

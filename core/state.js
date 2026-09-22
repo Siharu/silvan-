@@ -31,7 +31,7 @@ export const state = {
     weatherChangeTimer: 0,
 
     scene: null, camera: null, renderer: null, composer: null, bloomPass: null,
-    sunLight: null, moonLight: null, skyMat: null,
+    sunLight: null, moonLight: null, hemiLight: null, skyMat: null,
     dayAmbientAudio: null, nightAmbientAudio: null, windAudio: null, waterAudio: null, rainAudio: null, stepAudio: null,
     rainMesh: null, rainMaterial: null,
     rainSplashMesh: null, rainSplashMat: null,
@@ -56,7 +56,7 @@ rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
 speed: 12,
 height: 2.1
     },
-    keys: { w: false, a: false, s: false, d: false, r: false },
+    keys: { w: false, a: false, s: false, d: false, r: false, e: false },
     colliders: [],
 
     lastTime: performance.now(),

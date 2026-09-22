@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { state, WORLD_SIZE, TREE_COUNT } from '../core/state.js';
+import { getElevation, noise } from '../core/utils.js';
 
 export function generateFractalForest() {
     const baseTrunkColor = new THREE.Color(0x28201a);
