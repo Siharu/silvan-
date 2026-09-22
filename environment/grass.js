@@ -164,7 +164,16 @@ void main() {
     float sizeFactor = mix(uNearBladeScale, uFarBladeScale, smoothstep(uNearFullRadius, 1.0, distFromPlayer));
 
     float factor = (color.r == 0.1) ? 1.0 : (color.b == 0.1) ? -1.0 : 0.0;
-    float width = smoothstep(0.5, 1.0, heightModifier * 2.0) * uBladeWidth * sizeFactor;
+    // Width now comes straight from uBladeWidth, gated by the actual
+    // presence factors (shoreFade/edgeFade already computed above), not
+    // reverse-engineered from heightModifier's absolute magnitude via a
+    // smoothstep threshold. That threshold was tuned for one specific
+    // height range and silently zeroed out blade width (making them
+    // invisible) every time the height scale changed elsewhere — it's
+    // what caused both the original "grass missing near player" bug and
+    // this one. Presence-based gating survives future height retuning.
+    float presence = shoreFade * edgeFade;
+    float width = uBladeWidth * sizeFactor * presence;
     transformed += aYaw * (width / 2.0) * factor;
     float scaledHeightModifier = heightModifier * sizeFactor;
 
