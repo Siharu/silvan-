@@ -300,7 +300,7 @@ export function createGrass() {
             uRandomHeightAmount: { value: 0.25 },
             uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays at uNearBladeScale
             uFarBladeScale: { value: 0.35 },  // size at the patch edge, relative to base blade size
-            uNearBladeScale: { value: 2.2 },  // size near the player, relative to base blade size — widened to close the visible gaps between individual blades at close range
+            uNearBladeScale: { value: 1.15 }, // size near the player, relative to base blade size. Was 2.2 — way overshot: base blade height (uMaxBladeHeight * uHeightNoiseAmplitude terms) is already several units tall at 1x, so 2.2x produced screen-filling giant blades right in front of the camera. A modest 1.15x closes the near-blade gaps without ballooning size.
         },
     });
 
