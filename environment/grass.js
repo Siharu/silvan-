@@ -151,9 +151,15 @@ void main() {
     vec3 colorNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
     vColor *= (colorNoise.r + colorNoise.g + colorNoise.b) / 3.0;
 
+    // Squashes blade height near the player so they don't visibly poke
+    // through the camera right at the feet. The original mix(0.0, 0.5, ...)
+    // suppressed height across the inner HALF of the patch radius (~7.5 of
+    // 15 units) down to 25%, which read as "no grass near me, some grass
+    // far away" — exactly backwards from the intent. Tightened to only the
+    // immediate few units around the player, with a much gentler floor.
     float distanceFromCenter = length(origin.xz) / halfPatchSize;
-    float innerCircleFactor = clamp(smoothstep(0.0, 0.5, distanceFromCenter), 0.0, 1.0);
-    heightModifier *= mix(0.25, 1.0, innerCircleFactor);
+    float innerCircleFactor = clamp(smoothstep(0.0, 0.12, distanceFromCenter), 0.0, 1.0);
+    heightModifier *= mix(0.7, 1.0, innerCircleFactor);
 
     float noiseScale = uWindNoiseScale * 0.1;
     vec2 noiseUV = vec2(origin.x * noiseScale, origin.z * noiseScale);
