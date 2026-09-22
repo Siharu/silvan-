@@ -48,7 +48,7 @@ export function generateFractalForest() {
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z);
         
-        if (y < 1.4) continue; // Keep trees out of the deep lake
+        if (y < 4.0) continue; // Keep trees off the wet sand/beach — matches terrain.js's own wet-sand-to-lowland line (y < 4.0), not the old lake-basin's waterline this threshold was originally tuned against
 
         const baseMatrix = new THREE.Matrix4().makeTranslation(x, y - 0.3, z);
         baseMatrix.multiply(new THREE.Matrix4().makeRotationY(Math.random() * Math.PI * 2));

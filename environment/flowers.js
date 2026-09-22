@@ -62,7 +62,7 @@ export function createFlowers() {
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z);
         
-        if (y < 1.8) continue; 
+        if (y < 4.0) continue; // Match grass/forest's wet-sand line — flowers are meant to sink into grass (see below), so they shouldn't appear where grass doesn't grow
         
         const biome = noise(x * 0.02, z * 0.02);
         if (biome > 0.5) { // Cluster flower fields

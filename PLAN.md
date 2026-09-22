@@ -28,9 +28,19 @@ Three blocking `ReferenceError`-class import bugs fixed along the way
 (`terrain.js`/`forest.js`/`lake.js` each used a name from another module
 without importing it).
 
-**Deferred on purpose:** vegetation placement bands (forest/rocks/
-flowers/grass elevation thresholds still reference old lake-basin
-assumptions in places).
+**Deferred on purpose, one bug already fixed:** vegetation placement bands
+(forest/rocks/flowers/grass elevation thresholds still reference old
+lake-basin assumptions in places). One instance of this actually surfaced
+in play: `forest.js` let trees grow from elevation 1.4 (an old
+lake-basin waterline threshold), while `grass.js`'s shoreline fade
+doesn't reach full coverage until ~5.1 (matching `terrain.js`'s own
+wet-sand/lush-lowland line at 4.0) — so dense forest, maple biome
+included, was spawning directly on visible wet sand with zero grass
+under it. Fixed both `forest.js` and `flowers.js` to require elevation
+≥ 4.0, matching `terrain.js`'s line. `rocks.js` has no elevation floor at
+all and wasn't touched — rocks on a beach/seabed read as intentional
+either way. A full pass (tree/rock/flower *density* by band, not just
+the floor) is still open.
 
 ## Playable-state foundation — DONE
 `main.js` used to run its entire heavy scene build (`init()`) directly on
