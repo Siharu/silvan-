@@ -47,3 +47,4 @@ export function createFireflies() {
     }
     state.scene.add(state.fireflyMesh);
 }
+

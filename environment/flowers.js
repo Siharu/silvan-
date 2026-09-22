@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { getElevation, noise } from '../core/utils.js';
 
 export function createFlowers() {
     const count = 12000;

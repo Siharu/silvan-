@@ -123,3 +123,4 @@ export function updateAtmosphere(delta) {
         state.waterAudio.volume(waterProximity * 0.4);
     }
 }
+

@@ -194,3 +194,4 @@ export function createRainSplashes() {
     state.rainSplashMesh.geometry.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speeds, 1));
     state.scene.add(state.rainSplashMesh);
 }
+
