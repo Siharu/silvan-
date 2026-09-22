@@ -294,13 +294,13 @@ export function createGrass() {
             uBaldPatchModifier: { value: 2.5 },
             uFalloffSharpness: { value: 0.35 },
             uHeightNoiseFrequency: { value: 12 },
-            uHeightNoiseAmplitude: { value: 3 },
+            uHeightNoiseAmplitude: { value: 1.1 }, // was 3 — combined with uMaxBladeHeight below this made blades up to ~3 world units tall (taller than the player), which the old buggy near-player suppression happened to hide right where the camera would notice; fixing that suppression exposed the true oversized base scale. Typical height now (heightNoise sum ~1.5 avg) ~1.5 * 0.35 * 1.1 ≈ 0.6 units — ankle/knee-height, not building-height.
             uMaxBendAngle: { value: 22 },
             uMaxBladeHeight: { value: 0.35 },
             uRandomHeightAmount: { value: 0.25 },
             uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays at uNearBladeScale
             uFarBladeScale: { value: 0.35 },  // size at the patch edge, relative to base blade size
-            uNearBladeScale: { value: 1.15 }, // size near the player, relative to base blade size. Was 2.2 — way overshot: base blade height (uMaxBladeHeight * uHeightNoiseAmplitude terms) is already several units tall at 1x, so 2.2x produced screen-filling giant blades right in front of the camera. A modest 1.15x closes the near-blade gaps without ballooning size.
+            uNearBladeScale: { value: 1.0 },  // no near-player boost — once base blade scale is correctly sized (see uHeightNoiseAmplitude above), the old gap-closing rationale for boosting this doesn't apply; leaving it at 1.0 (neutral) avoids stacking another multiplier on top of an already-tuned base size. uFarBladeScale below still shrinks distant blades for performance.
         },
     });
 
