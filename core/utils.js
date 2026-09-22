@@ -3,7 +3,12 @@ import { state, WORLD_SIZE } from './state.js';
 
 export function hash(x, y) {
     let dot = x * 12.9898 + y * 78.233;
-    return (Math.sin(dot) * 43758.5453) % 1;
+    const val = Math.sin(dot) * 43758.5453;
+    // GLSL's fract() always returns a non-negative [0,1) value; JS's `%` is
+    // remainder, not modulo, and keeps the sign of a negative `val` — this
+    // was returning ~half its outputs as negative, scrambling noise()'s
+    // bilinear blend instead of producing smooth terrain.
+    return val - Math.floor(val);
 }
 
 export function noise(x, y) {
@@ -121,4 +126,3 @@ export function createProceduralTextures() {
 
     return { leaf: leafTex, moon: moonTex, flower: flowerTex };
 }
-

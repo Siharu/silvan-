@@ -13,11 +13,33 @@ export function createBrokenShell(x, _y, z) {
             './assets/broken_shell.glb',
             (gltf) => {
                 const model = gltf.scene;
-                // -35m alt in the source map (underwater) — placed relative
-                // to WATER_LEVEL rather than getElevation(x, z), since this
-                // sits on the open ocean floor away from the island, not on
-                // island terrain the way the other POIs do.
-                model.position.set(x, WATER_LEVEL - 10, z);
+
+                // The source .glb has a ~100x scale baked into an internal
+                // node matrix (leftover from its original FBX conversion),
+                // so the file's native size is roughly 100x too large for
+                // this world — normalize by measuring the actual world-space
+                // bounding box (which respects all baked node transforms)
+                // and rescaling to a fixed target size, rather than trusting
+                // the file's own scale.
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                const TARGET_LENGTH = 45; // desired longest-axis size, in world units
+                const scale = TARGET_LENGTH / Math.max(size.x, size.y, size.z);
+                model.scale.setScalar(scale);
+
+                // Re-measure post-scale, then reposition so the model's
+                // center (not its unrelated local origin) lands at (x, z),
+                // resting on the ocean floor relative to WATER_LEVEL.
+                const scaledCenter = center.multiplyScalar(scale);
+                const scaledBox = new THREE.Box3().setFromObject(model);
+                const scaledSize = scaledBox.getSize(new THREE.Vector3());
+                model.position.set(
+                    x - scaledCenter.x,
+                    (WATER_LEVEL - 10) - scaledCenter.y + scaledSize.y / 2,
+                    z - scaledCenter.z
+                );
+
                 model.traverse((child) => {
                     if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; }
                 });
