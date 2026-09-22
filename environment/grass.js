@@ -62,6 +62,8 @@ uniform float uHeightNoiseAmplitude;
 uniform float uMaxBendAngle;
 uniform float uMaxBladeHeight;
 uniform float uRandomHeightAmount;
+uniform float uNearFullRadius;
+uniform float uFarBladeScale;
 
 float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
@@ -143,23 +145,36 @@ void main() {
         smoothstep(uBoundingBoxMax.z, uBoundingBoxMax.z - 2.0, worldPos.z);
     heightModifier *= edgeFade;
 
+    // Distance-based shrink for performance: blades stay full size within
+    // uNearFullRadius of the player, then scale down toward uFarBladeScale
+    // by the patch edge. Applied to width and to the final height offset
+    // below (scaledHeightModifier) — deliberately NOT to the heightModifier
+    // that feeds the width smoothstep threshold just below, since shrinking
+    // that value is what previously made near-threshold blades disappear
+    // entirely (zero width) instead of just getting smaller.
+    float distFromPlayer = length(origin.xz) / halfPatchSize;
+    float sizeFactor = mix(1.0, uFarBladeScale, smoothstep(uNearFullRadius, 1.0, distFromPlayer));
+
     float factor = (color.r == 0.1) ? 1.0 : (color.b == 0.1) ? -1.0 : 0.0;
-    float width = smoothstep(0.5, 1.0, heightModifier * 2.0) * uBladeWidth;
+    float width = smoothstep(0.5, 1.0, heightModifier * 2.0) * uBladeWidth * sizeFactor;
     transformed += aYaw * (width / 2.0) * factor;
+    float scaledHeightModifier = heightModifier * sizeFactor;
 
     vColor = texture(uDiffuseMap, uv * 10.0).rgb * color;
     vec3 colorNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
-    vColor *= (colorNoise.r + colorNoise.g + colorNoise.b) / 3.0;
+    vColor *= colorNoise;
 
-    // Squashes blade height near the player so they don't visibly poke
-    // through the camera right at the feet. The original mix(0.0, 0.5, ...)
-    // suppressed height across the inner HALF of the patch radius (~7.5 of
-    // 15 units) down to 25%, which read as "no grass near me, some grass
-    // far away" — exactly backwards from the intent. Tightened to only the
-    // immediate few units around the player, with a much gentler floor.
-    float distanceFromCenter = length(origin.xz) / halfPatchSize;
-    float innerCircleFactor = clamp(smoothstep(0.0, 0.12, distanceFromCenter), 0.0, 1.0);
-    heightModifier *= mix(0.7, 1.0, innerCircleFactor);
+    // NOTE: previously squashed heightModifier near the player (via an
+    // innerCircleFactor mix) to stop blades poking through the camera at
+    // the feet. Removed: blade WIDTH is derived from heightModifier through
+    // smoothstep(0.5, 1.0, heightModifier * 2.0), so even a mild reduction
+    // pushed a large share of near-player blades below that threshold and
+    // made them render at zero width — i.e. invisible. That's what produced
+    // "grass vanishes right around me, comes back normal a bit further
+    // out." If poke-through becomes a problem again, fix it on the camera
+    // near-clip or with a dedicated near-player width floor, not by
+    // shrinking heightModifier (which this width formula is too sensitive
+    // to).
 
     float noiseScale = uWindNoiseScale * 0.1;
     vec2 noiseUV = vec2(origin.x * noiseScale, origin.z * noiseScale);
@@ -174,12 +189,12 @@ void main() {
     float angle = radians(map(windNoise.g + windNoise.b, 0.0, 2.0, -uMaxBendAngle, uMaxBendAngle)) * color.g;
     mat3 rotationMatrix = rotate3d(axis, angle);
 
-    vec3 basePosition = vec3(transformed.x, transformed.y - heightModifier, transformed.z);
+    vec3 basePosition = vec3(transformed.x, transformed.y - scaledHeightModifier, transformed.z);
     vec3 relativePosition = transformed - basePosition;
     relativePosition = rotationMatrix * relativePosition;
     transformed = basePosition + relativePosition;
 
-    transformed.y += heightModifier * color.g;
+    transformed.y += scaledHeightModifier * color.g;
 
     vec4 modelPosition = modelMatrix * vec4(transformed, 1.0);
     vec4 viewPosition = viewMatrix * modelPosition;
@@ -275,6 +290,8 @@ export function createGrass() {
             uMaxBendAngle: { value: 22 },
             uMaxBladeHeight: { value: 0.35 },
             uRandomHeightAmount: { value: 0.25 },
+            uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays full size
+            uFarBladeScale: { value: 0.4 },   // size at the patch edge, relative to full size
         },
     });
 
