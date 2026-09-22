@@ -64,6 +64,7 @@ uniform float uMaxBladeHeight;
 uniform float uRandomHeightAmount;
 uniform float uNearFullRadius;
 uniform float uFarBladeScale;
+uniform float uNearBladeScale;
 
 float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
@@ -153,7 +154,14 @@ void main() {
     // that value is what previously made near-threshold blades disappear
     // entirely (zero width) instead of just getting smaller.
     float distFromPlayer = length(origin.xz) / halfPatchSize;
-    float sizeFactor = mix(1.0, uFarBladeScale, smoothstep(uNearFullRadius, 1.0, distFromPlayer));
+    // Near you: blades are WIDENED (not just left at 1x) — at close range
+    // each thin blade only covers a little screen space and the dark
+    // ground between blades is clearly visible, which is what was reading
+    // as "no grass around me." Widening near blades closes those gaps.
+    // Far away, blades already visually overlap from the grazing viewing
+    // angle, so shrinking them there (uFarBladeScale) saves fill-rate
+    // without an visible loss of coverage.
+    float sizeFactor = mix(uNearBladeScale, uFarBladeScale, smoothstep(uNearFullRadius, 1.0, distFromPlayer));
 
     float factor = (color.r == 0.1) ? 1.0 : (color.b == 0.1) ? -1.0 : 0.0;
     float width = smoothstep(0.5, 1.0, heightModifier * 2.0) * uBladeWidth * sizeFactor;
@@ -290,8 +298,9 @@ export function createGrass() {
             uMaxBendAngle: { value: 22 },
             uMaxBladeHeight: { value: 0.35 },
             uRandomHeightAmount: { value: 0.25 },
-            uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays full size
-            uFarBladeScale: { value: 0.4 },   // size at the patch edge, relative to full size
+            uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays at uNearBladeScale
+            uFarBladeScale: { value: 0.35 },  // size at the patch edge, relative to base blade size
+            uNearBladeScale: { value: 2.2 },  // size near the player, relative to base blade size — widened to close the visible gaps between individual blades at close range
         },
     });
 
