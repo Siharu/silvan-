@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { state } from './state.js';
 import { getElevation, createProceduralTextures } from './utils.js';
 import { initAudio } from './audio.js';
-import { setupInput, onWindowResize, wireTitleScreen, enterGame } from './input.js';
+import { setupInput, onWindowResize, wireTitleScreen, wirePauseMenu, enterGame } from './input.js';
 import { loadQuality, wireSettingsButtons, updateFpsCounter } from './settings.js';
 import { updatePlayer } from './player-controller.js';
 import { updateAtmosphere } from '../atmosphere/day-night-cycle.js';
@@ -171,6 +171,10 @@ async function startGame() {
 
     loadingScreen.classList.add('hidden');
     enterGame();
+    // Marks the game as fully built — see core/input.js's pointerlockchange
+    // handler for why losing pointer lock only opens the pause overlay
+    // (rather than falling back to the title screen) once this is true.
+    state.hasStarted = true;
 }
 
 function animate(time) {
@@ -191,4 +195,5 @@ setupInput();
 window.addEventListener('DOMContentLoaded', () => {
     wireTitleScreen(startGame);
     wireSettingsButtons();
+    wirePauseMenu();
 });

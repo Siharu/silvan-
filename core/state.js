@@ -23,6 +23,7 @@ export const state = {
     timeMultiplier: 1,
     isPlaying: false,
     isLocked: false,
+    hasStarted: false, // true once init() has fully built the game world — see main.js's startGame() / core/input.js's pause-vs-title branching
     gameTime: 0.35,
     daysPassed: 1,
 
