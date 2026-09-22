@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
+import { state, DAY_LENGTH_MS } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
 
 export function updateAtmosphere(delta) {
@@ -123,4 +123,3 @@ export function updateAtmosphere(delta) {
         state.waterAudio.volume(waterProximity * 0.4);
     }
 }
-

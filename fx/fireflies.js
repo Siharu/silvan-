@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
+import { state, WATER_LEVEL } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
 
 export function createFireflies() {
@@ -47,4 +47,3 @@ export function createFireflies() {
     }
     state.scene.add(state.fireflyMesh);
 }
-

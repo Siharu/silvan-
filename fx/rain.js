@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
+import { state, WATER_LEVEL } from '../core/state.js';
+import { getElevation } from '../core/utils.js';
 
 export function createRainSystem() {
     const count = 45000;
@@ -193,4 +194,3 @@ export function createRainSplashes() {
     state.rainSplashMesh.geometry.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speeds, 1));
     state.scene.add(state.rainSplashMesh);
 }
-
