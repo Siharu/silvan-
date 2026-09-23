@@ -7,6 +7,12 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 // + sky tint + a sun/moon glint in the shader below instead.
 
 import { state } from './state.js';
+
+// TEMPORARY debug hook — lets us inspect live state from the browser
+// console while tracking down the grass-visibility bug. Safe to remove
+// once that's resolved; read-only, changes nothing about how the game runs.
+window.__debugState = state;
+
 import { getElevation, createProceduralTextures } from './utils.js';
 import { initAudio } from './audio.js';
 import { setupInput, onWindowResize, wireTitleScreen, wirePauseMenu, enterGame } from './input.js';
