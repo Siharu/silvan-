@@ -34,7 +34,7 @@ export const state = {
     scene: null, camera: null, renderer: null, composer: null, bloomPass: null,
     sunLight: null, moonLight: null, hemiLight: null, skyMat: null,
     dayAmbientAudio: null, nightAmbientAudio: null, windAudio: null, waterAudio: null, rainAudio: null, stepAudio: null,
-    rainMesh: null, rainMaterial: null,
+    rainMesh: null, rainMaterial: null, rainAnchor: null,
     rainSplashMesh: null, rainSplashMat: null,
     fireflyMesh: null, fireflyMat: null,
     dustMesh: null, dustMat: null, starMesh: null, starMat: null,

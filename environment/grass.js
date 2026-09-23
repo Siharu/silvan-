@@ -139,11 +139,19 @@ void main() {
     float shoreFade = smoothstep(uWaterLevel + 0.5, uWaterLevel + 3.5, displacement);
     heightModifier *= shoreFade;
 
+    // NOTE: this previously called smoothstep(max, max - 2.0, x) on the
+    // "far" side — edge0 > edge1, which is undefined behavior per the GLSL
+    // spec (smoothstep requires edge0 < edge1) and driver-dependent: on
+    // some GPUs that returns ~0 almost everywhere instead of the intended
+    // near-1-except-at-the-edge ramp, multiplying straight into
+    // heightModifier/presence and killing every blade on the map. Fixed by
+    // keeping edges ascending and inverting the result where the fade
+    // needs to run the opposite direction.
     float edgeFade =
         smoothstep(uBoundingBoxMin.x, uBoundingBoxMin.x + 2.0, worldPos.x) *
-        smoothstep(uBoundingBoxMax.x, uBoundingBoxMax.x - 2.0, worldPos.x) *
+        (1.0 - smoothstep(uBoundingBoxMax.x - 2.0, uBoundingBoxMax.x, worldPos.x)) *
         smoothstep(uBoundingBoxMin.z, uBoundingBoxMin.z + 2.0, worldPos.z) *
-        smoothstep(uBoundingBoxMax.z, uBoundingBoxMax.z - 2.0, worldPos.z);
+        (1.0 - smoothstep(uBoundingBoxMax.z - 2.0, uBoundingBoxMax.z, worldPos.z));
     heightModifier *= edgeFade;
 
     // Distance-based shrink for performance: blades stay full size within

@@ -60,12 +60,30 @@ export function updateAtmosphere(delta) {
 
     const ts = performance.now() * 0.001;
     state.scene.traverse((c) => { if (c.material && c.material.userData && c.material.userData.shader) c.material.userData.shader.uniforms.uTime.value = ts; });
-    if (state.rainMaterial && state.rainMaterial.userData && state.rainMaterial.userData.shader) {
-        state.rainMaterial.userData.shader.uniforms.uCameraPos.value.copy(state.camera.position);
-        state.rainMaterial.color.set(new THREE.Color(0xffffff).lerp(new THREE.Color(0x334466), 1 - dayBlend));
-        
-        state.rainMaterial.opacity = 0.15 * Math.min(1.0, state.currentRainIntensity * 2.0);
-        state.rainMesh.count = Math.max(0, Math.floor(45000 * state.currentRainIntensity));
+    if (state.rainMaterial) {
+        const u = state.rainMaterial.uniforms;
+        u.uTime.value = ts;
+
+        // Anchor follows the camera's position only (never rotation), so
+        // rain always falls straight down in world space regardless of
+        // where the player is looking — see the note in createRainSystem().
+        state.rainAnchor.position.set(state.camera.position.x, 0, state.camera.position.z);
+        u.uAnchorY.value = state.camera.position.y;
+
+        // Squash the sprite UV and shrink point size a bit when looking
+        // more up/down, so streaks don't read as flat dots from directly
+        // overhead/below.
+        const camDir = new THREE.Vector3();
+        state.camera.getWorldDirection(camDir);
+        const verticalFacing = Math.abs(camDir.y);
+        u.uUvSquash.value = THREE.MathUtils.lerp(1, 0.05, verticalFacing);
+        u.uSize.value = 5 * THREE.MathUtils.lerp(1, 0.7, verticalFacing) * (0.5 + 0.5 * u.uUvSquash.value);
+
+        u.uColor.value.set(new THREE.Color(0xe6f0fa).lerp(new THREE.Color(0x334466), 1 - dayBlend));
+        u.uOpacity.value = 0.6 * Math.min(1.0, state.currentRainIntensity * 2.0);
+
+        const activeCount = Math.max(0, Math.floor(45000 * state.currentRainIntensity));
+        state.rainMesh.geometry.setDrawRange(0, activeCount);
         state.rainMesh.visible = state.currentRainIntensity > 0.01;
     }
 
