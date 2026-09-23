@@ -34,7 +34,7 @@ import { state, WATER_LEVEL } from '../core/state.js';
 
 const PATCH_SIZE = 30;  // world units per side of the sliding-window patch. The reference GhibliGrass project runs patchSize:20 with count:200000 (~500 blades/sq-unit); 30 keeps a visible-coverage radius (~15 units) while landing close to reference density at the bladeCount below.
 const BLADE_COUNT = 130000; // fallback if state.quality is missing — matches medium tier
-const BLADE_WIDTH = 0.4; // DEBUG: was 0.08 — temporarily huge to rule out "rendering but too thin to see"
+const BLADE_WIDTH = 0.15; // was 0.08 (confirmed too thin/dark to read as grass) — moderate bump, not the 0.4 debug extreme
 
 const vertexShader = `
 in vec3 aYaw;
@@ -233,9 +233,8 @@ uniform vec3 uAmbientColor;
 uniform float uSunFactor;
 out vec4 fragColor;
 void main() {
-    // DEBUG: flat hot pink, ignoring lighting/texture entirely — rules out
-    // "rendering but too dark/desaturated to notice." Revert once confirmed.
-    fragColor = vec4(1.0, 0.0, 1.0, 1.0);
+    vec3 lit = vColor * (uAmbientColor + vec3(uSunFactor * 0.6));
+    fragColor = vec4(lit, 1.0);
 }
 `;
 
@@ -314,7 +313,7 @@ export function createGrass() {
             uHeightNoiseFrequency: { value: 12 },
             uHeightNoiseAmplitude: { value: 1.1 }, // was 3 — combined with uMaxBladeHeight below this made blades up to ~3 world units tall (taller than the player), which the old buggy near-player suppression happened to hide right where the camera would notice; fixing that suppression exposed the true oversized base scale. Typical height now (heightNoise sum ~1.5 avg) ~1.5 * 0.35 * 1.1 ≈ 0.6 units — ankle/knee-height, not building-height.
             uMaxBendAngle: { value: 22 },
-            uMaxBladeHeight: { value: 3.0 }, // DEBUG: was 0.35 — temporarily huge to rule out "too short to see"
+            uMaxBladeHeight: { value: 0.6 }, // was 0.35 (confirmed too short/dark to read as grass) — moderate bump, not the 3.0 debug extreme
             uRandomHeightAmount: { value: 0.25 },
             uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays at uNearBladeScale
             uFarBladeScale: { value: 0.35 },  // size at the patch edge, relative to base blade size
