@@ -126,80 +126,53 @@ void main() {
     float edgeDistanceX = abs(origin.x) / halfPatchSize;
     float edgeDistanceZ = abs(origin.z) / halfPatchSize;
     float edgeFactor = 1.0 - max(edgeDistanceX, edgeDistanceZ);
-    edgeFactor = pow(max(edgeFactor, 0.0), uFalloffSharpness);
+    edgeFactor = pow(edgeFactor, uFalloffSharpness);
 
     float baldPatchOffset = heightNoise.r * (uBaldPatchModifier * (1.0 - edgeFactor));
     heightModifier -= baldPatchOffset;
 
-    // Keep grass off the beach/underwater. displacement above is already
-    // real-world elevation, so this compares directly against the actual
-    // WATER_LEVEL constant rather than the heightmap's incidental per-map
-    // minimum (which would drift every time the terrain shape changes,
-    // e.g. The Hearth's island vs. the old lake basin).
+    // This project's one real addition over the reference (which has no
+    // water): keep grass off the beach/underwater by fading heightModifier
+    // out near WATER_LEVEL. Multiplies in the same spot/way baldPatchOffset
+    // and edgeFade do, so it composes with the reference's own width
+    // formula below instead of fighting it.
     float shoreFade = smoothstep(uWaterLevel + 0.5, uWaterLevel + 3.5, displacement);
     heightModifier *= shoreFade;
 
-    // NOTE: this previously called smoothstep(max, max - 2.0, x) on the
-    // "far" side — edge0 > edge1, which is undefined behavior per the GLSL
-    // spec (smoothstep requires edge0 < edge1) and driver-dependent: on
-    // some GPUs that returns ~0 almost everywhere instead of the intended
-    // near-1-except-at-the-edge ramp, multiplying straight into
-    // heightModifier/presence and killing every blade on the map. Fixed by
-    // keeping edges ascending and inverting the result where the fade
-    // needs to run the opposite direction.
+    // Edge fade for bounding-box limits — ported byte-for-byte from the
+    // reference (descending smoothstep args and all). This IS technically
+    // edge0>edge1 on the far side, which the GLSL spec leaves undefined,
+    // but it's what the original ships with and what it was tuned against;
+    // an earlier "fix" here to ascending-order smoothstep was the actual
+    // regression, not this.
     float edgeFade =
         smoothstep(uBoundingBoxMin.x, uBoundingBoxMin.x + 2.0, worldPos.x) *
-        (1.0 - smoothstep(uBoundingBoxMax.x - 2.0, uBoundingBoxMax.x, worldPos.x)) *
+        smoothstep(uBoundingBoxMax.x, uBoundingBoxMax.x - 2.0, worldPos.x) *
         smoothstep(uBoundingBoxMin.z, uBoundingBoxMin.z + 2.0, worldPos.z) *
-        (1.0 - smoothstep(uBoundingBoxMax.z - 2.0, uBoundingBoxMax.z, worldPos.z));
+        smoothstep(uBoundingBoxMax.z, uBoundingBoxMax.z - 2.0, worldPos.z);
     heightModifier *= edgeFade;
 
-    // Distance-based shrink for performance: blades stay full size within
-    // uNearFullRadius of the player, then scale down toward uFarBladeScale
-    // by the patch edge. Applied to width and to the final height offset
-    // below (scaledHeightModifier) — deliberately NOT to the heightModifier
-    // that feeds the width smoothstep threshold just below, since shrinking
-    // that value is what previously made near-threshold blades disappear
-    // entirely (zero width) instead of just getting smaller.
-    float distFromPlayer = length(origin.xz) / halfPatchSize;
-    // Near you: blades are WIDENED (not just left at 1x) — at close range
-    // each thin blade only covers a little screen space and the dark
-    // ground between blades is clearly visible, which is what was reading
-    // as "no grass around me." Widening near blades closes those gaps.
-    // Far away, blades already visually overlap from the grazing viewing
-    // angle, so shrinking them there (uFarBladeScale) saves fill-rate
-    // without an visible loss of coverage.
-    float sizeFactor = mix(uNearBladeScale, uFarBladeScale, smoothstep(uNearFullRadius, 1.0, distFromPlayer));
-
+    // Width adjustment — ported straight from the reference, including the
+    // smoothstep-threshold-on-heightModifier approach. (An earlier session
+    // replaced this with a "presence"-based formula thinking the threshold
+    // was the bug; it wasn't the bug, and diverging from the reference here
+    // is not worth the risk — reverting to match it exactly.)
     float factor = (color.r == 0.1) ? 1.0 : (color.b == 0.1) ? -1.0 : 0.0;
-    // Width now comes straight from uBladeWidth, gated by the actual
-    // presence factors (shoreFade/edgeFade already computed above), not
-    // reverse-engineered from heightModifier's absolute magnitude via a
-    // smoothstep threshold. That threshold was tuned for one specific
-    // height range and silently zeroed out blade width (making them
-    // invisible) every time the height scale changed elsewhere — it's
-    // what caused both the original "grass missing near player" bug and
-    // this one. Presence-based gating survives future height retuning.
-    float presence = shoreFade * edgeFade;
-    float width = uBladeWidth * sizeFactor * presence;
+    float width = smoothstep(0.5, 1.0, heightModifier * 2.0) * uBladeWidth;
     transformed += aYaw * (width / 2.0) * factor;
-    float scaledHeightModifier = heightModifier * sizeFactor;
 
     vColor = texture(uDiffuseMap, uv * 10.0).rgb * color;
     vec3 colorNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
     vColor *= colorNoise;
 
-    // NOTE: previously squashed heightModifier near the player (via an
-    // innerCircleFactor mix) to stop blades poking through the camera at
-    // the feet. Removed: blade WIDTH is derived from heightModifier through
-    // smoothstep(0.5, 1.0, heightModifier * 2.0), so even a mild reduction
-    // pushed a large share of near-player blades below that threshold and
-    // made them render at zero width — i.e. invisible. That's what produced
-    // "grass vanishes right around me, comes back normal a bit further
-    // out." If poke-through becomes a problem again, fix it on the camera
-    // near-clip or with a dedicated near-player width floor, not by
-    // shrinking heightModifier (which this width formula is too sensitive
-    // to).
+    // Inner-circle reduction — ported from the reference. Deliberately
+    // placed AFTER the width calculation above (same order as the
+    // reference): it only softens the height/sway offset applied near the
+    // player's feet, it never feeds back into width, so it can't zero out
+    // blades the way the earlier (over-corrected) removal assumed.
+    float distanceFromCenter = length(origin.xz) / halfPatchSize;
+    float innerCircleFactor = clamp(smoothstep(0.0, 0.5, distanceFromCenter), 0.0, 1.0);
+    heightModifier *= mix(0.25, 1.0, innerCircleFactor);
 
     float noiseScale = uWindNoiseScale * 0.1;
     vec2 noiseUV = vec2(origin.x * noiseScale, origin.z * noiseScale);
