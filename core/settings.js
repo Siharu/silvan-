@@ -89,14 +89,90 @@ export function wireSettingsButtons() {
     });
 }
 
+// FOV / sensitivity / invert-Y / master volume — the four Camera+Audio
+// controls that map onto something that actually exists (camera.fov, the
+// mousemove multiplier, a sign flip, Howler's global volume). The rest of
+// Settings (Resolution, Antialiasing, Disable Weather, View Mode, Draw
+// Distance, Fog Density, per-category Ambience/SFX volume, wave/storm/rock
+// Modifiers, keybind remapping) was stripped from index.html rather than
+// wired here — each needs a real backing system (renderer resize, a fog
+// object, a weather toggle, a camera-mode switch, per-shader uniforms, or
+// an input-remap architecture) that doesn't exist yet, so leaving the
+// controls in place would just trade one kind of lying UI for another.
+const SENSITIVITY_KEY = 'silvan-sensitivity';
+const INVERT_Y_KEY = 'silvan-invert-y';
+const VOLUME_KEY = 'silvan-volume';
+const BASE_FOV = 75;
+
+export function loadCameraAudioSettings() {
+    state.sensitivity = parseFloat(localStorage.getItem(SENSITIVITY_KEY)) || 1;
+    state.invertY = localStorage.getItem(INVERT_Y_KEY) === '1';
+    const vol = parseFloat(localStorage.getItem(VOLUME_KEY));
+    state.masterVolume = Number.isFinite(vol) ? vol : 1;
+    Howler.volume(state.masterVolume);
+}
+
+export function wireCameraAudioSettings() {
+    loadCameraAudioSettings();
+
+    const fovSliders = [document.getElementById('title-fov-slider'), document.getElementById('pause-fov-slider')];
+    fovSliders.forEach((s) => {
+        if (!s) return;
+        s.value = BASE_FOV;
+        s.addEventListener('input', () => {
+            const fov = parseFloat(s.value);
+            fovSliders.forEach((other) => { if (other && other !== s) other.value = fov; });
+            if (state.camera) { state.camera.fov = fov; state.camera.updateProjectionMatrix(); }
+        });
+    });
+
+    const sensSliders = [document.getElementById('title-sensitivity-slider'), document.getElementById('pause-sensitivity-slider')];
+    sensSliders.forEach((s) => {
+        if (!s) return;
+        s.value = state.sensitivity;
+        s.addEventListener('input', () => {
+            const val = parseFloat(s.value);
+            sensSliders.forEach((other) => { if (other && other !== s) other.value = val; });
+            state.sensitivity = val;
+            localStorage.setItem(SENSITIVITY_KEY, String(val));
+        });
+    });
+
+    const invertBoxes = [document.getElementById('title-invert-y-checkbox'), document.getElementById('pause-invert-y-checkbox')];
+    invertBoxes.forEach((cb) => {
+        if (!cb) return;
+        cb.checked = state.invertY;
+        cb.addEventListener('change', () => {
+            invertBoxes.forEach((other) => { if (other && other !== cb) other.checked = cb.checked; });
+            state.invertY = cb.checked;
+            localStorage.setItem(INVERT_Y_KEY, cb.checked ? '1' : '0');
+        });
+    });
+
+    const volSliders = [document.getElementById('title-volume-slider'), document.getElementById('pause-volume-slider')];
+    volSliders.forEach((s) => {
+        if (!s) return;
+        s.value = state.masterVolume;
+        s.addEventListener('input', () => {
+            const val = parseFloat(s.value);
+            volSliders.forEach((other) => { if (other && other !== s) other.value = val; });
+            state.masterVolume = val;
+            localStorage.setItem(VOLUME_KEY, String(val));
+            Howler.volume(val);
+        });
+    });
+}
+
 let fpsFrameCount = 0;
 let fpsAccumMs = 0;
+let cachedFpsEl = null;
 
 // Called every frame from main.js's animate() with the frame's delta in ms.
 // Refreshes twice a second rather than every frame — a number that changes
 // 60 times a second is unreadable and just adds noise.
 export function updateFpsCounter(deltaMs) {
-    const fpsEl = document.getElementById('fps-counter');
+    if (!cachedFpsEl) cachedFpsEl = document.getElementById('fps-counter');
+    const fpsEl = cachedFpsEl;
     if (!fpsEl || fpsEl.classList.contains('hidden')) return;
     fpsFrameCount++;
     fpsAccumMs += deltaMs;

@@ -457,6 +457,35 @@
             letter-spacing: .18em;
             color: #566168;
         }
+        /* Shown by main.js's init()-timeout/catch guard (Phase 0 #3) when
+           the build hangs past ~15s or throws — otherwise a failed/stuck
+           init() just leaves the bar frozen forever with no signal that
+           anything's wrong. */
+        .loading-screen-error {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: .5rem;
+            max-width: min(420px, 70vw);
+            text-align: center;
+        }
+        .loading-screen-error.visible { display: flex; }
+        .loading-screen-error-text {
+            font: 11px/1.6 'Courier New', monospace;
+            letter-spacing: .08em;
+            color: #e8a5a5;
+        }
+        .loading-screen-reload-btn {
+            font: 10px 'Courier New', monospace;
+            letter-spacing: .2em;
+            text-transform: uppercase;
+            color: #e3ded2;
+            background: rgba(220, 216, 204, .10);
+            border: 1px solid rgba(220, 216, 204, .3);
+            padding: .5rem 1.1rem;
+            cursor: pointer;
+        }
+        .loading-screen-reload-btn:hover { background: rgba(220, 216, 204, .18); }
 
         /* Autosave HUD indicator — toggled by main.js's flashAutosaveIcon(),
            called only from an actual writeLocalSave() success, not a
@@ -1533,6 +1562,10 @@
         <div class="loading-screen-bar"><div id="loading-screen-fill" class="loading-screen-fill"></div></div>
         <div class="loading-screen-label" id="loading-screen-label">the hearth is still</div>
         <div class="loading-screen-pct" id="loading-screen-pct">00%</div>
+        <div class="loading-screen-error" id="loading-screen-error">
+            <div class="loading-screen-error-text" id="loading-screen-error-text">the hearth failed to catch — something went wrong loading the world.</div>
+            <button class="loading-screen-reload-btn" id="loading-screen-reload-btn" onclick="location.reload()">Reload</button>
+        </div>
     </div>
 
     <div id="canvas-container"></div>
@@ -1619,9 +1652,6 @@
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
-                    <button class="tab-btn" data-tab="modifiers" type="button">Modifiers</button>
-                    <button class="tab-btn" data-tab="controls" type="button">Controls</button>
-                    <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
                 <div class="tab-panel active" data-tab-panel="graphics">
@@ -1632,36 +1662,10 @@
                         <button id="title-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
                     </div>
 
-                    <label style="margin-top: 0.7rem;">Resolution <span class="quality-reload-note">(applies on reload)</span></label>
-                    <div class="quality-toggle-row" id="title-resolution-row">
-                        <button id="title-resolution-1080-btn" class="quality-toggle-btn">1080p</button>
-                        <button id="title-resolution-720-btn" class="quality-toggle-btn">720p</button>
-                        <button id="title-resolution-480-btn" class="quality-toggle-btn">480p</button>
-                    </div>
                     <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
-                        <input type="checkbox" id="title-antialiasing-checkbox">
-                        Antialiasing <span class="quality-reload-note">(applies on reload)</span>
-                    </label>
-                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
                         <input type="checkbox" id="title-fps-counter-checkbox">
                         Show FPS Counter
                     </label>
-                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
-                        <input type="checkbox" id="title-disable-weather-checkbox">
-                        Disable Weather (no rain/storms)
-                    </label>
-
-                    <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
-                    <div class="quality-toggle-row" id="title-view-mode-row">
-                        <button id="title-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
-                        <button id="title-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
-                    </div>
-
-                    <label style="margin-top: 0.7rem;" for="title-draw-distance-slider">Tree Draw Distance</label>
-                    <input type="range" id="title-draw-distance-slider" min="60" max="300" step="10" value="150">
-
-                    <label for="title-fog-density-slider">Fog Density</label>
-                    <input type="range" id="title-fog-density-slider" min="0.3" max="2" step="0.05" value="1">
                 </div>
 
                 <div class="tab-panel" data-tab-panel="camera">
@@ -1680,63 +1684,12 @@
                 <div class="tab-panel" data-tab-panel="audio">
                     <label style="margin-top: 0;" for="title-volume-slider">Master Volume</label>
                     <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
-
-                    <label for="title-ambience-volume-slider">Ambience Volume</label>
-                    <input type="range" id="title-ambience-volume-slider" min="0" max="1" step="0.01" value="1">
-
-                    <label for="title-sfx-volume-slider">SFX Volume</label>
-                    <input type="range" id="title-sfx-volume-slider" min="0" max="1" step="0.01" value="1">
                 </div>
 
-                <div class="tab-panel" data-tab-panel="modifiers">
-                    <label style="margin-top: 0;" for="title-wave-height-slider">Wave Height</label>
-                    <input type="range" id="title-wave-height-slider" min="0.5" max="2" step="0.05" value="1">
-                    <label for="title-wave-speed-slider">Wave Speed</label>
-                    <input type="range" id="title-wave-speed-slider" min="0.5" max="2" step="0.05" value="1">
-                    <label for="title-storm-reactivity-slider">Storm Reactivity</label>
-                    <input type="range" id="title-storm-reactivity-slider" min="0.5" max="2" step="0.05" value="1">
-
-                    <label style="margin-top: 0.5rem;">Rock Detail <span class="quality-reload-note">(applies on reload)</span></label>
-                    <div class="quality-toggle-row" id="title-rock-detail-row">
-                        <button id="title-rock-detail-low-btn" class="quality-toggle-btn" data-value="low">Low</button>
-                        <button id="title-rock-detail-med-btn" class="quality-toggle-btn" data-value="med">Med</button>
-                        <button id="title-rock-detail-high-btn" class="quality-toggle-btn" data-value="high">High</button>
-                    </div>
-                    <label for="title-rock-roughness-slider">Rock Roughness <span class="quality-reload-note">(applies on reload)</span></label>
-                    <input type="range" id="title-rock-roughness-slider" min="0.5" max="2" step="0.05" value="1">
-
-                    <button id="title-modifiers-reset-btn" class="settings-help-toggle" type="button" style="margin-top: 0.8rem; justify-content: center; border-top: none; padding-top: 0;">
-                        Reset to defaults
-                    </button>
-                </div>
-
-                <div class="tab-panel" data-tab-panel="controls">
-                    <!-- Hidden: core/input.js calls helpToggleBtn.addEventListener
-                         unconditionally (not null-guarded like the modifiers
-                         toggle below), so the element has to exist even though
-                         the Controls tab now handles show/hide on its own. -->
-                    <button id="title-help-toggle-btn" class="settings-help-toggle" type="button" aria-expanded="false" style="display: none;">
-                        Help <span class="settings-help-caret">▾</span>
-                    </button>
-                    <div class="title-controls open" id="title-keybind-list" style="margin-top: 0;"></div>
-                    <div class="quality-toggle-row" style="margin-top: 0.7rem;">
-                        <button id="title-keybind-reset-btn" class="quality-toggle-btn">Reset to Defaults</button>
-                    </div>
-                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
-                        <input type="checkbox" id="title-force-touch-checkbox">
-                        Show Touch Controls <span class="quality-reload-note">(applies on reload)</span>
-                    </label>
-                </div>
-
-                <div class="tab-panel" data-tab-panel="save">
-                    <label style="margin-top: 0;">Save Data</label>
-                    <div class="quality-toggle-row">
-                        <button id="title-export-save-btn" class="quality-toggle-btn">Export</button>
-                        <button id="title-import-save-btn" class="quality-toggle-btn">Import</button>
-                    </div>
-                    <input type="file" id="title-import-save-input" accept="application/json,.json" class="hidden">
-                    <div class="save-status" id="title-save-status"></div>
-                </div>
+                <!-- Save tab removed — no save-system.js exists anywhere in
+                     this build, so Export/Import here were dead buttons
+                     with no click handler at all. Re-add once an actual
+                     save system is built rather than leaving an inert tab. -->
             </div>
 
             <div class="title-panel" id="title-credits-panel">
@@ -1901,8 +1854,6 @@
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
-                    <button class="tab-btn" data-tab="controls" type="button">Controls</button>
-                    <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
                 <div class="tab-panel active" data-tab-panel="graphics">
@@ -1912,33 +1863,10 @@
                         <button id="pause-quality-med-btn" class="quality-toggle-btn">Medium</button>
                         <button id="pause-quality-low-btn" class="quality-toggle-btn">Low (potato mode)</button>
                     </div>
-                    <label style="margin-top: 0.7rem;">Resolution <span class="quality-reload-note">(applies on reload)</span></label>
-                    <div class="quality-toggle-row">
-                        <button id="pause-resolution-1080-btn" class="quality-toggle-btn">1080p</button>
-                        <button id="pause-resolution-720-btn" class="quality-toggle-btn">720p</button>
-                        <button id="pause-resolution-480-btn" class="quality-toggle-btn">480p</button>
-                    </div>
-                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
-                        <input type="checkbox" id="pause-antialiasing-checkbox">
-                        Antialiasing <span class="quality-reload-note">(applies on reload)</span>
-                    </label>
                     <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
                         <input type="checkbox" id="pause-fps-counter-checkbox">
                         Show FPS Counter
                     </label>
-                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
-                        <input type="checkbox" id="pause-disable-weather-checkbox">
-                        Disable Weather (no rain/storms)
-                    </label>
-                    <label style="margin-top: 0.7rem;" for="pause-draw-distance-slider">Tree Draw Distance</label>
-                    <input type="range" id="pause-draw-distance-slider" min="60" max="300" step="10" value="150">
-                    <label for="pause-fog-density-slider">Fog Density</label>
-                    <input type="range" id="pause-fog-density-slider" min="0.3" max="2" step="0.05" value="1">
-                    <label style="margin-top: 0.7rem;">View Mode <span class="quality-reload-note">(applies on reload)</span></label>
-                    <div class="quality-toggle-row">
-                        <button id="pause-view-firstperson-btn" class="quality-toggle-btn">Open World</button>
-                        <button id="pause-view-topdown-btn" class="quality-toggle-btn">Top-Down</button>
-                    </div>
                 </div>
 
                 <div class="tab-panel" data-tab-panel="camera">
@@ -1955,30 +1883,8 @@
                 <div class="tab-panel" data-tab-panel="audio">
                     <label style="margin-top: 0;" for="pause-volume-slider">Master Volume</label>
                     <input type="range" id="pause-volume-slider" min="0" max="1" step="0.01" value="1">
-                    <label for="pause-ambience-volume-slider">Ambience Volume</label>
-                    <input type="range" id="pause-ambience-volume-slider" min="0" max="1" step="0.01" value="1">
-                    <label for="pause-sfx-volume-slider">SFX Volume</label>
-                    <input type="range" id="pause-sfx-volume-slider" min="0" max="1" step="0.01" value="1">
                 </div>
 
-                <div class="tab-panel" data-tab-panel="controls">
-                    <div class="title-controls open" id="pause-keybind-list" style="margin-top: 0;"></div>
-                    <div class="quality-toggle-row" style="margin-top: 0.7rem;">
-                        <button id="pause-keybind-reset-btn" class="quality-toggle-btn">Reset to Defaults</button>
-                    </div>
-                    <label class="settings-checkbox-row" style="margin-top: 0.7rem;">
-                        <input type="checkbox" id="pause-force-touch-checkbox">
-                        Show Touch Controls <span class="quality-reload-note">(applies on reload)</span>
-                    </label>
-                </div>
-
-                <div class="tab-panel" data-tab-panel="save">
-                    <label style="margin-top: 0;">Save Data</label>
-                    <div class="quality-toggle-row">
-                        <button id="pause-export-save-btn" class="quality-toggle-btn">Export Save</button>
-                    </div>
-                    <div class="save-status" id="pause-save-status"></div>
-                </div>
             </div>
             <div class="pause-btn-divider"></div>
             <button id="pause-quit-btn" class="pause-btn pause-btn-danger"><span class="pause-btn-icon">⏻</span>Quit to Title</button>
@@ -2381,6 +2287,7 @@
         function rgbStr(arr, alpha=1) { return `rgba(${Math.floor(arr[0])}, ${Math.floor(arr[1])}, ${Math.floor(arr[2])}, ${alpha})`; }
 
         // --- MAIN ANIMATION RENDER LOOP ---
+        let pixelSkyRafId = null;
         function renderPixelSky() {
             if (isBloodMoon) {
                 bloodTransition = Math.min(1, bloodTransition + 0.01);
@@ -2562,9 +2469,17 @@
             runnerAnimal.update();
             runnerAnimal.draw(ctx, bloodTransition > 0.5);
 
-            requestAnimationFrame(renderPixelSky);
+            pixelSkyRafId = requestAnimationFrame(renderPixelSky);
         }
-        renderPixelSky();
+        pixelSkyRafId = requestAnimationFrame(renderPixelSky);
+        // Phase 3 #18: this canvas sits behind the title screen only — once
+        // the real Three.js game starts it's fully covered and this loop
+        // was just burning a rAF slot + full canvas redraw every frame for
+        // nothing. main.js calls this once startGame() finishes.
+        window.stopPixelSky = function () {
+            if (pixelSkyRafId !== null) cancelAnimationFrame(pixelSkyRafId);
+            pixelSkyRafId = null;
+        };
     </script>
 
     <!-- Title-screen glitch FX, ported from silvan_titlescreen.html.

@@ -12,10 +12,29 @@ import { state } from './state.js';
 // on later ticks that no longer count as "the click." So the lock request
 // happens here, before any of that async work starts, not inside
 // enterGame() after init() resolves.
+const POINTER_LOCK_FALLBACK_MS = 1000;
+
 export function wireTitleScreen(onStart) {
     document.getElementById('title-remember-btn').addEventListener('click', () => {
         document.body.requestPointerLock();
         onStart();
+
+        // requestPointerLock() can be silently refused — blocked by
+        // browser/embedding policy, a prior lock exit still in its cooldown,
+        // etc — with no error and no 'pointerlockchange' event ever firing.
+        // Without this, #ui-layer only ever hides from inside that handler
+        // (see setupInput() below), so a refusal leaves the title screen
+        // permanently stuck on top of the loading screen/game underneath.
+        // If lock hasn't actually landed shortly after the click, hide the
+        // UI layer directly so the player isn't stranded (mouse-look just
+        // won't work until they manage to lock some other way, e.g.
+        // clicking the canvas, which is better than being unable to play
+        // at all).
+        setTimeout(() => {
+            if (state.isLocked) return; // real lock landed in time — nothing to do
+            const ui = document.getElementById('ui-layer');
+            if (ui) ui.classList.add('hidden');
+        }, POINTER_LOCK_FALLBACK_MS);
     }, { once: true });
 }
 
@@ -95,8 +114,10 @@ export function setupInput() {
     window.addEventListener('keyup', (e) => { if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false; });
     document.addEventListener('mousemove', (e) => {
         if (!state.isLocked || !state.camera) return; // !state.camera: pointer lock can grant (and fire mousemove) while init() is still building the scene, during the loading screen
-        state.player.rotation.y -= e.movementX * 0.0018;
-        state.player.rotation.x -= e.movementY * 0.0018;
+        const scale = 0.0018 * (state.sensitivity || 1);
+        const invert = state.invertY ? -1 : 1;
+        state.player.rotation.y -= e.movementX * scale;
+        state.player.rotation.x -= e.movementY * scale * invert;
         state.player.rotation.x = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, state.player.rotation.x));
         state.camera.quaternion.setFromEuler(state.player.rotation);
     });
@@ -134,6 +155,28 @@ export function wirePauseMenu() {
     }
     wireAccordion('pause-objectives-btn', 'pause-objectives', 'pause-settings');
     wireAccordion('pause-settings-btn', 'pause-settings', 'pause-objectives');
+}
+
+// Wires the title screen's Settings/Credits menu buttons to the same
+// .open toggle the click-outside-backdrop handler in index.html already
+// expects (see that script's own comment) — the panels' CSS and the
+// close-on-outside-click behavior were already in place, only the buttons
+// themselves had no listener. Single-panel-open, same feel as the pause
+// menu's Objectives/Settings accordion in wirePauseMenu().
+export function wireTitleMenu() {
+    function wireToggle(btnId, panelId, otherPanelId) {
+        const btn = document.getElementById(btnId);
+        const panel = document.getElementById(panelId);
+        const other = otherPanelId ? document.getElementById(otherPanelId) : null;
+        if (!btn || !panel) return;
+        btn.addEventListener('click', () => {
+            const opening = !panel.classList.contains('open');
+            panel.classList.toggle('open', opening);
+            if (opening && other) other.classList.remove('open');
+        });
+    }
+    wireToggle('title-settings-btn', 'title-settings-panel', 'title-credits-panel');
+    wireToggle('title-credits-btn', 'title-credits-panel', 'title-settings-panel');
 }
 
 export function onWindowResize() {

@@ -13,7 +13,13 @@ const mountainPeakColor = new THREE.Color(0x111317);
 const abyssMagmaColor = new THREE.Color(0xdc2626);
 
 export function createTerrain() {
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 300, 300);
+    // Phase 3 #21: was 300x300 (~90k verts) for an 800-unit map — far more
+    // geometry than the visible per-vertex detail needs, and the single
+    // biggest draw-call/vertex cost in the whole scene. Full chunked LOD is
+    // a bigger job than this pass covers; cutting segment count 4x (as the
+    // roadmap itself suggested) gets most of the win with no visual
+    // difference at this resolution's normal viewing distance.
+    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 150, 150);
     geo.rotateX(-Math.PI / 2);
 
     const pos = geo.attributes.position;

@@ -2,8 +2,16 @@ import * as THREE from 'three';
 import { state, DAY_LENGTH_MS } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
 
+// Cached once instead of getElementById() every frame (Phase 3 #20) — these
+// three never change identity for the life of the page.
+let weatherEl = null, dayEl = null, timeEl = null;
+
 export function updateAtmosphere(delta) {
-    state.timeMultiplier = state.keys.r ? 50 : 1;
+    if (!weatherEl) weatherEl = document.getElementById('weather-display');
+    if (!dayEl) dayEl = document.getElementById('day-display');
+    if (!timeEl) timeEl = document.getElementById('time-display');
+
+    state.timeMultiplier = state.keys.g ? 50 : 1;
     
     // WEATHER LOGIC
     state.weatherChangeTimer += delta * state.timeMultiplier;
@@ -15,13 +23,13 @@ export function updateAtmosphere(delta) {
     state.currentRainIntensity += (state.targetRainIntensity - state.currentRainIntensity) * 0.0005 * delta;
     
     const weatherText = state.currentRainIntensity > 0.7 ? "HEAVY RAIN" : (state.currentRainIntensity > 0.15 ? "LIGHT RAIN" : "CLEAR");
-    document.getElementById('weather-display').textContent = `WEATHER: ${weatherText}`;
+    if (weatherEl) weatherEl.textContent = `WEATHER: ${weatherText}`;
 
     state.gameTime += (delta / DAY_LENGTH_MS) * state.timeMultiplier;
-    if (state.gameTime >= 1.0) { state.gameTime -= 1.0; state.daysPassed++; document.getElementById('day-display').textContent = `DAY: ${state.daysPassed}`; }
+    if (state.gameTime >= 1.0) { state.gameTime -= 1.0; state.daysPassed++; if (dayEl) dayEl.textContent = `DAY: ${state.daysPassed}`; }
     const hrs = Math.floor(state.gameTime * 24).toString().padStart(2, '0');
     const mins = Math.floor((state.gameTime * 24 * 60) % 60).toString().padStart(2, '0');
-    document.getElementById('time-display').textContent = `TIME: ${hrs}:${mins}`;
+    if (timeEl) timeEl.textContent = `TIME: ${hrs}:${mins}`;
 
     const angle = state.gameTime * Math.PI * 2 - Math.PI / 2;
     const sy = Math.sin(angle); const sx = Math.cos(angle);

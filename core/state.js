@@ -57,7 +57,7 @@ rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
 speed: 12,
 height: 2.1
     },
-    keys: { w: false, a: false, s: false, d: false, r: false, e: false },
+    keys: { w: false, a: false, s: false, d: false, g: false, e: false },
     colliders: [],
 
     lastTime: performance.now(),

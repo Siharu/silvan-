@@ -7,16 +7,10 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 // + sky tint + a sun/moon glint in the shader below instead.
 
 import { state } from './state.js';
-
-// TEMPORARY debug hook — lets us inspect live state from the browser
-// console while tracking down the grass-visibility bug. Safe to remove
-// once that's resolved; read-only, changes nothing about how the game runs.
-window.__debugState = state;
-
 import { getElevation, createProceduralTextures } from './utils.js';
 import { initAudio } from './audio.js';
-import { setupInput, onWindowResize, wireTitleScreen, wirePauseMenu, enterGame } from './input.js';
-import { loadQuality, wireSettingsButtons, updateFpsCounter } from './settings.js';
+import { setupInput, onWindowResize, wireTitleScreen, wireTitleMenu, wirePauseMenu, enterGame } from './input.js';
+import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCounter } from './settings.js';
 import { updatePlayer } from './player-controller.js';
 import { updateAtmosphere } from '../atmosphere/day-night-cycle.js';
 
@@ -48,6 +42,32 @@ function setLoadingProgress(pct, label) {
     if (fill) fill.style.width = pct + '%';
     if (pctEl) pctEl.textContent = String(Math.round(pct)).padStart(2, '0') + '%';
     if (labelEl && label) labelEl.textContent = label;
+}
+
+const INIT_TIMEOUT_MS = 15000;
+
+// Puts the loading screen into a visible, explicit failure state instead
+// of leaving the bar frozen with no signal anything's wrong (Phase 0 #3).
+// Reload is the only recovery path here on purpose — init() isn't
+// re-entrant (it mutates module-level `state` unconditionally), so a
+// "retry" button would need init() split into a resettable form first.
+function showLoadingError(message) {
+    const bar = document.querySelector('.loading-screen-bar');
+    const pctEl = document.getElementById('loading-screen-pct');
+    const labelEl = document.getElementById('loading-screen-label');
+    const errorBox = document.getElementById('loading-screen-error');
+    const errorText = document.getElementById('loading-screen-error-text');
+    if (bar) bar.style.display = 'none';
+    if (pctEl) pctEl.style.display = 'none';
+    if (labelEl) labelEl.style.display = 'none';
+    if (errorText) errorText.textContent = message;
+    if (errorBox) errorBox.classList.add('visible');
+}
+
+function timeout(ms) {
+    return new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`init() exceeded ${ms}ms timeout`)), ms)
+    );
 }
 
 // Was called directly on window.onload — meaning this entire scene build
@@ -173,10 +193,20 @@ async function startGame() {
     await nextFrame();
     await nextFrame();
 
-    await init();
+    try {
+        await Promise.race([init(), timeout(INIT_TIMEOUT_MS)]);
+    } catch (err) {
+        console.error('[startGame] init() failed or timed out — the hearth never lit.', err);
+        showLoadingError('the hearth failed to catch — something went wrong loading the world.');
+        return; // leave the loading screen up in its error state; don't call enterGame()
+    }
 
     loadingScreen.classList.add('hidden');
     enterGame();
+    // Phase 3 #18: the pixel-sky canvas loop (index.html) only matters
+    // behind the title screen; once the real scene is up it's fully
+    // covered and would otherwise keep redrawing forever for nothing.
+    if (typeof window.stopPixelSky === 'function') window.stopPixelSky();
     // Marks the game as fully built — see core/input.js's pointerlockchange
     // handler for why losing pointer lock only opens the pause overlay
     // (rather than falling back to the title screen) once this is true.
@@ -200,6 +230,8 @@ function animate(time) {
 setupInput();
 window.addEventListener('DOMContentLoaded', () => {
     wireTitleScreen(startGame);
+    wireTitleMenu();
     wireSettingsButtons();
+    wireCameraAudioSettings();
     wirePauseMenu();
 });

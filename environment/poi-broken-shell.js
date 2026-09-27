@@ -53,9 +53,34 @@ export function createBrokenShell(x, _y, z) {
             },
             undefined,
             (err) => {
-                console.error('Failed to load broken_shell.glb', err);
-                reject(err);
+                console.error('Failed to load broken_shell.glb — using placeholder hull.', err);
+                resolve(createPlaceholderHull(x, z));
             }
         );
     });
+}
+
+// Fallback used when broken_shell.glb fails to load (missing file, bad
+// network, decode error, etc). Keeps the POI's radius/silhouette roughly
+// honest — a dark sunken-hull-shaped box — instead of leaving nothing
+// there at all.
+function createPlaceholderHull(x, z) {
+    const group = new THREE.Group();
+    const hull = new THREE.Mesh(
+        new THREE.BoxGeometry(40, 8, 12),
+        new THREE.MeshStandardMaterial({ color: 0x2a2f33, roughness: 0.9, metalness: 0.3 })
+    );
+    hull.rotation.z = 0.25;
+    hull.rotation.y = 0.4;
+    hull.castShadow = true;
+    hull.receiveShadow = true;
+    group.add(hull);
+    group.position.set(x, WATER_LEVEL - 8, z);
+    state.scene.add(group);
+
+    const light = new THREE.PointLight(0x06b6d4, 2, 40);
+    light.position.set(x, WATER_LEVEL - 6, z);
+    state.scene.add(light);
+
+    return group;
 }

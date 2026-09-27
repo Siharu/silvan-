@@ -17,6 +17,10 @@ export function updatePlayer(delta) {
             if ((nX-col.x)**2 + (state.player.position.z-col.z)**2 < col.r**2) colX = true;
             if ((state.player.position.x-col.x)**2 + (nZ-col.z)**2 < col.r**2) colZ = true;
         }
+        // Verticality (standing on rocks/decks/POI structures) is punted —
+        // Y always tracks bare terrain elevation (getElevation below), never
+        // a raycast against nearby props. Revisit for v3 if a POI needs the
+        // player to climb onto it; not needed for Map 1's current design.
         // Ocean acts as a wall: block movement onto any ground tile that
         // sits below the water surface, same pattern as the collider check
         // above (per-axis, so grazing the shoreline at an angle still slides).
