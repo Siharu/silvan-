@@ -349,6 +349,6 @@ export function updateGrass(elapsedSeconds) {
         state.grassMat.uniforms.uAmbientColor.value.copy(state.hemiLight.color).multiplyScalar(state.hemiLight.intensity);
     }
     if (state.sunLight) {
-        state.grassMat.uniforms.uSunFactor.value = state.sunLight.intensity / 2.0; // sunLight.intensity maxes at ~2.0 at midday, see day-night-cycle.js
+        state.grassMat.uniforms.uSunFactor.value = state.sunLight.intensity / 1.5; // Phase 4 #27: day-night-cycle.js actually caps intensity at 1.5, not 2.0 — was topping out at uSunFactor 0.75
     }
 }

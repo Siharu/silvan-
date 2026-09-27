@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state, DAY_LENGTH_MS } from '../core/state.js';
+import { state, DAY_LENGTH_MS, WEATHER_CHANGE_INTERVAL_MS } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
 
 // Cached once instead of getElementById() every frame (Phase 3 #20) — these
@@ -15,7 +15,7 @@ export function updateAtmosphere(delta) {
     
     // WEATHER LOGIC
     state.weatherChangeTimer += delta * state.timeMultiplier;
-    if (state.weatherChangeTimer > 25000) { // Change weather periodically (accelerated by resting)
+    if (state.weatherChangeTimer > WEATHER_CHANGE_INTERVAL_MS) { // Change weather periodically (accelerated by resting)
         state.weatherChangeTimer = 0;
         state.targetRainIntensity = Math.random() > 0.5 ? 0.0 : Math.random(); 
     }
@@ -40,6 +40,15 @@ export function updateAtmosphere(delta) {
     const dayBlend = Math.max(0, Math.min(1, sy * 2.5 + 0.5));
     state.sunLight.intensity = Math.max(0, sy) * 1.5;
     state.moonLight.intensity = Math.max(0, -sy) * 0.5;
+
+    // Phase 4 #22: was hardcoded once at creation and never touched again,
+    // so ambient light never dimmed at night. Sky/ground hues left as-is
+    // (they already read fine in both states); only intensity tracks
+    // day/night now, floored so night isn't pitch-black everywhere shadows
+    // fall (moon/star/fire lighting still needs *something* to bounce off).
+    if (state.hemiLight) {
+        state.hemiLight.intensity = THREE.MathUtils.lerp(0.18, 1.15, dayBlend);
+    }
 
     const skyDay = new THREE.Color(0x5a6a7a); const skyNight = new THREE.Color(0x0a0f1c);
     const horDay = new THREE.Color(0x8a9aa8); const horSunset = new THREE.Color(0xa86c42); const horNight = new THREE.Color(0x040810);
@@ -149,4 +158,3 @@ export function updateAtmosphere(delta) {
         state.waterAudio.volume(waterProximity * 0.4);
     }
 }
-

@@ -34,7 +34,16 @@ export function createDustParticles() {
                 p.x += sin(uTime * 0.2 + aPhase) * 1.5;
                 p.y += cos(uTime * 0.15 + aPhase) * 1.0;
                 p.z += sin(uTime * 0.25 - aPhase) * 1.5;
-                p.y = mod(p.y, 20.0);
+                // Phase 4 #24: was a fixed world-Y 0-20 band, so at any
+                // elevation off the original spawn height (mountainside,
+                // volcano rim, etc.) motes either never appeared or hung
+                // uselessly far below the camera. Wrap relative to the
+                // camera's current Y instead, same camera-follow pattern
+                // already used for X/Z above, so the band always brackets
+                // wherever the player actually is.
+                float bandHeight = 20.0;
+                float bandBase = uCameraPos.y - 3.0;
+                p.y = bandBase + mod(p.y - bandBase, bandHeight);
                 
                 vec4 mvPosition = viewMatrix * vec4(p, 1.0);
                 gl_Position = projectionMatrix * mvPosition;
@@ -61,4 +70,3 @@ export function createDustParticles() {
     state.dustMesh = new THREE.Points(geo, state.dustMat);
     state.scene.add(state.dustMesh);
 }
-

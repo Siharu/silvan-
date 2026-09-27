@@ -299,12 +299,21 @@ export function updateRadioTower(delta) {
     beaconLight.intensity = pulseIntensity * 5.0;
 
     if (cabinLight && cabinBulbMat) {
-        if (Math.random() > 0.85) {
-            cabinLight.intensity = Math.random() * 0.6 + 0.1;
-            cabinBulbMat.emissiveIntensity = cabinLight.intensity;
-        } else if (Math.random() > 0.97) {
+        // Phase 4 #28: was two independent Math.random() calls in an
+        // if/else-if, so the "> 0.97" branch only ever got evaluated on the
+        // 85% of frames the first roll missed — actual odds were ~0.15 dim /
+        // ~0.0255 dark, not the 0.15/0.03 the two literals read as. Also
+        // rolled every render frame with no delta scaling, so flicker rate
+        // changed with framerate. One roll, one delta-scaled comparison.
+        const flickerRoll = Math.random();
+        const darkChance = 1 - Math.pow(1 - 0.03, delta * 60);
+        const dimChance = 1 - Math.pow(1 - 0.12, delta * 60);
+        if (flickerRoll < darkChance) {
             cabinLight.intensity = 0;
             cabinBulbMat.emissiveIntensity = 0;
+        } else if (flickerRoll < darkChance + dimChance) {
+            cabinLight.intensity = Math.random() * 0.6 + 0.1;
+            cabinBulbMat.emissiveIntensity = cabinLight.intensity;
         }
     }
 }

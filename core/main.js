@@ -216,10 +216,18 @@ async function startGame() {
 function animate(time) {
     requestAnimationFrame(animate);
     const delta = Math.min(time - state.lastTime, 100); state.lastTime = time;
-    updateAtmosphere(delta); updatePlayer(delta / 1000);
+    // Phase 4 #26: world time/weather and POI animation (beacon throb, fire,
+    // flicker) now freeze while paused, matching state.isPlaying's existing
+    // use to gate POI prompts and ambient audio. updatePlayer already no-ops
+    // via isLocked; grass keeps animating off wall-clock time since it's
+    // purely cosmetic and imperceptible while the pause menu covers it.
+    if (state.isPlaying) {
+        updateAtmosphere(delta);
+        updatePOIs(delta / 1000);
+    }
+    updatePlayer(delta / 1000);
     updateGrass(time / 1000);
     updatePOIInteraction(delta / 1000);
-    updatePOIs(delta / 1000);
     updateFpsCounter(delta);
     state.composer.render();
 }

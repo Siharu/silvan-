@@ -172,13 +172,22 @@ export function createRainSplashes() {
     const phases = new Float32Array(count);
     const speeds = new Float32Array(count);
     let placed = 0;
-    for (let i = 0; i < count * 3 && placed < count; i++) {
-        // Scatter within the lake basin only (matches getElevation's lake carve radius)
-        const r = Math.sqrt(Math.random()) * 150;
+    // Phase 4 #23: r<150 around world origin used to be the lake basin, but
+    // this island's water is now the ocean fringe outside the landmass —
+    // origin is the volcanic peak (dist<0.38, ~137u radius), solid ground
+    // and nowhere near WATER_LEVEL. Sample an annulus around the island's
+    // actual coastline (dist≈1.0 in getElevation's normalized radius, i.e.
+    // ~WORLD_SIZE*0.45 world units) instead, then keep only points that are
+    // genuinely wet and reasonably close to shore (not the open ocean out
+    // past the map edge, where splashes would never be seen).
+    const shoreRadius = WORLD_SIZE * 0.45; // matches getElevation's dist=1.0 normalization
+    for (let i = 0; i < count * 6 && placed < count; i++) {
+        const r = shoreRadius * (0.82 + Math.random() * 0.38); // annulus bracketing the noisy shoreline
         const th = Math.random() * Math.PI * 2;
         const x = Math.cos(th) * r;
         const z = Math.sin(th) * r;
-        if (getElevation(x, z) > 1.5) continue; // skip anything not actually under the lake
+        const elev = getElevation(x, z);
+        if (elev >= WATER_LEVEL || elev < WATER_LEVEL - 10) continue; // must be underwater, but not deep open ocean
 
         dummy.position.set(x, WATER_LEVEL + 0.02, z);
         dummy.updateMatrix();
@@ -192,4 +201,3 @@ export function createRainSplashes() {
     state.rainSplashMesh.geometry.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speeds, 1));
     state.scene.add(state.rainSplashMesh);
 }
-

@@ -57,17 +57,28 @@ export function getElevation(x, z) {
         elevation = (noiseVal + 1.2) * 24 * islandShape;
     }
 
-    // Central volcanic massif - The Serpent's Coil
-    if (dist < 0.38) {
-        const peakFactor = Math.pow(1.0 - dist / 0.38, 1.9);
-        elevation += peakFactor * 90;
+    // Central volcanic massif - The Serpent's Coil. Phase 4 #31: previously
+    // a hard `dist < 0.38` switch stacked directly on the island's own
+    // separate falloff (pow 1.35) — peakFactor itself tapers to 0 at that
+    // boundary, but its *slope* doesn't match the island curve's, so the
+    // combined surface kinks right at the mountain's base. Fade the whole
+    // peak contribution out across a transition band instead of snapping
+    // it off at one exact radius, so the two curves hand off smoothly.
+    const peakRadius = 0.38;
+    const peakBlendWidth = 0.10;
+    if (dist < peakRadius + peakBlendWidth) {
+        const peakFactor = Math.pow(Math.max(0, 1.0 - dist / peakRadius), 1.9);
+        const peakBlend = 1.0 - THREE.MathUtils.smoothstep(dist, peakRadius - peakBlendWidth, peakRadius + peakBlendWidth);
+        elevation += peakFactor * 90 * peakBlend;
 
-        // Crater pit near the summit, offset from dead-center like the reference
+        // Crater pit near the summit, offset from dead-center like the
+        // reference — scaled by the same blend so it can't punch a pit
+        // into terrain the peak itself has already faded out of.
         const abyssDist = Math.sqrt(x * x + (z + 12) * (z + 12));
         const craterRadius = WORLD_SIZE * 0.056; // ~45u
         if (abyssDist < craterRadius) {
             const pit = Math.cos((abyssDist / craterRadius) * Math.PI * 0.5);
-            elevation -= pit * 40;
+            elevation -= pit * 40 * peakBlend;
         }
     }
 

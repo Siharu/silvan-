@@ -8,7 +8,14 @@ import * as THREE from 'three';
 export const WORLD_SIZE = 800;
 export const WATER_LEVEL = 1.6; // Must match waterMesh.position.y in environment/lake.js createLake()
 export const TREE_COUNT = 380;
-export const DAY_LENGTH_MS = 90000;
+// Phase 4 #25: was 90000 (90 real seconds per full day) — a normal
+// wandering session blew through several day/night cycles by accident.
+// 20 real minutes per cycle reads as a proper day without dragging.
+export const DAY_LENGTH_MS = 1200000;
+// Was checked every 25000ms — at the old 90s day that's ~3-4 rerolls per
+// day (already a lot); at any longer day length it'd be dozens. 5 real
+// minutes gives roughly 4 weather changes per 20-minute day.
+export const WEATHER_CHANGE_INTERVAL_MS = 300000;
 
 export const SOUNDS = {
     dayAmbient: 'https://assets.mixkit.co/sfx/download/mixkit-forest-birds-ambience-1210.mp3', // Daytime birds/forest layer

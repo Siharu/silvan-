@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state, WORLD_SIZE } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { getElevation, noise } from '../core/utils.js';
 
 // Elevation-banded vertex colors, ported from the_hearth_isometric_map's
 // buildIslandTerrain() — ocean bed -> wet sand -> lush lowland -> slate
@@ -11,6 +11,28 @@ const lushLowlandColor = new THREE.Color(0x1a2c1e);
 const slateHighlandColor = new THREE.Color(0x2f353d);
 const mountainPeakColor = new THREE.Color(0x111317);
 const abyssMagmaColor = new THREE.Color(0xdc2626);
+
+// Phase 4 #29: was hard if/else cutoffs at y = 0.5/4.0/30.0/65.0 — read as
+// visibly stepped/terraced bands rather than a natural gradient. Blends
+// each pair of adjacent bands across a transition half-width around their
+// boundary instead of switching instantly.
+const _bandA = new THREE.Color();
+function bandedTerrainColor(y) {
+    const b1 = 0.5, w1 = 1.0;
+    const b2 = 4.0, w2 = 3.0;
+    const b3 = 30.0, w3 = 8.0;
+    const b4 = 65.0, w4 = 10.0;
+
+    if (y < b1 - w1) return _bandA.copy(oceanBedColor);
+    if (y < b1 + w1) return _bandA.copy(oceanBedColor).lerp(wetSandColor, THREE.MathUtils.smoothstep(y, b1 - w1, b1 + w1));
+    if (y < b2 - w2) return _bandA.copy(wetSandColor);
+    if (y < b2 + w2) return _bandA.copy(wetSandColor).lerp(lushLowlandColor, THREE.MathUtils.smoothstep(y, b2 - w2, b2 + w2));
+    if (y < b3 - w3) return _bandA.copy(lushLowlandColor);
+    if (y < b3 + w3) return _bandA.copy(lushLowlandColor).lerp(slateHighlandColor, THREE.MathUtils.smoothstep(y, b3 - w3, b3 + w3));
+    if (y < b4 - w4) return _bandA.copy(slateHighlandColor);
+    if (y < b4 + w4) return _bandA.copy(slateHighlandColor).lerp(mountainPeakColor, THREE.MathUtils.smoothstep(y, b4 - w4, b4 + w4));
+    return _bandA.copy(mountainPeakColor);
+}
 
 export function createTerrain() {
     // Phase 3 #21: was 300x300 (~90k verts) for an 800-unit map — far more
@@ -31,12 +53,7 @@ export function createTerrain() {
         const y = getElevation(x, z);
         pos.setY(i, y);
 
-        const c = new THREE.Color();
-        if (y < 0.5) c.copy(oceanBedColor);
-        else if (y < 4.0) c.copy(wetSandColor);
-        else if (y < 30.0) c.copy(lushLowlandColor);
-        else if (y < 65.0) c.copy(slateHighlandColor);
-        else c.copy(mountainPeakColor);
+        const c = new THREE.Color().copy(bandedTerrainColor(y));
 
         // Crater is offset from dead-center to match getElevation()'s pit
         const distFromCrater = Math.sqrt(x * x + (z + 12) * (z + 12));
@@ -45,7 +62,12 @@ export function createTerrain() {
             c.lerp(abyssMagmaColor, magmaBlend);
         }
 
-        const grain = (Math.random() - 0.5) * 0.06;
+        // Phase 4 #30: raw Math.random() grain was uncorrelated per vertex
+        // (static/speckle look); sample utils.js's spatial noise() instead
+        // so nearby vertices vary together, like real terrain mottling.
+        // Frequency chosen for fine-grained but blotchy (not pixel-static)
+        // variation relative to the terrain's overall scale.
+        const grain = (noise(x * 0.15, z * 0.15) - 0.5) * 0.06;
         c.r = THREE.MathUtils.clamp(c.r + grain, 0, 1);
         c.g = THREE.MathUtils.clamp(c.g + grain, 0, 1);
         c.b = THREE.MathUtils.clamp(c.b + grain, 0, 1);
@@ -71,4 +93,3 @@ export function createTerrain() {
     abyssLight.position.set(0, 40, -12);
     state.scene.add(abyssLight);
 }
-

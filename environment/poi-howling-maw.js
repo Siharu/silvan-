@@ -25,6 +25,12 @@ let isPulsing = false;
 let pulseDuration = 0;
 let pulseIntensityTarget = 0;
 let nextPulseTime = 4 + Math.random() * 5;
+// Phase 4 #28: dread-jitter state, re-rolled on a fixed real-time cadence
+// (see updateHowlingMaw) instead of once per render call, so the flicker's
+// perceived noisiness doesn't change with frame rate.
+let jitterValue = Math.random() * 0.3;
+let jitterTimer = 0;
+const JITTER_INTERVAL = 1 / 15; // re-roll ~15 times per second, any framerate
 
 export function createHowlingMaw(x, y, z) {
     const group = new THREE.Group();
@@ -209,7 +215,12 @@ export function updateHowlingMaw(delta) {
     elapsed += delta;
     const time = elapsed;
 
-    dreadLight.intensity = 1.2 + Math.sin(time * 2.5) * 0.8 + Math.random() * 0.3;
+    jitterTimer += delta;
+    if (jitterTimer >= JITTER_INTERVAL) {
+        jitterTimer -= JITTER_INTERVAL;
+        jitterValue = Math.random() * 0.3;
+    }
+    dreadLight.intensity = 1.2 + Math.sin(time * 2.5) * 0.8 + jitterValue;
 
     if (!isPulsing && time > nextPulseTime) {
         isPulsing = true;
