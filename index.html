@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Silvan Atmosphere - Lush Forest</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
@@ -18,7 +18,31 @@
          look). Cinzel/Cormorant stay loaded above because the pause menu,
          loading screen, and boundary message still use them; this pass only
          touches the front title screen. -->
-    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Silkscreen&family=Pixelify+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Hand-made indie look: warm ink/bark/ember palette pulled from the world's
+           own firelight, one chunky pixel display face + one tall pixel text face. */
+        :root {
+            --font-display: 'Pixelify Sans', 'Silkscreen', monospace;
+            --font-body: 'VT323', monospace;
+            --ink: #1a140f;
+            --bark: #3b2c1e;
+            --bark-edge: #6b4f33;
+            --ash: #e6dcc6;
+            --ash-dim: #b3a78f;
+            --ember: #f0a545;
+            --moss: #93ad62;
+            --dusk: #7ea2c9;
+        }
+        /* stepped pixel border — four hard-edged shadows instead of a rounded card */
+        .pixel-box {
+            background: var(--ink);
+            color: var(--ash);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
+                        0 0 0 6px rgba(0,0,0,0.45);
+        }
+    </style>
     <style>
         body, html {
             margin: 0;
@@ -27,7 +51,7 @@
             height: 100%;
             overflow: hidden;
             background-color: #000;
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font-body); font-size: 20px;
             user-select: none;
         }
         #canvas-container {
@@ -52,18 +76,148 @@
         }
         .hud-layer {
             position: absolute;
-            top: 2rem;
-            left: 2rem;
+            top: 1.6rem;
+            left: 1.6rem;
             z-index: 10;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.8rem;
-            letter-spacing: 0.15em;
             display: flex;
             flex-direction: column;
-            gap: 0.75rem;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            align-items: flex-start;
+            gap: 0.9rem;
             transition: opacity 0.5s ease;
+            font-family: var(--font-body);
         }
+        .hud-plaque {
+            background: var(--ink);
+            color: var(--ash);
+            padding: 0.45rem 0.9rem 0.5rem;
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
+                        0 0 0 6px rgba(0,0,0,0.45);
+            min-width: 8.2rem;
+        }
+        .hud-day {
+            font-family: var(--font-display);
+            font-size: 0.8rem;
+            color: var(--ember);
+            letter-spacing: 0.04em;
+        }
+        .hud-time {
+            font-size: 2.1rem;
+            line-height: 0.95;
+            margin: 0.1rem 0 0.25rem;
+        }
+        .hud-weather {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            font-size: 1.15rem;
+            color: var(--ash-dim);
+        }
+        .hud-weather svg { width: 16px; height: 16px; shape-rendering: crispEdges; display: none; }
+        .hud-weather[data-weather="clear"] .wi-sun,
+        .hud-weather[data-weather="clear-night"] .wi-moon,
+        .hud-weather[data-weather="light"] .wi-rain,
+        .hud-weather[data-weather="heavy"] .wi-rain { display: block; }
+        .hud-weather[data-weather="heavy"] { color: var(--dusk); }
+        .hud-hints {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            font-size: 1.05rem;
+            color: var(--ash-dim);
+            text-shadow: 0 2px 0 rgba(0,0,0,0.8);
+        }
+        .keycap {
+            display: inline-block;
+            min-width: 1.15em;
+            padding: 0 0.3em;
+            margin-right: 0.4em;
+            text-align: center;
+            font-family: var(--font-display);
+            font-size: 0.8em;
+            line-height: 1.35;
+            color: var(--ink);
+            background: var(--ash);
+            box-shadow: 0 2px 0 0 var(--bark-edge), -2px 0 0 0 var(--ash), 2px 0 0 0 var(--ash);
+        }
+        .touch-active .keycap { display: none; }
+        .tutorial-card {
+            position: fixed;
+            top: 6.4rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9;
+            width: min(27rem, 90vw);
+            padding: 0.7rem 1rem 0.6rem;
+            background: var(--ink);
+            color: var(--ash);
+            font-family: var(--font-body);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
+                        0 0 0 6px rgba(0,0,0,0.5);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s steps(4);
+        }
+        .tutorial-card.visible { opacity: 1; }
+        .touch-active .tutorial-card.visible { pointer-events: auto; }
+        .tutorial-card.done {
+            box-shadow: 0 -3px 0 0 var(--moss), 0 3px 0 0 var(--moss),
+                        -3px 0 0 0 var(--moss), 3px 0 0 0 var(--moss),
+                        0 0 0 6px rgba(0,0,0,0.5);
+        }
+        .tutorial-card.done .tut-step::after { content: '  done'; color: var(--moss); }
+        .tut-step { font-family: var(--font-display); font-size: 0.8rem; color: var(--ember); margin-bottom: 0.15rem; }
+        .tut-text { font-size: 1.4rem; line-height: 1.1; }
+        .tut-guide {
+            display: none;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 0.45rem;
+            font-size: 1.2rem;
+            color: var(--ember);
+        }
+        .tut-arrow {
+            width: 0; height: 0;
+            border-left: 9px solid transparent;
+            border-right: 9px solid transparent;
+            border-bottom: 18px solid var(--ember);
+        }
+        .tut-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; }
+        .tut-pips { display: flex; gap: 5px; }
+        .tut-pips i { width: 9px; height: 9px; background: #4a3b2a; display: block; }
+        .tut-pips i.on { background: var(--moss); }
+        .tut-pips i.now { background: var(--ember); }
+        .tut-skip { font-size: 1rem; color: var(--ash-dim); cursor: pointer; }
+        .tut-pulse { outline: 3px solid var(--ember); outline-offset: 4px; animation: tutPulse 0.8s steps(1) infinite; }
+        @keyframes tutPulse { 50% { outline-color: transparent; } }
+        .controls-list { list-style: none; margin: 0; padding: 0; font-family: var(--font-body); font-size: 1.25rem; }
+        .controls-list li { display: flex; align-items: center; gap: 0.5rem; padding: 0.15rem 0; color: var(--ash); }
+        .controls-list .keys { min-width: 8.5rem; }
+        .controls-sub { font-family: var(--font-display); font-size: 0.8rem; color: var(--ember); margin: 0.8rem 0 0.3rem; }
+        .controls-sub:first-child { margin-top: 0; }
+        .touch-active .controls-kb { display: none; }
+        body:not(.touch-active) .controls-touch { display: none; }
+        .discovery-toast {
+            position: fixed;
+            top: 1.6rem;
+            left: 50%;
+            transform: translate(-50%, -140%);
+            z-index: 9;
+            pointer-events: none;
+            padding: 0.55rem 1.3rem 0.6rem;
+            background: var(--ink);
+            color: var(--ash);
+            text-align: center;
+            box-shadow: 0 -3px 0 0 var(--ember), 0 3px 0 0 var(--ember),
+                        -3px 0 0 0 var(--ember), 3px 0 0 0 var(--ember),
+                        0 0 0 6px rgba(0,0,0,0.5);
+            transition: transform 0.45s steps(6);
+        }
+        .discovery-toast.visible { transform: translate(-50%, 0); }
+        .discovery-toast .toast-kicker { font-size: 1.05rem; color: var(--ember); }
+        .discovery-toast .toast-name { font-family: var(--font-display); font-size: 1.05rem; }
+        .discovery-toast .toast-count { font-size: 1.05rem; color: var(--ash-dim); }
         .crosshair {
             position: absolute;
             top: 50%;
@@ -90,6 +244,9 @@
             gap: 0.5rem;
             top: 1.2rem;
             left: 1.2rem;
+        }
+        .touch-active #hud-rest-hint {
+            display: none; /* 'HOLD G' is a keyboard hint — touch has the Rest button */
         }
         .touch-active #hud-pause-hint {
             display: none; /* Escape doesn't exist on touch — touch-pause-btn is the real affordance, already visible */
@@ -188,6 +345,7 @@
             gap: 0.9rem;
         }
         .touch-action-btn {
+            font-family: var(--font-display);
             width: 4.2rem;
             height: 4.2rem;
             border-radius: 50%;
@@ -272,7 +430,7 @@
             background: rgba(20, 24, 32, 0.4);
             border: 1px solid rgba(255,255,255,0.2);
             color: rgba(255,255,255,0.75);
-            font: 11px/1 'Courier New', monospace;
+            font: 16px/1 var(--font-body);
             letter-spacing: .05em;
         }
         .fps-counter.hidden {
@@ -414,7 +572,7 @@
             mix-blend-mode: screen;
         }
         .loading-screen-title {
-            font-family: 'Silkscreen', 'Cinzel', serif;
+            font-family: 'Silkscreen', var(--font-display);
             font-size: clamp(22px, 3.4vw, 34px);
             letter-spacing: .3em;
             color: #e3ded2;
@@ -549,7 +707,7 @@
         }
 
         .save-status {
-            font-family: 'Cormorant Garamond', serif;
+            font-family: var(--font-body);
             font-style: italic;
             font-size: 0.72rem;
             color: #9cb1c4;
@@ -565,19 +723,17 @@
             transform: translateX(-50%);
             z-index: 6;
             pointer-events: none;
-            color: #e5e7eb;
-            font-weight: 300;
-            letter-spacing: 0.15em;
-            font-size: 0.8rem;
-            text-transform: uppercase;
+            color: var(--ash);
+            font-family: var(--font-body);
+            font-size: 1.35rem;
             text-align: center;
             white-space: nowrap;
-            padding: 0.85rem 1.75rem;
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 2px;
+            padding: 0.6rem 1.4rem;
+            background: var(--ink);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge);
             opacity: 0;
-            transition: opacity 0.8s ease;
+            transition: opacity 0.6s ease;
         }
         @media (max-width: 640px) {
             .boundary-message {
@@ -690,40 +846,39 @@
             transform: translateX(-50%);
             z-index: 6;
             pointer-events: none;
-            color: #e5e7eb;
-            font-weight: 400;
-            letter-spacing: 0.15em;
-            font-size: 0.8rem;
-            text-transform: uppercase;
+            font-family: var(--font-display);
+            font-size: 1rem;
             text-align: center;
             white-space: nowrap;
-            padding: 0.7rem 1.5rem;
-            background: rgba(0, 0, 0, 0.45);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 2px;
+            padding: 0.5rem 1.2rem 0.55rem;
+            background: var(--ink);
+            color: var(--ash);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
+                        0 0 0 6px rgba(0,0,0,0.45);
             opacity: 0;
-            transition: opacity 0.3s ease;
+            transition: opacity 0.2s steps(3);
         }
         .interact-prompt.visible {
             opacity: 1;
         }
         .cutscene-caption {
             position: fixed;
-            bottom: 12%;
+            bottom: 8%;
             left: 50%;
             transform: translateX(-50%);
             z-index: 8;
             pointer-events: none;
-            color: #f1f1ea;
-            font-weight: 300;
-            letter-spacing: 0.08em;
-            font-size: 1.05rem;
-            text-align: center;
-            max-width: 32rem;
-            padding: 0.9rem 1.4rem;
-            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+            width: min(38rem, 90vw);
+            padding: 1.3rem 1.5rem 0.9rem;
+            background: var(--ink);
+            color: var(--ash);
+            font-family: var(--font-body);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
+                        0 0 0 6px rgba(0,0,0,0.5);
             opacity: 0;
-            transition: opacity 0.6s ease;
+            transition: opacity 0.25s steps(4);
         }
         .cutscene-caption.visible {
             opacity: 1;
@@ -737,17 +892,29 @@
            positioned wrapper so the existing fade/position CSS still
            applies unchanged. */
         .cutscene-caption .cutscene-speaker {
-            font-weight: 500;
-            letter-spacing: 0.15em;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            color: #d9cba0;
-            margin-bottom: 0.35rem;
+            position: absolute;
+            top: -1.05rem;
+            left: 1.1rem;
+            padding: 0.1rem 0.7rem 0.15rem;
+            background: var(--ember);
+            color: var(--ink);
+            font-family: var(--font-display);
+            font-size: 0.85rem;
         }
         .cutscene-caption .cutscene-text {
-            font-style: italic;
-            line-height: 1.5;
+            font-size: 1.5rem;
+            line-height: 1.15;
+            min-height: 3.4rem;
         }
+        .cutscene-caption .cutscene-text.typing::after {
+            content: '';
+            display: inline-block;
+            width: 0.5em; height: 0.8em;
+            margin-left: 2px;
+            background: var(--ember);
+            animation: caret 0.5s steps(1) infinite;
+        }
+        @keyframes caret { 50% { opacity: 0; } }
         .cutscene-caption .cutscene-choices {
             display: flex;
             flex-direction: column;
@@ -775,8 +942,7 @@
             margin-top: 0.6rem;
             font-size: 0.7rem;
             letter-spacing: 0.15em;
-            text-transform: uppercase;
-            color: #9ca3af;
+            color: var(--ash-dim);
             opacity: 0.85;
         }
 
@@ -1133,7 +1299,7 @@
         .title-content { animation: title-rise 1.6s ease both, title-float 6s ease-in-out infinite 1.6s; }
         @keyframes title-float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-6px); } }
         .title-logo {
-            font-family: 'Silkscreen', 'Cinzel', serif !important;
+            font-family: 'Silkscreen', var(--font-display) !important;
             background: none !important;
             -webkit-text-fill-color: white !important;
             color: #fff;
@@ -1250,7 +1416,7 @@
             border-top: 1px solid rgba(255,255,255,0.08);
             background: transparent;
             color: #9cb1c4;
-            font-family: 'Cormorant Garamond', serif;
+            font-family: var(--font-body);
             font-style: italic;
             font-size: 0.85rem;
             display: flex;
@@ -1485,7 +1651,7 @@
         }
         .title-credits-body .credit-kicker {
             display: block;
-            font-family: 'Silkscreen', 'Cinzel', serif;
+            font-family: 'Silkscreen', var(--font-display);
             font-style: normal;
             font-size: 0.6rem;
             letter-spacing: 0.4em;
@@ -1706,23 +1872,40 @@
     </div>
 
     <div id="hud-layer" class="hud-layer hidden">
-        <div id="time-display" class="font-mono font-bold">TIME: 08:39</div>
-        <div id="day-display">DAY: 1</div>
-        <div id="weather-display" class="text-blue-300">WEATHER: CLEAR</div>
-        <div class="mt-4 text-[11px] text-gray-400" id="hud-pause-hint">ESC TO PAUSE</div>
-        <div class="text-[11px] text-gray-400" id="hud-rest-hint">HOLD 'G' TO REST</div>
+        <div class="hud-plaque">
+            <div id="day-display" class="hud-day">Day 1</div>
+            <div id="time-display" class="hud-time">8:39 am</div>
+            <div id="weather-display" class="hud-weather" data-weather="clear">
+                <svg class="wi-sun" viewBox="0 0 8 8" fill="#f0a545"><path d="M3 0h2v1H3zM3 7h2v1H3zM0 3h1v2H0zM7 3h1v2H7zM2 2h4v4H2z"/></svg>
+                <svg class="wi-moon" viewBox="0 0 8 8" fill="#b9c7e0"><path d="M3 0h3v1H4v1H3zM2 1h1v6H2zM3 2h1v5H3zM3 6h3v1H3zM6 5h1v1H6z"/></svg>
+                <svg class="wi-rain" viewBox="0 0 8 8"><path fill="#b3a78f" d="M2 1h4v1h1v2H1V2h1z"/><path fill="#7ea2c9" d="M2 5h1v2H2zM4 5h1v2H4zM6 5h1v1H6z"/></svg>
+                <span id="weather-text">clear skies</span>
+            </div>
+        </div>
+        <div class="hud-hints">
+            <div id="hud-pause-hint"><span class="keycap">Esc</span>pause</div>
+            <div id="hud-rest-hint"><span class="keycap">G</span>hold to rest</div>
+        </div>
+    </div>
+    <div id="tutorial-card" class="tutorial-card">
+        <div id="tut-step" class="tut-step"></div>
+        <div id="tut-text" class="tut-text"></div>
+        <div id="tut-guide" class="tut-guide"><div id="tut-arrow" class="tut-arrow"></div><span id="tut-guide-text"></span></div>
+        <div class="tut-foot"><div id="tut-pips" class="tut-pips"></div><div id="tut-skip" class="tut-skip"></div></div>
+    </div>
+    <div id="discovery-toast" class="discovery-toast">
+        <div class="toast-kicker">new place found</div>
+        <div id="toast-name" class="toast-name"></div>
+        <div id="toast-count" class="toast-count"></div>
     </div>
 
-    <!-- Mobile touch controls — core/touch-controls.js shows/hides this
-         whole block based on touch-capability detection (or the manual
-         override in Settings > Controls, see core/settings.js's
-         forceTouchControls). Movement joystick toggles the same
-         state.move.forward/back/left/right booleans main.js's WASD
-         keydown listener sets, and the look-drag zone calls
-         state._applyLook(dx, dy), the same function main.js's mousemove
-         listener calls — so main.js's player controller needed only to
-         expose those two hooks on `state`, not be rewritten, to support
-         touch. -->
+    <!-- Mobile touch controls — core/touch-controls.js unhides this block on
+         touch-capable devices (shouldShowTouchControls() in core/utils.js).
+         The joystick sets the same state.keys.w/a/s/d booleans the keyboard
+         does, the look zone calls input.js's applyLookDelta() (same math as
+         the mousemove handler), Sprint/Interact/Rest hold state.keys.shift/
+         e/g, Jump calls player-controller.js's triggerJump(), and Pause calls
+         input.js's pauseGame(). -->
     <div id="touch-controls" class="touch-controls hidden">
         <div id="touch-look-zone" class="touch-look-zone"></div>
         <div id="touch-joystick-zone" class="touch-joystick-zone">
@@ -1750,18 +1933,7 @@
          screens until the game actually starts and those overlays hide
          themselves — no separate show/hide toggle needed here. -->
     <div id="game-hud-buttons" class="game-hud-buttons">
-        <button id="time-ff-btn" class="time-ff-btn" type="button" aria-label="Nap (Kat sleeps, skips 5-6 hours)">
-            <!-- swapped the double-chevron fast-forward icon for a closed
-                 crescent eye + Z: this is now a one-shot nap trigger, not a
-                 held speed-up state, so the old .active chevron-slide
-                 animation no longer applies (button just flashes briefly
-                 on press — see input.js's toggleTimeFastForward). -->
-            <svg class="ff-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-                <path d="M4 13c1.8 2 4 3 8 3s6.2-1 8-3" fill="none"/>
-                <path d="M14 6l1.6 1.6M17.5 5.5l1 2M20 7.5l2 .5" stroke-width="1.3"/>
-            </svg>
-        </button>
-        <button id="fullscreen-btn" class="time-ff-btn" type="button" aria-label="Toggle fullscreen" style="right: 7.6rem;">⛶</button>
+        <button id="fullscreen-btn" class="time-ff-btn" type="button" aria-label="Toggle fullscreen">⛶</button>
         <div id="fps-counter" class="fps-counter hidden">0 FPS</div>
     </div>
 
@@ -1833,7 +2005,7 @@
         <div id="cutscene-speaker" class="cutscene-speaker"></div>
         <div id="cutscene-text" class="cutscene-text"></div>
         <div id="cutscene-choices" class="cutscene-choices"></div>
-        <div id="cutscene-continue-hint" class="cutscene-continue-hint">[E] Continue</div>
+        <div id="cutscene-continue-hint" class="cutscene-continue-hint"><span class="keycap">E</span>close</div>
     </div>
 
     <div id="pause-layer" class="pause-layer">
@@ -1843,11 +2015,38 @@
             <div class="pause-btn-divider"></div>
             <button id="pause-objectives-btn" class="pause-btn"><span class="pause-btn-icon">✦</span>Objectives</button>
             <div id="pause-objectives" class="pause-settings">
-                <h3 class="objective-heading">Current Objective</h3>
+                <h3 class="objective-heading">What now</h3>
                 <p id="objective-current-text" class="objective-text">—</p>
-                <h3 class="objective-heading">Party</h3>
+                <h3 class="objective-heading">Places</h3>
                 <ul id="objective-party-list" class="objective-party-list"></ul>
             </div>
+            <button id="pause-controls-btn" class="pause-btn"><span class="pause-btn-icon">✦</span>Controls</button>
+            <div id="pause-controls" class="pause-settings">
+                <div class="controls-kb">
+                    <div class="controls-sub">keyboard and mouse</div>
+                    <ul class="controls-list">
+                        <li><span class="keys"><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span></span>walk</li>
+                        <li><span class="keys">mouse</span>look around</li>
+                        <li><span class="keys"><span class="keycap">Shift</span></span>sprint</li>
+                        <li><span class="keys"><span class="keycap">Space</span></span>jump</li>
+                        <li><span class="keys"><span class="keycap">E</span></span>examine a place</li>
+                        <li><span class="keys"><span class="keycap">G</span></span>hold to rest, time speeds up</li>
+                        <li><span class="keys"><span class="keycap">Esc</span></span>pause</li>
+                    </ul>
+                </div>
+                <div class="controls-touch">
+                    <div class="controls-sub">touch</div>
+                    <ul class="controls-list">
+                        <li><span class="keys">left stick</span>walk</li>
+                        <li><span class="keys">drag right side</span>look around</li>
+                        <li><span class="keys">Sprint</span>hold to run</li>
+                        <li><span class="keys">Jump</span>tap to jump</li>
+                        <li><span class="keys">Interact</span>examine a place</li>
+                        <li><span class="keys">Rest</span>hold, time speeds up</li>
+                    </ul>
+                </div>
+            </div>
+            <button id="pause-tutorial-btn" class="pause-btn"><span class="pause-btn-icon">↺</span>Replay tutorial</button>
             <button id="pause-settings-btn" class="pause-btn"><span class="pause-btn-icon">⚙</span>Settings</button>
             <div id="pause-settings" class="pause-settings">
                 <div class="tabs-header" id="pause-settings-tabs">

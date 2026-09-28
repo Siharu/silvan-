@@ -1,4 +1,9 @@
 import { state } from './state.js';
+import { shouldShowTouchControls } from './utils.js';
+import { triggerJump } from './player-controller.js';
+import { renderObjectives } from './journal.js';
+import { startTutorial } from './tutorial.js';
+import { POIS } from '../environment/pois.js';
 
 // Split out of what used to be one setupInput() so the Remember click can
 // kick off the loading-screen/init() flow (main.js's startGame()) without
@@ -16,6 +21,15 @@ const POINTER_LOCK_FALLBACK_MS = 1000;
 
 export function wireTitleScreen(onStart) {
     document.getElementById('title-remember-btn').addEventListener('click', () => {
+        // Phase 6 #36: pointer lock is a desktop mouse-look concept — on
+        // touch devices requestPointerLock() either no-ops or is refused
+        // outright, and 'pointerlockchange' never fires true. Skipping it
+        // entirely for touch avoids relying on the fallback timer below
+        // (which only ever hid #ui-layer, never actually entered gameplay
+        // state — see showGameplayUI() for the touch-driven equivalent,
+        // called directly from main.js once init() finishes on touch).
+        if (shouldShowTouchControls()) { onStart(); return; }
+
         document.body.requestPointerLock();
         onStart();
 
@@ -48,6 +62,7 @@ export function enterGame() {
     if (!state.windAudio.playing()) state.windAudio.play();
     if (!state.waterAudio.playing()) state.waterAudio.play();
     if (!state.rainAudio.playing()) state.rainAudio.play();
+    if (state.fireAudio && !state.fireAudio.playing()) state.fireAudio.play();
 }
 
 // Called immediately (main.js, on DOMContentLoaded) rather than waiting for
@@ -59,49 +74,86 @@ export function enterGame() {
 // mousemove are likewise safe to wire this early since they only read
 // state.player (a plain object that already exists in state.js) and
 // state.camera, guarded below for the brief window before init() creates it.
-export function setupInput() {
+// Phase 6 #36: the actual "enter gameplay" / "open pause" transitions,
+// pulled out of the pointerlockchange handler below so touch-controls.js
+// can trigger the exact same UI state without a real OS pointer lock
+// (which touch devices don't have/need — look is a drag gesture there,
+// not a locked mouse cursor).
+export function showGameplayUI() {
     const ui = document.getElementById('ui-layer');
     const hud = document.getElementById('hud-layer');
     const cross = document.getElementById('crosshair');
+    const pauseLayer = document.getElementById('pause-layer');
+    state.isPlaying = true; ui.classList.add('hidden'); hud.classList.remove('hidden');
+    // Touch has no mouse reticle to aim with — interaction is the dedicated
+    // touch-interact-btn instead, so the crosshair would just be visual
+    // noise sitting over the joystick/action buttons.
+    if (shouldShowTouchControls()) cross.classList.add('hidden'); else cross.classList.remove('hidden');
+    pauseLayer.classList.remove('visible');
+    // Only true once startGame() has actually finished building the world
+    // and called enterGame() itself (see main.js) — without this guard,
+    // the very first lock (fired mid-loading-screen, before
+    // state.dayAmbientAudio etc. exist yet) would try to resume Howl
+    // instances that haven't been created.
+    if (state.hasStarted) enterGame();
+}
+
+export function pauseGame() {
+    const hud = document.getElementById('hud-layer');
+    const cross = document.getElementById('crosshair');
+    const pauseLayer = document.getElementById('pause-layer');
+    state.isPlaying = false; hud.classList.add('hidden'); cross.classList.add('hidden');
+    // Release held inputs so nothing (sprint, a joystick direction) stays stuck while paused.
+    for (const k in state.keys) state.keys[k] = false;
+    renderObjectives(POIS);
+    if (state.dayAmbientAudio) state.dayAmbientAudio.pause();
+    if (state.nightAmbientAudio) state.nightAmbientAudio.pause();
+    if (state.windAudio) state.windAudio.pause();
+    if (state.waterAudio) state.waterAudio.pause();
+    if (state.rainAudio) state.rainAudio.pause();
+    if (state.fireAudio) state.fireAudio.pause();
+    // Losing pointer lock mid-game (ESC, or the browser silently dropping
+    // it) used to always fall through to re-showing the full title screen
+    // — meaning "pause" and "quit" looked identical, and worse, the
+    // Remember button's listener is { once: true } (see wireTitleScreen
+    // below) so it had already been consumed and clicking Remember again
+    // did nothing at all. Now: mid-game loss shows the dedicated pause
+    // overlay instead; the title screen only reappears via the real
+    // Quit-to-Title path (a full reload — see wirePauseMenu below).
+    if (state.hasStarted) {
+        pauseLayer.classList.add('visible');
+    } else {
+        document.getElementById('ui-layer').classList.remove('hidden');
+    }
+}
+
+export function setupInput() {
+    // Tab hidden / app backgrounded: pause instead of letting the world run unattended.
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && state.isPlaying) pauseGame();
+    });
+
     const pauseLayer = document.getElementById('pause-layer');
 
     document.addEventListener('pointerlockchange', () => {
         state.isLocked = document.pointerLockElement === document.body;
         if (state.isLocked) {
-            state.isPlaying = true; ui.classList.add('hidden'); hud.classList.remove('hidden'); cross.classList.remove('hidden');
-            pauseLayer.classList.remove('visible');
-            // Only true once startGame() has actually finished building the
-            // world and called enterGame() itself (see main.js) — without
-            // this guard, the very first lock (fired mid-loading-screen,
-            // before state.dayAmbientAudio etc. exist yet) would try to
-            // resume Howl instances that haven't been created.
-            if (state.hasStarted) enterGame();
+            showGameplayUI();
         } else {
-            state.isPlaying = false; hud.classList.add('hidden'); cross.classList.add('hidden');
-            if (state.dayAmbientAudio) state.dayAmbientAudio.pause();
-            if (state.nightAmbientAudio) state.nightAmbientAudio.pause();
-            if (state.windAudio) state.windAudio.pause();
-            if (state.waterAudio) state.waterAudio.pause();
-            if (state.rainAudio) state.rainAudio.pause();
-            // Losing pointer lock mid-game (ESC, or the browser silently
-            // dropping it) used to always fall through to re-showing the
-            // full title screen — meaning "pause" and "quit" looked
-            // identical, and worse, the Remember button's listener is
-            // { once: true } (see wireTitleScreen below) so it had already
-            // been consumed and clicking Remember again did nothing at all.
-            // Now: mid-game loss shows the dedicated pause overlay instead;
-            // the title screen only reappears via the real Quit-to-Title
-            // path (a full reload — see wirePauseMenu below).
-            if (state.hasStarted) {
-                pauseLayer.classList.add('visible');
-            } else {
-                ui.classList.remove('hidden');
-            }
+            pauseGame();
         }
     });
 
     window.addEventListener('keydown', (e) => {
         if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = true;
+        // Phase 6 #37: Space/Shift don't fit the generic KeyX->x mapping
+        // above (Space's own code already lowercases to "space" so it's
+        // harmless there, but jump is edge-triggered rather than a held
+        // state — see player-controller.js's triggerJump — and Shift's
+        // code is "ShiftLeft"/"ShiftRight", neither of which matches a
+        // state.keys entry at all without this explicit handling).
+        if (e.code === 'Space' && !e.repeat) triggerJump();
+        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.keys.shift = true;
         // Pointer-lock loss already opens the pause overlay (see above) —
         // that covers the *first* Escape press. The browser won't fire
         // another 'pointerlockchange' for a second Escape press since the
@@ -111,16 +163,28 @@ export function setupInput() {
             document.body.requestPointerLock();
         }
     });
-    window.addEventListener('keyup', (e) => { if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false; });
+    window.addEventListener('keyup', (e) => {
+        if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false;
+        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.keys.shift = false;
+    });
     document.addEventListener('mousemove', (e) => {
         if (!state.isLocked || !state.camera) return; // !state.camera: pointer lock can grant (and fire mousemove) while init() is still building the scene, during the loading screen
-        const scale = 0.0018 * (state.sensitivity || 1);
-        const invert = state.invertY ? -1 : 1;
-        state.player.rotation.y -= e.movementX * scale;
-        state.player.rotation.x -= e.movementY * scale * invert;
-        state.player.rotation.x = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, state.player.rotation.x));
-        state.camera.quaternion.setFromEuler(state.player.rotation);
+        applyLookDelta(e.movementX, e.movementY);
     });
+}
+
+// Phase 6 #36: pulled out of the mousemove handler above so
+// touch-controls.js's look-drag zone can apply the exact same rotation
+// math from touchmove deltas instead of duplicating the scale/invert/
+// clamp logic.
+export function applyLookDelta(dx, dy) {
+    if (!state.camera) return;
+    const scale = 0.0018 * (state.sensitivity || 1);
+    const invert = state.invertY ? -1 : 1;
+    state.player.rotation.y -= dx * scale;
+    state.player.rotation.x -= dy * scale * invert;
+    state.player.rotation.x = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, state.player.rotation.x));
+    state.camera.quaternion.setFromEuler(state.player.rotation);
 }
 
 // Wires the pause overlay's own buttons: Resume (re-requests pointer lock;
@@ -139,22 +203,33 @@ export function wirePauseMenu() {
     const pauseLayer = document.getElementById('pause-layer');
     const resumeBtn = document.getElementById('pause-resume-btn');
     const quitBtn = document.getElementById('pause-quit-btn');
-    if (resumeBtn) resumeBtn.addEventListener('click', () => document.body.requestPointerLock());
+    if (resumeBtn) resumeBtn.addEventListener('click', () => {
+        // Phase 6 #36: touch never had pointer lock to begin with, so
+        // re-requesting it here would just silently do nothing and leave
+        // the pause overlay stuck up. Drive the same UI transition
+        // directly instead — mirrors wireTitleScreen's touch branch above.
+        if (shouldShowTouchControls()) showGameplayUI();
+        else document.body.requestPointerLock();
+    });
     if (quitBtn) quitBtn.addEventListener('click', () => location.reload());
 
-    function wireAccordion(btnId, panelId, otherPanelId) {
+    // Accordion: opening one panel closes the others.
+    const PANELS = ['pause-objectives', 'pause-controls', 'pause-settings'];
+    function wireAccordion(btnId, panelId) {
         const btn = document.getElementById(btnId);
         const panel = document.getElementById(panelId);
-        const other = document.getElementById(otherPanelId);
         if (!btn || !panel) return;
         btn.addEventListener('click', () => {
             const opening = !panel.classList.contains('open');
+            PANELS.forEach((id) => { const p = document.getElementById(id); if (p) p.classList.remove('open'); });
             panel.classList.toggle('open', opening);
-            if (opening && other) other.classList.remove('open');
         });
     }
-    wireAccordion('pause-objectives-btn', 'pause-objectives', 'pause-settings');
-    wireAccordion('pause-settings-btn', 'pause-settings', 'pause-objectives');
+    wireAccordion('pause-objectives-btn', 'pause-objectives');
+    wireAccordion('pause-controls-btn', 'pause-controls');
+    wireAccordion('pause-settings-btn', 'pause-settings');
+    const tutBtn = document.getElementById('pause-tutorial-btn');
+    if (tutBtn) tutBtn.addEventListener('click', () => { startTutorial(true); if (resumeBtn) resumeBtn.click(); });
 }
 
 // Wires the title screen's Settings/Credits menu buttons to the same

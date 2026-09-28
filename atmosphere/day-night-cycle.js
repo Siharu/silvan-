@@ -4,10 +4,22 @@ import { getElevation } from '../core/utils.js';
 
 // Cached once instead of getElementById() every frame (Phase 3 #20) — these
 // three never change identity for the life of the page.
-let weatherEl = null, dayEl = null, timeEl = null;
+let weatherEl = null, weatherTextEl = null, dayEl = null, timeEl = null;
+
+// Phase 7 #40: hoisted out of updateAtmosphere() — see the note there.
+const SKY_DAY = new THREE.Color(0x5a6a7a), SKY_NIGHT = new THREE.Color(0x0a0f1c);
+const HOR_DAY = new THREE.Color(0x8a9aa8), HOR_SUNSET = new THREE.Color(0xa86c42), HOR_NIGHT = new THREE.Color(0x040810);
+const CLOUD_TWI_A = new THREE.Color(0x222233), CLOUD_TWI_B = new THREE.Color(0x887777), CLOUD_TWI_C = new THREE.Color(0xa0a5ab);
+const FOG_DAY = new THREE.Color(0x607080), CLOUD_DAY = new THREE.Color(0x9098a0);
+const FOG_NIGHT = new THREE.Color(0x040810), CLOUD_NIGHT = new THREE.Color(0x111125);
+const RAIN_FOG = new THREE.Color(0x2a3038), RAIN_TOP = new THREE.Color(0x3a4048), RAIN_CLOUD = new THREE.Color(0x2a2a2a);
+const RAIN_COL_DAY = new THREE.Color(0xe6f0fa), RAIN_COL_NIGHT = new THREE.Color(0x334466);
+const _top = new THREE.Color(), _bot = new THREE.Color(), _fog = new THREE.Color(), _cloud = new THREE.Color();
+const _camDir = new THREE.Vector3();
 
 export function updateAtmosphere(delta) {
     if (!weatherEl) weatherEl = document.getElementById('weather-display');
+    if (!weatherTextEl) weatherTextEl = document.getElementById('weather-text');
     if (!dayEl) dayEl = document.getElementById('day-display');
     if (!timeEl) timeEl = document.getElementById('time-display');
 
@@ -22,14 +34,20 @@ export function updateAtmosphere(delta) {
     // Smoothly interpolate rain intensity
     state.currentRainIntensity += (state.targetRainIntensity - state.currentRainIntensity) * 0.0005 * delta;
     
-    const weatherText = state.currentRainIntensity > 0.7 ? "HEAVY RAIN" : (state.currentRainIntensity > 0.15 ? "LIGHT RAIN" : "CLEAR");
-    if (weatherEl) weatherEl.textContent = `WEATHER: ${weatherText}`;
+    const isNight = state.gameTime < 0.25 || state.gameTime > 0.79;
+    const weatherKey = state.currentRainIntensity > 0.7 ? 'heavy' : (state.currentRainIntensity > 0.15 ? 'light' : (isNight ? 'clear-night' : 'clear'));
+    if (weatherEl && weatherEl.dataset.weather !== weatherKey) {
+        weatherEl.dataset.weather = weatherKey;
+        const label = { heavy: 'heavy rain', light: 'light rain', clear: 'clear skies', 'clear-night': 'clear night' }[weatherKey];
+        weatherTextEl.textContent = label;
+    }
 
     state.gameTime += (delta / DAY_LENGTH_MS) * state.timeMultiplier;
-    if (state.gameTime >= 1.0) { state.gameTime -= 1.0; state.daysPassed++; if (dayEl) dayEl.textContent = `DAY: ${state.daysPassed}`; }
-    const hrs = Math.floor(state.gameTime * 24).toString().padStart(2, '0');
+    if (state.gameTime >= 1.0) { state.gameTime -= 1.0; state.daysPassed++; if (dayEl) dayEl.textContent = `Day ${state.daysPassed}`; }
+    const h24 = Math.floor(state.gameTime * 24);
+    const hrs = (h24 % 12) === 0 ? 12 : h24 % 12;
     const mins = Math.floor((state.gameTime * 24 * 60) % 60).toString().padStart(2, '0');
-    if (timeEl) timeEl.textContent = `TIME: ${hrs}:${mins}`;
+    if (timeEl) timeEl.textContent = `${hrs}:${mins} ${h24 < 12 ? 'am' : 'pm'}`;
 
     const angle = state.gameTime * Math.PI * 2 - Math.PI / 2;
     const sy = Math.sin(angle); const sx = Math.cos(angle);
@@ -50,28 +68,30 @@ export function updateAtmosphere(delta) {
         state.hemiLight.intensity = THREE.MathUtils.lerp(0.18, 1.15, dayBlend);
     }
 
-    const skyDay = new THREE.Color(0x5a6a7a); const skyNight = new THREE.Color(0x0a0f1c);
-    const horDay = new THREE.Color(0x8a9aa8); const horSunset = new THREE.Color(0xa86c42); const horNight = new THREE.Color(0x040810);
-    let topC, botC, fogC, cloudC;
+    // Phase 7 #40: palette constants and working colors live at module
+    // scope and are mutated in place — this used to allocate ~15 new
+    // THREE.Color objects every frame. Working colors are always .copy()'d
+    // from a constant before being lerped, so the constants never get mutated.
+    const topC = _top, botC = _bot, fogC = _fog, cloudC = _cloud;
     if (sy > -0.2 && sy < 0.2) {
         const t = (sy + 0.2) / 0.4;
-        topC = skyNight.clone().lerp(skyDay, t);
-        botC = horNight.clone().lerp(horSunset, t<0.5?t*2:1).lerp(horDay, t>0.5?(t-0.5)*2:0);
-        fogC = horNight.clone().lerp(horSunset, t);
-        cloudC = new THREE.Color(0x222233).lerp(new THREE.Color(0x887777), t<0.5?t*2:1).lerp(new THREE.Color(0xa0a5ab), t>0.5?(t-0.5)*2:0);
+        topC.copy(SKY_NIGHT).lerp(SKY_DAY, t);
+        botC.copy(HOR_NIGHT).lerp(HOR_SUNSET, t<0.5?t*2:1).lerp(HOR_DAY, t>0.5?(t-0.5)*2:0);
+        fogC.copy(HOR_NIGHT).lerp(HOR_SUNSET, t);
+        cloudC.copy(CLOUD_TWI_A).lerp(CLOUD_TWI_B, t<0.5?t*2:1).lerp(CLOUD_TWI_C, t>0.5?(t-0.5)*2:0);
     } else if (sy >= 0.2) {
-        topC = skyDay; botC = horDay; fogC = new THREE.Color(0x607080); cloudC = new THREE.Color(0x9098a0);
+        topC.copy(SKY_DAY); botC.copy(HOR_DAY); fogC.copy(FOG_DAY); cloudC.copy(CLOUD_DAY);
     } else {
-        topC = skyNight; botC = horNight; fogC = new THREE.Color(0x040810); cloudC = new THREE.Color(0x111125);
+        topC.copy(SKY_NIGHT); botC.copy(HOR_NIGHT); fogC.copy(FOG_NIGHT); cloudC.copy(CLOUD_NIGHT);
     }
     
     // Darken the atmosphere when it's raining
-    fogC.lerp(new THREE.Color(0x2a3038), state.currentRainIntensity * 0.6);
-    topC.lerp(new THREE.Color(0x3a4048), state.currentRainIntensity * 0.7);
+    fogC.lerp(RAIN_FOG, state.currentRainIntensity * 0.6);
+    topC.lerp(RAIN_TOP, state.currentRainIntensity * 0.7);
     
     state.scene.fog.color.copy(fogC); state.skyMat.uniforms.topColor.value.copy(topC); state.skyMat.uniforms.bottomColor.value.copy(botC);
     if(state.cloudMat) {
-        cloudC.lerp(new THREE.Color(0x2a2a2a), state.currentRainIntensity * 0.8);
+        cloudC.lerp(RAIN_CLOUD, state.currentRainIntensity * 0.8);
         state.cloudMat.uniforms.cloudColor.value.copy(cloudC);
     }
 
@@ -90,13 +110,13 @@ export function updateAtmosphere(delta) {
         // Squash the sprite UV and shrink point size a bit when looking
         // more up/down, so streaks don't read as flat dots from directly
         // overhead/below.
-        const camDir = new THREE.Vector3();
+        const camDir = _camDir;
         state.camera.getWorldDirection(camDir);
         const verticalFacing = Math.abs(camDir.y);
         u.uUvSquash.value = THREE.MathUtils.lerp(1, 0.05, verticalFacing);
         u.uSize.value = 5 * THREE.MathUtils.lerp(1, 0.7, verticalFacing) * (0.5 + 0.5 * u.uUvSquash.value);
 
-        u.uColor.value.set(new THREE.Color(0xe6f0fa).lerp(new THREE.Color(0x334466), 1 - dayBlend));
+        u.uColor.value.copy(RAIN_COL_DAY).lerp(RAIN_COL_NIGHT, 1 - dayBlend);
         u.uOpacity.value = 0.6 * Math.min(1.0, state.currentRainIntensity * 2.0);
 
         const activeCount = Math.max(0, Math.floor(45000 * state.currentRainIntensity));

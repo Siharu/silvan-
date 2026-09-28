@@ -26,7 +26,10 @@ export function createChrysalis(x, y, z) {
     bracket.position.set(3, 2, 0);
     group.add(bracket);
 
-    const securityLight = new THREE.PointLight(0xff0000, 2.5, 15);
+    // Phase 4 #32: was 0xff0000 (alarm red) — clashed with Map 1's cozy-first
+    // pacing. Warmed to a work-light amber; the bunker still reads as
+    // "man-made and lit" without the horror cue.
+    const securityLight = new THREE.PointLight(0xffaa33, 2.5, 15);
     securityLight.position.set(3, 2.1, 0);
     group.add(securityLight);
 

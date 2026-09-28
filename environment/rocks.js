@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
+import { state, WATER_LEVEL } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
 
 export function createRocks() {
@@ -31,6 +31,9 @@ export function createRocks() {
             const rx = cx + (Math.random() - 0.5) * 12;
             const rz = cz + (Math.random() - 0.5) * 12;
             let ry = getElevation(rx, rz);
+            // Phase 7 #39: elevation floor, matching forest.js/flowers.js — skip
+            // rocks that would spawn on seabed under the water surface.
+            if (ry < WATER_LEVEL) continue;
             const s = 1.0 + Math.random() * 4.5;
             dummy.position.set(rx, ry - s*0.2, rz);
             dummy.rotation.set(0, Math.random()*Math.PI*2, 0);
@@ -40,6 +43,7 @@ export function createRocks() {
             state.colliders.push({ x: rx, z: rz, r: s * 0.75 });
         }
     }
+    rockMesh.count = idx; // only draw instances actually placed (unset ones sat at the origin)
     state.scene.add(rockMesh);
 }
 

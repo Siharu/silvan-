@@ -10,8 +10,12 @@ export function createGreeniteMouth(x, y, z) {
 
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x1b2821, flatShading: true, roughness: 1 });
     const voidMat = new THREE.MeshBasicMaterial({ color: 0x050a06 });
+    // Phase 4 #32: was saturated neon green (0x22c55e/0x15803d) — sci-fi
+    // coded, clashed with Map 1's cozy-first pacing. Warmed to a gold
+    // crystal glow so the spikes still read as "mineral and lit" without
+    // the toxic/alien cue.
     const crystalMat = new THREE.MeshStandardMaterial({
-        color: 0x22c55e, emissive: 0x15803d, roughness: 0.3, metalness: 0.6
+        color: 0xd4a017, emissive: 0x8a5a12, roughness: 0.3, metalness: 0.6
     });
 
     const leftFang = new THREE.Mesh(new THREE.ConeGeometry(3.5, 9, 5), rockMat);
@@ -46,7 +50,7 @@ export function createGreeniteMouth(x, y, z) {
         group.add(spike);
     }
 
-    const light = new THREE.PointLight(0x22c55e, 3.5, 20);
+    const light = new THREE.PointLight(0xd4a017, 3.5, 20);
     light.position.set(0, 2.5, 0);
     group.add(light);
 

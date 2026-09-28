@@ -14,18 +14,21 @@
 // Unlike the other ported POIs, this one has real per-frame animation
 // (the beacon's throb and the shack light's flicker are the whole point
 // of the "blinks continuously into the fog" description) — see
-// updateRadioTower(), wired from pois.js/main.js's animate loop.
+// group.userData.update (per-instance closure), picked up by pois.js.
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
-let beaconMat = null;
-let beaconLight = null;
-let cabinLight = null;
-let cabinBulbMat = null;
-let elapsed = 0;
+
 
 export function createRadioTower(x, y, z) {
     const group = new THREE.Group();
+    // Phase 7 #41: animation state is per-instance (closure), not module-level,
+    // so building this POI type more than once can't share/clobber state.
+    let beaconMat = null;
+    let beaconLight = null;
+    let cabinLight = null;
+    let cabinBulbMat = null;
+    let elapsed = 0;
 
     const matBase = new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: 0.9, metalness: 0.8 });
     const matRust = new THREE.MeshStandardMaterial({ color: 0x5a2319, roughness: 1.0, metalness: 0.2 });
@@ -282,38 +285,39 @@ export function createRadioTower(x, y, z) {
 
     group.position.set(x, y, z);
     state.scene.add(group);
+    // Per-frame beacon throb + shack-light flicker. delta is in seconds.
+    // Mirrors the mockup's animate() logic; harmless to call every frame even
+    // before createRadioTower() has run (module-level refs stay null until
+    // then), matching how pois.js currently skips build:null entries.
+    group.userData.update = (delta) => {
+        if (!beaconMat || !beaconLight) return;
+        elapsed += delta;
+
+        const pulseRaw = Math.sin(elapsed * 2.5);
+        const pulseIntensity = Math.pow(Math.max(0, pulseRaw), 4);
+        beaconMat.emissiveIntensity = pulseIntensity * 4.0 + 0.1;
+        beaconLight.intensity = pulseIntensity * 5.0;
+
+        if (cabinLight && cabinBulbMat) {
+            // Phase 4 #28: was two independent Math.random() calls in an
+            // if/else-if, so the "> 0.97" branch only ever got evaluated on the
+            // 85% of frames the first roll missed — actual odds were ~0.15 dim /
+            // ~0.0255 dark, not the 0.15/0.03 the two literals read as. Also
+            // rolled every render frame with no delta scaling, so flicker rate
+            // changed with framerate. One roll, one delta-scaled comparison.
+            const flickerRoll = Math.random();
+            const darkChance = 1 - Math.pow(1 - 0.03, delta * 60);
+            const dimChance = 1 - Math.pow(1 - 0.12, delta * 60);
+            if (flickerRoll < darkChance) {
+                cabinLight.intensity = 0;
+                cabinBulbMat.emissiveIntensity = 0;
+            } else if (flickerRoll < darkChance + dimChance) {
+                cabinLight.intensity = Math.random() * 0.6 + 0.1;
+                cabinBulbMat.emissiveIntensity = cabinLight.intensity;
+            }
+        }
+    };
+
     return group;
 }
 
-// Per-frame beacon throb + shack-light flicker. delta is in seconds.
-// Mirrors the mockup's animate() logic; harmless to call every frame even
-// before createRadioTower() has run (module-level refs stay null until
-// then), matching how pois.js currently skips build:null entries.
-export function updateRadioTower(delta) {
-    if (!beaconMat || !beaconLight) return;
-    elapsed += delta;
-
-    const pulseRaw = Math.sin(elapsed * 2.5);
-    const pulseIntensity = Math.pow(Math.max(0, pulseRaw), 4);
-    beaconMat.emissiveIntensity = pulseIntensity * 4.0 + 0.1;
-    beaconLight.intensity = pulseIntensity * 5.0;
-
-    if (cabinLight && cabinBulbMat) {
-        // Phase 4 #28: was two independent Math.random() calls in an
-        // if/else-if, so the "> 0.97" branch only ever got evaluated on the
-        // 85% of frames the first roll missed — actual odds were ~0.15 dim /
-        // ~0.0255 dark, not the 0.15/0.03 the two literals read as. Also
-        // rolled every render frame with no delta scaling, so flicker rate
-        // changed with framerate. One roll, one delta-scaled comparison.
-        const flickerRoll = Math.random();
-        const darkChance = 1 - Math.pow(1 - 0.03, delta * 60);
-        const dimChance = 1 - Math.pow(1 - 0.12, delta * 60);
-        if (flickerRoll < darkChance) {
-            cabinLight.intensity = 0;
-            cabinBulbMat.emissiveIntensity = 0;
-        } else if (flickerRoll < darkChance + dimChance) {
-            cabinLight.intensity = Math.random() * 0.6 + 0.1;
-            cabinBulbMat.emissiveIntensity = cabinLight.intensity;
-        }
-    }
-}

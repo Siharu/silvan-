@@ -90,6 +90,14 @@ export function getElevation(x, z) {
     return Math.max(-5, elevation);
 }
 
+// Phase 6 #36: shared touch-capability check, used by both input.js and
+// touch-controls.js — lives here (not either of those two) to avoid a
+// circular import between them, since utils.js already sits underneath
+// both in the dependency graph.
+export function shouldShowTouchControls() {
+    return ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+}
+
 export function createProceduralTextures() {
     const leafCanvas = document.createElement('canvas');
     leafCanvas.width = 64; leafCanvas.height = 64;

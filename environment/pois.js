@@ -4,13 +4,15 @@
 // not a prop, built into environment/terrain.js's crater + magma blend.
 import { state, WORLD_SIZE } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
+import { markDiscovered, showDiscoveryToast } from '../core/journal.js';
+import { playBlip } from '../core/blip.js';
 import { createRuinedCabin } from './poi-ruined-cabin.js';
 import { createChrysalis } from './poi-chrysalis.js';
 import { createObsidianWing } from './poi-obsidian-wing.js';
 import { createGreeniteMouth } from './poi-greenite-mouth.js';
 import { createBrokenShell } from './poi-broken-shell.js';
-import { createRadioTower, updateRadioTower } from './poi-radio-tower.js';
-import { createHowlingMaw, updateHowlingMaw } from './poi-howling-maw.js';
+import { createRadioTower } from './poi-radio-tower.js';
+import { createHowlingMaw } from './poi-howling-maw.js';
 import { createWarmPaw, updateWarmPaw } from './poi-warm-paw.js';
 
 // the_hearth_isometric_map's mockup used a 320-unit map; this project's
@@ -21,7 +23,7 @@ const SCALE = WORLD_SIZE / 320;
 export const POIS = [
     { id: 'radio_tower', name: 'Radio Tower', x: 45 * SCALE, z: -60 * SCALE, radius: 10,
       desc: "A skeletal steel spire perched on an eastern ridge. Its rusty red beacon blinks continuously into the fog.",
-      build: createRadioTower, update: updateRadioTower },
+      build: createRadioTower },
     { id: 'warm_paw', name: 'The Warm Paw', x: -70 * SCALE, z: -25 * SCALE, radius: 12,
       desc: "Fresh embers glow in a ring of blackened stones. Animal spirits rest here to regain their warmth before the long crossing.",
       build: createWarmPaw, update: updateWarmPaw },
@@ -30,7 +32,7 @@ export const POIS = [
       build: createRuinedCabin },
     { id: 'howling_maw', name: 'The Howling Maw', x: -35 * SCALE, z: 45 * SCALE, radius: 10,
       desc: "A jagged jaw-like fissure torn into the steep granite cliff. Freezing air cascades out of the darkness.",
-      build: createHowlingMaw, update: updateHowlingMaw },
+      build: createHowlingMaw },
     { id: 'serpents_coil', name: "The Serpent's Coil", x: 0, z: -5 * SCALE, radius: 20,
       desc: "The catastrophic central crater. A terrifying threshold where the earth pulses with crimson magma for only the bravest spirits.",
       build: null }, // already terrain — see environment/terrain.js's crater + magma blend, not a prop to place here
@@ -41,10 +43,10 @@ export const POIS = [
       desc: "A concrete burrow half-swallowed by the earth. Spirits of the small and winged shelter safely behind its heavy doors.",
       build: createChrysalis },
     { id: 'obsidian_wing', name: 'The Obsidian Wing', x: -100 * SCALE, z: -15 * SCALE, radius: 8,
-      desc: "A perfectly smooth, black stone feather jutting from the earth. Purple bioluminescence guides the flying ones home.",
+      desc: "A perfectly smooth, black stone feather jutting from the earth. A warm copper glow guides the flying ones home.",
       build: createObsidianWing },
     { id: 'greenite_mouth', name: 'Greenite Mouth', x: 30 * SCALE, z: 120 * SCALE, radius: 8,
-      desc: "A subterranean cavern throat encrusted with glowing greenite crystal clusters. The air radiates with strange, radioactive soul-energy.",
+      desc: "A subterranean cavern throat encrusted with glowing greenite crystal clusters. The air hums with strange, golden soul-energy.",
       build: createGreeniteMouth },
 ];
 
@@ -73,6 +75,10 @@ export async function createPOIs() {
             // .visible doesn't interfere with each POI's own update() —
             // those still animate .intensity on a light that's just not
             // being drawn.
+            // Phase 7 #41: per-instance update hook — POIs whose animation state
+            // lives in a closure attach it to their group's userData instead of
+            // exporting a module-level update function.
+            if (result && result.userData && typeof result.userData.update === 'function') poi.update = result.userData.update;
             poi.lights = [];
             if (result && typeof result.traverse === 'function') {
                 result.traverse((obj) => { if (obj.isPointLight) poi.lights.push(obj); });
@@ -114,8 +120,10 @@ export function updatePOIs(delta) {
 
 let ePressedLastFrame = false;
 let captionTimer = 0;
+let typing = false, typeFull = '', typeProgress = 0, typeShown = 0, typeSeed = 0, captionOwner = null, lastPromptName = null;
+const TYPE_CHARS_PER_SEC = 42;
 const INTERACT_RANGE_MARGIN = 6; // extra distance beyond each POI's own radius before the prompt appears
-const CAPTION_SECONDS = 6;
+const CAPTION_SECONDS = 5;
 
 // Cached once instead of getElementById() x4 every frame (Phase 3 #20).
 let promptEl = null, captionEl = null, captionSpeakerEl = null, captionTextEl = null;
@@ -146,22 +154,50 @@ export function updatePOIInteraction(delta) {
         }
     }
 
-    if (captionTimer > 0) {
+    // Typewriter reveal: text types out, E while typing completes it, E
+    // once complete (or the timer running out) closes the box.
+    if (typing) {
+        typeProgress += delta * TYPE_CHARS_PER_SEC;
+        const shown = Math.min(typeFull.length, Math.floor(typeProgress));
+        if (shown !== typeShown) {
+            if (shown % 2 === 0 && typeFull[shown - 1] !== ' ') playBlip(typeSeed);
+            typeShown = shown;
+            captionText.textContent = typeFull.slice(0, shown);
+        }
+        if (shown >= typeFull.length) { typing = false; captionText.classList.remove('typing'); captionTimer = CAPTION_SECONDS; }
+    } else if (captionTimer > 0) {
         captionTimer -= delta;
         if (captionTimer <= 0) caption.classList.remove('visible');
     }
 
+    const pressed = state.keys.e && !ePressedLastFrame;
     if (nearest) {
-        prompt.textContent = `[E] ${nearest.name}`;
+        if (lastPromptName !== nearest.name) {
+            prompt.innerHTML = `<span class="keycap">E</span>${nearest.name}`;
+            lastPromptName = nearest.name;
+        }
         prompt.classList.add('visible');
-        if (state.keys.e && !ePressedLastFrame) {
-            captionSpeaker.textContent = nearest.name;
-            captionText.textContent = nearest.desc;
-            caption.classList.add('visible');
-            captionTimer = CAPTION_SECONDS;
+        if (pressed) {
+            if (typing) {
+                typeProgress = typeFull.length; // finish the line instantly
+            } else if (caption.classList.contains('visible') && captionOwner === nearest.id) {
+                caption.classList.remove('visible'); captionTimer = 0;
+            } else {
+                captionOwner = nearest.id;
+                state.examineCount = (state.examineCount || 0) + 1; // tutorial detects the first examine from this
+                captionSpeaker.textContent = nearest.name;
+                typeFull = nearest.desc; typeProgress = 0; typeShown = 0; typing = true;
+                typeSeed = nearest.name.length;
+                captionText.textContent = '';
+                captionText.classList.add('typing');
+                caption.classList.add('visible');
+                if (markDiscovered(nearest)) showDiscoveryToast(nearest, POIS.length);
+            }
         }
     } else {
+        lastPromptName = null;
         prompt.classList.remove('visible');
+        if (typing || caption.classList.contains('visible')) { typing = false; captionText.classList.remove('typing'); caption.classList.remove('visible'); captionTimer = 0; }
     }
     ePressedLastFrame = state.keys.e;
 }

@@ -7,9 +7,11 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 // + sky tint + a sun/moon glint in the shader below instead.
 
 import { state } from './state.js';
-import { getElevation, createProceduralTextures } from './utils.js';
-import { initAudio } from './audio.js';
-import { setupInput, onWindowResize, wireTitleScreen, wireTitleMenu, wirePauseMenu, enterGame } from './input.js';
+import { getElevation, createProceduralTextures, shouldShowTouchControls } from './utils.js';
+import { initAudio, updateAudioListener } from './audio.js';
+import { setupInput, onWindowResize, wireTitleScreen, wireTitleMenu, wirePauseMenu, enterGame, showGameplayUI } from './input.js';
+import { initTouchControls } from './touch-controls.js';
+import { startTutorial, updateTutorial } from './tutorial.js';
 import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCounter } from './settings.js';
 import { updatePlayer } from './player-controller.js';
 import { updateAtmosphere } from '../atmosphere/day-night-cycle.js';
@@ -211,6 +213,11 @@ async function startGame() {
     // handler for why losing pointer lock only opens the pause overlay
     // (rather than falling back to the title screen) once this is true.
     state.hasStarted = true;
+    startTutorial(); // no-op if already completed
+    // Phase 6 #36: touch never gets a real pointer lock, so the
+    // pointerlockchange handler that normally hides the title UI, shows
+    // the HUD and sets isPlaying never fires there. Enter gameplay directly.
+    if (shouldShowTouchControls()) showGameplayUI();
 }
 
 function animate(time) {
@@ -219,16 +226,20 @@ function animate(time) {
     // Phase 4 #26: world time/weather and POI animation (beacon throb, fire,
     // flicker) now freeze while paused, matching state.isPlaying's existing
     // use to gate POI prompts and ambient audio. updatePlayer already no-ops
-    // via isLocked; grass keeps animating off wall-clock time since it's
+    // via isPlaying; grass keeps animating off wall-clock time since it's
     // purely cosmetic and imperceptible while the pause menu covers it.
     if (state.isPlaying) {
         updateAtmosphere(delta);
         updatePOIs(delta / 1000);
+        updateTutorial(delta / 1000);
     }
     updatePlayer(delta / 1000);
     updateGrass(time / 1000);
     updatePOIInteraction(delta / 1000);
     updateFpsCounter(delta);
+    // Phase 5 #35: keep Howler's listener on the camera so Warm Paw's
+    // positional fire loop pans/attenuates as the player moves and looks.
+    updateAudioListener(state.camera);
     state.composer.render();
 }
 
@@ -242,4 +253,5 @@ window.addEventListener('DOMContentLoaded', () => {
     wireSettingsButtons();
     wireCameraAudioSettings();
     wirePauseMenu();
+    initTouchControls();
 });

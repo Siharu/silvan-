@@ -11,7 +11,10 @@ export function createObsidianWing(x, y, z) {
     const group = new THREE.Group();
 
     const obsidianMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.1, metalness: 0.9 });
-    const fragmentMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
+    // Phase 4 #32: was saturated neon purple (0xa855f7) — sci-fi coded,
+    // clashed with Map 1's cozy-first pacing. Warmed to a copper glow so
+    // the fragments still read as "ancient and lit" without the alien cue.
+    const fragmentMat = new THREE.MeshBasicMaterial({ color: 0xd98a3d });
 
     const pillar = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.5, 16, 6), obsidianMat);
     pillar.position.y = 7;
@@ -27,12 +30,12 @@ export function createObsidianWing(x, y, z) {
         frag.rotation.set(Math.random(), Math.random(), Math.random());
         group.add(frag);
 
-        const fragLight = new THREE.PointLight(0xa855f7, 0.6, 6);
+        const fragLight = new THREE.PointLight(0xd98a3d, 0.6, 6);
         fragLight.position.copy(frag.position);
         group.add(fragLight);
     }
 
-    const mainLight = new THREE.PointLight(0xa855f7, 3, 25);
+    const mainLight = new THREE.PointLight(0xd98a3d, 3, 25);
     mainLight.position.set(0, 8, 0);
     group.add(mainLight);
 

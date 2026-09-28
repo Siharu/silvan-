@@ -122,6 +122,7 @@ export function wireCameraAudioSettings() {
         s.addEventListener('input', () => {
             const fov = parseFloat(s.value);
             fovSliders.forEach((other) => { if (other && other !== s) other.value = fov; });
+            state.baseFov = fov;
             if (state.camera) { state.camera.fov = fov; state.camera.updateProjectionMatrix(); }
         });
     });

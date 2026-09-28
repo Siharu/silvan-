@@ -18,6 +18,7 @@ export function createRuinedCabin(x, y, z) {
         const plank = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.15, 6), woodMat);
         plank.position.set(px, 0.075, 0);
         plank.rotation.y = (Math.random() - 0.5) * 0.08;
+        plank.castShadow = true; plank.receiveShadow = true;
         group.add(plank);
     }
 
@@ -25,11 +26,13 @@ export function createRuinedCabin(x, y, z) {
         const wall = new THREE.Group();
         const post = new THREE.Mesh(new THREE.BoxGeometry(0.4, h, 0.4), postMat);
         post.position.y = h / 2;
+        post.castShadow = true; post.receiveShadow = true;
         wall.add(post);
         for (let wy = 0.3; wy < h; wy += 0.55) {
             if (Math.random() < 0.3) continue; // decayed gaps
             const log = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 2.5), woodMat);
             log.position.set(0, wy, 1.2);
+            log.castShadow = true; log.receiveShadow = true;
             wall.add(log);
         }
         wall.position.set(px, 0, pz);
@@ -51,6 +54,7 @@ export function createRuinedCabin(x, y, z) {
             course * 0.4 + 0.2,
             (Math.random() - 0.5) * 0.15
         );
+        brick.castShadow = true; brick.receiveShadow = true;
         chimney.add(brick);
     }
     chimney.position.set(2.8, 0, -2.2);

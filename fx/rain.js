@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { state, WATER_LEVEL } from '../core/state.js';
+import { state, WATER_LEVEL, WORLD_SIZE } from '../core/state.js';
 import { getElevation } from '../core/utils.js';
 
 export function createRainSystem() {

@@ -6,7 +6,7 @@
 // a bottomless tunnel void behind the mouth, and two icicle fields (roof
 // + ground). Lighting: an unsteady red "dread" glow from deep inside plus
 // a rarer, brighter reddish-violet "pulse" flash on a random 4-9s cycle,
-// both animated per-frame — see updateHowlingMaw().
+// both animated per-frame — see group.userData.update below.
 //
 // Dropped from the port, same reasoning as Radio Tower's ground/dust:
 // these belonged to the mockup's own standalone scene/atmosphere, not
@@ -18,22 +18,24 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
-let dreadLight = null;
-let pulseLight = null;
-let elapsed = 0;
-let isPulsing = false;
-let pulseDuration = 0;
-let pulseIntensityTarget = 0;
-let nextPulseTime = 4 + Math.random() * 5;
-// Phase 4 #28: dread-jitter state, re-rolled on a fixed real-time cadence
-// (see updateHowlingMaw) instead of once per render call, so the flicker's
-// perceived noisiness doesn't change with frame rate.
-let jitterValue = Math.random() * 0.3;
-let jitterTimer = 0;
 const JITTER_INTERVAL = 1 / 15; // re-roll ~15 times per second, any framerate
 
 export function createHowlingMaw(x, y, z) {
     const group = new THREE.Group();
+    // Phase 7 #41: animation state is per-instance (closure), not module-level,
+    // so building this POI type more than once can't share/clobber state.
+    let dreadLight = null;
+    let pulseLight = null;
+    let elapsed = 0;
+    let isPulsing = false;
+    let pulseDuration = 0;
+    let pulseIntensityTarget = 0;
+    let nextPulseTime = 4 + Math.random() * 5;
+    // Phase 4 #28: dread-jitter state, re-rolled on a fixed real-time cadence
+    // (see group.userData.update below) instead of once per render call, so the flicker's
+    // perceived noisiness doesn't change with frame rate.
+    let jitterValue = Math.random() * 0.3;
+    let jitterTimer = 0;
     const mawGroup = new THREE.Group();
     group.add(mawGroup);
 
@@ -189,54 +191,59 @@ export function createHowlingMaw(x, y, z) {
     groundIcicles.position.set(0, 0, -5);
     mawGroup.add(groundIcicles);
 
-    // Dreadful ominous glow from deep inside, animated in updateHowlingMaw()
-    dreadLight = new THREE.PointLight(0x880505, 0, 25);
+    // Phase 4 #32: was 0x880505 (blood red) — horror-coded, clashed with
+    // Map 1's cozy-first pacing. Warmed to a dim ember glow so the cave
+    // still reads as "deep and unlit" without the dread cue.
+    dreadLight = new THREE.PointLight(0xcc6a2e, 0, 25);
     dreadLight.position.set(0, 5, -12);
     mawGroup.add(dreadLight);
 
-    // Rarer reddish-violet pulse flash
-    pulseLight = new THREE.PointLight(0xb15eff, 0, 40);
+    // Was 0xb15eff (reddish-violet) — warmed to a gold flash to match.
+    pulseLight = new THREE.PointLight(0xffb347, 0, 40);
     pulseLight.position.set(0, 8, -5);
     group.add(pulseLight);
 
-    const interiorColdLight = new THREE.PointLight(0x3b628f, 1.2, 20);
+    // Was 0x3b628f (cold blue) — warmed to a dim amber-brown so the
+    // interior reads as "sheltered" rather than "cold and hostile".
+    const interiorColdLight = new THREE.PointLight(0x8a6a45, 1.2, 20);
     interiorColdLight.position.set(0, 6, -6);
     mawGroup.add(interiorColdLight);
 
     group.position.set(x, y, z);
     state.scene.add(group);
+    // Per-frame dread-light throb + periodic pulse flash. delta is in
+    // seconds. Mirrors the mockup's animate() logic 1:1.
+    group.userData.update = (delta) => {
+        if (!dreadLight || !pulseLight) return;
+        elapsed += delta;
+        const time = elapsed;
+
+        jitterTimer += delta;
+        if (jitterTimer >= JITTER_INTERVAL) {
+            jitterTimer -= JITTER_INTERVAL;
+            jitterValue = Math.random() * 0.3;
+        }
+        dreadLight.intensity = 1.2 + Math.sin(time * 2.5) * 0.8 + jitterValue;
+
+        if (!isPulsing && time > nextPulseTime) {
+            isPulsing = true;
+            pulseDuration = 1.2 + Math.random() * 1.5;
+            pulseIntensityTarget = 1.5 + Math.random() * 2.0;
+            nextPulseTime = time + pulseDuration + 4.0 + Math.random() * 5.0;
+        }
+
+        if (isPulsing) {
+            pulseDuration -= delta;
+            if (pulseDuration <= 0) {
+                isPulsing = false;
+                pulseLight.intensity = 0;
+            } else {
+                const progress = pulseDuration;
+                pulseLight.intensity = Math.sin(progress * Math.PI) * pulseIntensityTarget;
+            }
+        }
+    };
+
     return group;
 }
 
-// Per-frame dread-light throb + periodic pulse flash. delta is in
-// seconds. Mirrors the mockup's animate() logic 1:1.
-export function updateHowlingMaw(delta) {
-    if (!dreadLight || !pulseLight) return;
-    elapsed += delta;
-    const time = elapsed;
-
-    jitterTimer += delta;
-    if (jitterTimer >= JITTER_INTERVAL) {
-        jitterTimer -= JITTER_INTERVAL;
-        jitterValue = Math.random() * 0.3;
-    }
-    dreadLight.intensity = 1.2 + Math.sin(time * 2.5) * 0.8 + jitterValue;
-
-    if (!isPulsing && time > nextPulseTime) {
-        isPulsing = true;
-        pulseDuration = 1.2 + Math.random() * 1.5;
-        pulseIntensityTarget = 1.5 + Math.random() * 2.0;
-        nextPulseTime = time + pulseDuration + 4.0 + Math.random() * 5.0;
-    }
-
-    if (isPulsing) {
-        pulseDuration -= delta;
-        if (pulseDuration <= 0) {
-            isPulsing = false;
-            pulseLight.intensity = 0;
-        } else {
-            const progress = pulseDuration;
-            pulseLight.intensity = Math.sin(progress * Math.PI) * pulseIntensityTarget;
-        }
-    }
-}
