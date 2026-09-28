@@ -21,7 +21,8 @@ import { createWarmPaw, updateWarmPaw } from './poi-warm-paw.js';
 const SCALE = WORLD_SIZE / 320;
 
 export const POIS = [
-    { id: 'radio_tower', name: 'Radio Tower', x: 45 * SCALE, z: -60 * SCALE, radius: 10,
+    { id: 'radio_tower', name: 'Radio Tower', x: 45 * SCALE, z: -60 * SCALE, radius: 30, // 4x tower scale (see RADIO_TOWER_SCALE) — collider + interact range grown to match
+     
       desc: "A skeletal steel spire perched on an eastern ridge. Its rusty red beacon blinks continuously into the fog.",
       build: createRadioTower },
     { id: 'warm_paw', name: 'The Warm Paw', x: -70 * SCALE, z: -25 * SCALE, radius: 12,

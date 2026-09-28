@@ -18,6 +18,10 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+// The whole tower + shack is built at 1x and scaled up as one group. Light
+// distances aren't affected by parent scale, so they're multiplied to match.
+export const RADIO_TOWER_SCALE = 4;
+
 
 
 export function createRadioTower(x, y, z) {
@@ -173,7 +177,7 @@ export function createRadioTower(x, y, z) {
     beacon.position.set(0, beaconY, 0);
     towerGroup.add(beacon);
 
-    beaconLight = new THREE.PointLight(0xff0000, 0, 15);
+    beaconLight = new THREE.PointLight(0xff0000, 0, 15 * RADIO_TOWER_SCALE);
     beaconLight.position.copy(beacon.position);
     towerGroup.add(beaconLight);
 
@@ -261,7 +265,7 @@ export function createRadioTower(x, y, z) {
     bulb.position.set(-0.7, 2.3, 1.76);
     shackGroup.add(bulb);
 
-    cabinLight = new THREE.PointLight(0xffbb44, 0.5, 8);
+    cabinLight = new THREE.PointLight(0xffbb44, 0.5, 8 * RADIO_TOWER_SCALE);
     cabinLight.position.set(-0.7, 2.2, 1.8);
     shackGroup.add(cabinLight);
 
@@ -283,6 +287,7 @@ export function createRadioTower(x, y, z) {
     shackGroup.rotation.y = -0.4;
     group.add(shackGroup);
 
+    group.scale.setScalar(RADIO_TOWER_SCALE);
     group.position.set(x, y, z);
     state.scene.add(group);
     // Per-frame beacon throb + shack-light flicker. delta is in seconds.

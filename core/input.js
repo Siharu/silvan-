@@ -17,6 +17,24 @@ import { POIS } from '../environment/pois.js';
 // on later ticks that no longer count as "the click." So the lock request
 // happens here, before any of that async work starts, not inside
 // enterGame() after init() resolves.
+// Pointer lock requests fail loudly if they come too soon after the player
+// exited the lock (Esc) — Chrome enforces a ~1s cooldown — and return a
+// promise that rejects. Wait out the cooldown (the click's user activation
+// lasts several seconds) and swallow the rejection instead of spamming the
+// console.
+let lastUnlockAt = 0;
+const LOCK_COOLDOWN_MS = 1300;
+export function lockPointer() {
+    const wait = Math.max(0, LOCK_COOLDOWN_MS - (performance.now() - lastUnlockAt));
+    const go = () => {
+        try {
+            const r = document.body.requestPointerLock();
+            if (r && typeof r.catch === 'function') r.catch(() => {});
+        } catch (e) { /* refused — the pause menu stays up, player can click Resume again */ }
+    };
+    if (wait > 0) setTimeout(go, wait); else go();
+}
+
 const POINTER_LOCK_FALLBACK_MS = 1000;
 
 export function wireTitleScreen(onStart) {
@@ -30,7 +48,7 @@ export function wireTitleScreen(onStart) {
         // called directly from main.js once init() finishes on touch).
         if (shouldShowTouchControls()) { onStart(); return; }
 
-        document.body.requestPointerLock();
+        lockPointer();
         onStart();
 
         // requestPointerLock() can be silently refused — blocked by
@@ -140,6 +158,7 @@ export function setupInput() {
         if (state.isLocked) {
             showGameplayUI();
         } else {
+            lastUnlockAt = performance.now();
             pauseGame();
         }
     });
@@ -154,14 +173,11 @@ export function setupInput() {
         // state.keys entry at all without this explicit handling).
         if (e.code === 'Space' && !e.repeat) triggerJump();
         if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.keys.shift = true;
-        // Pointer-lock loss already opens the pause overlay (see above) —
-        // that covers the *first* Escape press. The browser won't fire
-        // another 'pointerlockchange' for a second Escape press since the
-        // pointer is already unlocked by then, so resuming needs its own
-        // explicit handling here to make Escape a real toggle.
-        if (e.code === 'Escape' && pauseLayer.classList.contains('visible')) {
-            document.body.requestPointerLock();
-        }
+        // Escape can't resume: browsers don't count it as a user gesture for
+        // pointer lock (and holding it spammed rejected requests). Pointer-lock
+        // loss already opens the pause overlay, so Resume is the Resume button
+        // or Enter (a valid gesture key).
+        if (e.code === 'Enter' && !e.repeat && pauseLayer.classList.contains('visible')) lockPointer();
     });
     window.addEventListener('keyup', (e) => {
         if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false;
@@ -209,7 +225,7 @@ export function wirePauseMenu() {
         // the pause overlay stuck up. Drive the same UI transition
         // directly instead — mirrors wireTitleScreen's touch branch above.
         if (shouldShowTouchControls()) showGameplayUI();
-        else document.body.requestPointerLock();
+        else lockPointer();
     });
     if (quitBtn) quitBtn.addEventListener('click', () => location.reload());
 
