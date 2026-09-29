@@ -56,7 +56,7 @@ export const state = {
     gameTime: 0.35,
     daysPassed: 1,
 
-    currentRainIntensity: 1.0,
+    currentRainIntensity: 0.0, // starts clear (was 1.0: first thing a new player saw was a storm clearing)
     targetRainIntensity: 0.0, // Starts transitioning to clear so you can immediately see the shift
     weatherChangeTimer: 0,
 

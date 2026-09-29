@@ -6,12 +6,12 @@ import { POIS } from './pois.js';
 import { pathAt, rockAt } from '../core/splat.js';
 import { GRAND_BLUE_SPOTS, GRAND_BLUE_CLEAR_R } from './landmark-trees.js';
 
-import { rngFor } from '../core/rng.js';
+import { rngFor, WORLD_SEED } from '../core/rng.js';
+import { beginPines, pickPineVariant, addPine, finishPines, PINE_TRUNK_RADIUS, PINE_BASE_HEIGHT } from './pine-tree.js';
 const rand = rngFor('forest');
 export function generateFractalForest() {
     const baseTrunkColor = new THREE.Color(0x28201a);
-    const pineLeafMatrices = [];
-    const pineLeafColors = [];
+    beginPines(WORLD_SEED ^ 0x51ee); // nyctinastic pine variants (environment/pine-tree.js)
     const trunkM = [], trunkC = [];   // depth-0 trunks + pine trunks -> high-res mesh; thin branches -> low-res mesh
 
     function growBranch(matrix, depth, maxDepth, length, radius, leafBaseColor) {
@@ -93,25 +93,10 @@ export function generateFractalForest() {
         const biomeVal = noise(x * 0.008, z * 0.008);
         
         if (biomeVal < 0.35 && y > 3.5) {
-            // PINE TREE: trunk ends INSIDE the crown (no bare stub), tiers overlap, top apex = total height
-            const H = 16 * s, trunkH = H * 0.8;
-            trunkM.push(baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, trunkH / 2, 0)).multiply(new THREE.Matrix4().makeScale(0.5 * s, trunkH, 0.5 * s)));
-            trunkC.push(0.18, 0.14, 0.11);
-            const n = 6 + Math.floor(rand() * 3);
-            const pcBase = new THREE.Color(0x22452a).offsetHSL(rand() * 0.03 - 0.015, 0.05, rand() * 0.05 - 0.025);
-            for (let j = 0; j < n; j++) {
-                const t = j / (n - 1);
-                const hk = H * (0.30 - 0.13 * t);
-                const yk = H * 0.16 + t * (H * 0.84 - H * 0.17);
-                const R = H * (0.27 - 0.21 * Math.pow(t, 0.9)) * (0.92 + rand() * 0.16);
-                pineLeafMatrices.push(baseMatrix.clone()
-                    .multiply(new THREE.Matrix4().makeTranslation(0, yk, 0))
-                    .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI))
-                    .multiply(new THREE.Matrix4().makeScale(R, hk, R)));
-                const pc = pcBase.clone().offsetHSL(0, 0, t * 0.03);
-                pineLeafColors.push(pc.r, pc.g, pc.b);
-            }
-            state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
+            // PINE TREE (nyctinastic pine, environment/pine-tree.js): one of 4 seeded merged variants, one instance per tree
+            const H = 16 * s;
+            const k = addPine(pickPineVariant(rand), baseMatrix, H, rand);
+            state.colliders.push({ x: x, z: z, r: PINE_TRUNK_RADIUS * k + 0.45 }); // real trunk radius, not a guess
             
         } else {
             // DECIDUOUS OR MAPLE TREE
@@ -245,36 +230,6 @@ export function generateFractalForest() {
     for(let i=0; i < state.leafMatrices.length; i++) leafMesh.setMatrixAt(i, state.leafMatrices[i]);
     state.scene.add(leafMesh);
     
-    // PROCEDURAL JAGGED PINE LEAVES
-    const pineGeo = new THREE.ConeGeometry(1, 1, 10, 1, false); // closed: underside visible from below
-    pineGeo.translate(0, 0.5, 0);
-    const pPos = pineGeo.attributes.position;
-    for (let i = 0; i < pPos.count; i++) {
-        const y = pPos.getY(i);
-        if (y < 0.5) {   // rim + underside: star outline, slight droop
-            const x = pPos.getX(i), z = pPos.getZ(i), ang = Math.atan2(z, x);
-            const rv = 1.0 + 0.18 * Math.sin(ang * 5.0);
-            pPos.setX(i, x * rv); pPos.setZ(i, z * rv); pPos.setY(i, y - 0.06);
-        }
-    }
-    pineGeo.computeVertexNormals();
-    
-    const pineMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, flatShading: true });
-    pineMat.onBeforeCompile = (shader) => {
-        shader.uniforms.uTime = { value: 0 };
-        pineMat.userData.shader = shader;
-        shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nuniform float uTime;`);
-        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
-            #include <begin_vertex>
-            vec4 pWorldPos = instanceMatrix * vec4(position, 1.0);
-            // Slower, heavier wind sway for pines
-            transformed.x += sin(pWorldPos.x * 2.0 + uTime * 0.8) * 0.05 * position.y; 
-        `);
-    };
-    const pineMesh = new THREE.InstancedMesh(pineGeo, pineMat, pineLeafMatrices.length);
-    pineMesh.castShadow = true; pineMesh.receiveShadow = true;
-    pineMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(pineLeafColors), 3);
-    for(let i=0; i < pineLeafMatrices.length; i++) pineMesh.setMatrixAt(i, pineLeafMatrices[i]);
-    state.scene.add(pineMesh);
+    finishPines();
 }
 

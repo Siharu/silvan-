@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { updatePines } from '../environment/pine-tree.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
@@ -114,7 +115,7 @@ async function init() {
 
     state.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.25, 2000); // far must exceed sky dome radius (1200) + player offset from origin
 
-    state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    state.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" }) // B-14: the default framebuffer is only touched by OutputPass; MSAA lives on the composer targets below;
     state.renderer.setSize(window.innerWidth, window.innerHeight);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); // Optimized pixel ratio
     state.renderer.shadowMap.enabled = true;
@@ -131,7 +132,14 @@ async function init() {
     state.bloomPass.strength = 0.5;
     state.bloomPass.radius = 0.4;
 
-    state.composer = new EffectComposer(state.renderer);
+    // B-14: MSAA on the composer's own render targets (renderer antialias only covers the
+    // default framebuffer, which the scene never renders into). Sample count is tier-driven
+    // (render-quality.js applyQuality) — this is the initial value from the saved tier.
+    const _pr = state.renderer.getPixelRatio();
+    const _rt = new THREE.WebGLRenderTarget(Math.floor(window.innerWidth * _pr), Math.floor(window.innerHeight * _pr), {
+        type: THREE.HalfFloatType, samples: (state.quality && state.quality.msaa) || 0,
+    });
+    state.composer = new EffectComposer(state.renderer, _rt);
     state.composer.addPass(renderScene);
     state.composer.addPass(state.bloomPass);
     state.composer.addPass(new OutputPass()); // B-01: tone mapping + sRGB happen here, LAST
@@ -275,6 +283,7 @@ function animate(time) {
         updateAtmosphere(delta);
         updateLeaningPalms(delta * state.timeMultiplier);
         updateGrandBlueGlow(delta / 1000);
+        updatePines(delta / 1000);
         updatePOIs(delta / 1000);
         updateTutorial(delta / 1000);
     }

@@ -6,9 +6,9 @@ import { state } from './state.js';
 import { createGrass } from '../environment/grass.js';
 
 export const QUALITY_PRESETS = {
-    high:   { bladeCount: 220000, pixelRatio: 1.25, shadowMap: 2048, shadowRadius: 120, bloom: true,  rainCount: 45000, fireflyCount: 1200, dustCount: 3500 },
-    medium: { bladeCount: 130000, pixelRatio: 1.0,  shadowMap: 1024, shadowRadius: 100, bloom: true,  rainCount: 20000, fireflyCount: 600,  dustCount: 2000 },
-    low:    { bladeCount: 50000,  pixelRatio: 0.85, shadowMap: 0,    shadowRadius: 60,  bloom: false, rainCount: 8000,  fireflyCount: 300,  dustCount: 1000 },
+    high:   { bladeCount: 220000, pixelRatio: 1.25, shadowMap: 2048, shadowRadius: 120, msaa: 4, bloom: true,  rainCount: 45000, fireflyCount: 1200, dustCount: 3500 },
+    medium: { bladeCount: 130000, pixelRatio: 1.0,  shadowMap: 1024, shadowRadius: 100, msaa: 2, bloom: true,  rainCount: 20000, fireflyCount: 600,  dustCount: 2000 },
+    low:    { bladeCount: 50000,  pixelRatio: 0.85, shadowMap: 0,    shadowRadius: 60,  msaa: 0, bloom: false, rainCount: 8000,  fireflyCount: 300,  dustCount: 1000 },
 };
 
 let resScale = 1.0;             // adaptive multiplier on top of tier pixelRatio
@@ -49,6 +49,11 @@ export function applyQuality(key) {
     }
 
     if (state.bloomPass) state.bloomPass.enabled = q.bloom;
+
+    // MSAA (B-14): changing sample count on a live render target needs a dispose so it is re-created.
+    for (const rt of [state.composer.renderTarget1, state.composer.renderTarget2]) {
+        if (rt.samples !== q.msaa) { rt.samples = q.msaa; rt.dispose(); }
+    }
 
     // Particle budgets: draw ranges / instance counts, so it's instant.
     if (state.rainMesh) state.rainMesh.geometry.setDrawRange(0, Math.min(q.rainCount, state.rainMesh.geometry.attributes.position.count));

@@ -132,3 +132,11 @@ All 9 POIs are now ported. Remaining work:
    (Regain) + autosave indicator, rest/nap mechanic, touch controls, full
    camera/audio/keybind settings persistence, underwater screen overlay,
    boundary message.
+
+
+## Small-bug pass + nyctinastic pine (Sept 29 2026)
+- B-14: MSAA now lives on the composer's render targets (tier-driven: high 4, medium 2, low 0); renderer `antialias` off.
+- B-21: `core/colliders.js` uniform grid (16 u cells); the player only tests colliders in its own cell.
+- Weather now starts clear. Ocean-block message (`#boundary-message`) is wired. Audio load failures now log once per file.
+- Pines replaced with `environment/pine-tree.js` (from interactive_pine_tree.html): 4 seeded variants merged to 2 draw calls each, branches fold up at night via a vertex shader (shared `uClump`), fold also runs in the shadow depth material.
+- Still open: see SILVAN_BETA2_AUDIT.txt (chunked terrain, ocean ring, grass v2, whole-tree deciduous meshes, systems).

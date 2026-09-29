@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { state, WORLD_SIZE, WATER_LEVEL } from './state.js';
 import { heightAt as getElevation } from './heightmap.js';
+import { collidersNear } from './colliders.js';
 
 const SPRINT_MULTIPLIER = 1.6;
 const JUMP_SPEED = 6.5;
@@ -9,6 +10,13 @@ const SPRINT_FOV_KICK = 7;      // degrees added while sprinting
 let fovKick = 0;
 let landDip = 0;
 const MAX_CLIMB_SLOPE = 0.9;     // rise/run (~42 deg): steeper uphill motion is blocked (B-13)
+let boundaryEl = null, boundaryT = 0;   // dead boundary-message CSS is now wired: shown while the ocean blocks you
+function touchBoundary(delta) {
+    if (!boundaryEl) boundaryEl = document.getElementById('boundary-message');
+    if (!boundaryEl) return;
+    const on = boundaryT > 0;
+    boundaryEl.classList.toggle('visible', on);
+}
 const _dir = new THREE.Vector3(), _right = new THREE.Vector3();  // reused: no per-frame garbage                // camera sinks briefly after a hard landing
 
 // Phase 6 #37: jump didn't exist for keyboard OR touch before this — the
@@ -31,6 +39,8 @@ export function updatePlayer(delta) {
     // so this is a strict superset for desktop and the actual fix for touch.
     if (!state.isPlaying) return;
     if (state.debugTour) { state.camera.position.copy(state.player.position); return; } // perf tour drives the camera
+    if (boundaryT > 0) boundaryT -= delta;
+    touchBoundary(delta);
     if (state.debugNoclip) {   // debug free-cam (core/debug.js): fly along the view direction, ignore ground/colliders
         state.camera.getWorldDirection(_dir);
         const sp = state.player.speed * (state.keys.shift ? 4 : 1.5) * delta;
@@ -52,9 +62,17 @@ export function updatePlayer(delta) {
         state.player.velocity.normalize().multiplyScalar(state.player.speed * sprintFactor * delta);
         let nX = state.player.position.x + state.player.velocity.x; let nZ = state.player.position.z + state.player.velocity.z;
         let colX = false, colZ = false;
-        for (const col of state.colliders) {
-            if ((nX-col.x)**2 + (state.player.position.z-col.z)**2 < col.r**2) colX = true;
-            if ((state.player.position.x-col.x)**2 + (nZ-col.z)**2 < col.r**2) colZ = true;
+        // B-21: grid broadphase — a step is < 1 u, so the cell under the current and the next position covers every candidate
+        const cx = state.player.position.x, cz = state.player.position.z;
+        const near1 = collidersNear(cx, cz), near2 = collidersNear(nX, nZ);
+        for (let pass = 0; pass < 2; pass++) {
+            const list = pass === 0 ? near1 : near2;
+            if (pass === 1 && near2 === near1) break;
+            for (let i = 0; i < list.length; i++) {
+                const col = list[i];
+                if ((nX-col.x)**2 + (cz-col.z)**2 < col.r**2) colX = true;
+                if ((cx-col.x)**2 + (nZ-col.z)**2 < col.r**2) colZ = true;
+            }
         }
         // Verticality (standing on rocks/decks/POI structures) is punted —
         // Y always tracks bare terrain elevation (getElevation below), never
@@ -66,8 +84,8 @@ export function updatePlayer(delta) {
         const px = state.player.position.x, pz = state.player.position.z;
         const h0 = getElevation(px, pz);
         const hX = getElevation(nX, pz), hZ = getElevation(px, nZ);
-        if (hX < WATER_LEVEL) colX = true;
-        if (hZ < WATER_LEVEL) colZ = true;
+        if (hX < WATER_LEVEL) { colX = true; boundaryT = 1.6; }
+        if (hZ < WATER_LEVEL) { colZ = true; boundaryT = 1.6; }
         // Slope limiter: block only the uphill component, so you slide along steep walls instead of climbing them.
         if (Math.abs(nX - px) > 1e-5 && (hX - h0) / Math.abs(nX - px) > MAX_CLIMB_SLOPE) colX = true;
         if (Math.abs(nZ - pz) > 1e-5 && (hZ - h0) / Math.abs(nZ - pz) > MAX_CLIMB_SLOPE) colZ = true;
