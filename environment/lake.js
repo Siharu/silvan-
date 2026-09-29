@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state, WORLD_SIZE, WATER_LEVEL } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { heightAt as getElevation } from '../core/heightmap.js';
 
 export function createLake() {
     const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 48, 48);

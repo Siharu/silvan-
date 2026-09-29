@@ -3,7 +3,7 @@
 // mockup). serpents_coil stays build: null on purpose — it's terrain,
 // not a prop, built into environment/terrain.js's crater + magma blend.
 import { state, WORLD_SIZE } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { heightAt as getElevation } from '../core/heightmap.js';
 import { markDiscovered, showDiscoveryToast } from '../core/journal.js';
 import { playBlip } from '../core/blip.js';
 import { createRuinedCabin } from './poi-ruined-cabin.js';

@@ -20,7 +20,9 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
-const rand = (min, max) => Math.random() * (max - min) + min;
+import { rngFor } from '../core/rng.js';
+const rng01 = rngFor('warmpaw');
+const rand = (min, max) => rng01() * (max - min) + min;
 
 const FIRE_COLOR = 0xf97316;
 const FIRE_INTENSITY_BASE = 1.8;
@@ -482,7 +484,7 @@ export function createWarmPaw(x, y, z) {
         spike.position.y = 1.15 + 0.2;
         post.add(spike);
 
-        if (Math.random() > 0.4) {
+        if (rng01() > 0.4) {
             const scar = new THREE.Mesh(
                 new THREE.BoxGeometry(0.04, rand(0.2, 0.5), 0.06),
                 new THREE.MeshStandardMaterial({ color: 0x050403, roughness: 1.0 })

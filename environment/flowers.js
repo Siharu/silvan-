@@ -1,9 +1,13 @@
 import * as THREE from 'three';
-import { state } from '../core/state.js';
-import { getElevation, noise } from '../core/utils.js';
+import { state, WORLD_SIZE } from '../core/state.js';
+import { noise } from '../core/utils.js';
+import { heightAt as getElevation } from '../core/heightmap.js';
+import { grassAt, pathAt } from '../core/splat.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('flowers');
 export function createFlowers() {
-    const count = 12000;
+    const count = 19000; // was 12000, scaled by 1.64x world area
     
     // Manually construct crossed planes for foliage billboarding
     const basePlane = new THREE.PlaneGeometry(1.2, 1.2);
@@ -56,19 +60,20 @@ export function createFlowers() {
     
     let valid = 0;
     for (let i = 0; i < count * 3 && valid < count; i++) {
-        const r = Math.sqrt(Math.random()) * 280;
-        const theta = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(rand()) * (WORLD_SIZE * 0.35); // was hardcoded 280 (0.35 * old 800) -- now scales with world size
+        const theta = rand() * Math.PI * 2;
         const x = Math.cos(theta) * r;
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z);
         
+        if (grassAt(x, z) < 0.35 || pathAt(x, z) > 0.1) continue; // meadow only: grass mask, off trails (replaces the old y<4 line)
         if (y < 4.0) continue; // Match grass/forest's wet-sand line — flowers are meant to sink into grass (see below), so they shouldn't appear where grass doesn't grow
         
         const biome = noise(x * 0.02, z * 0.02);
         if (biome > 0.5) { // Cluster flower fields
             dummy.position.set(x, y - 0.1, z); // Sink into grass slightly
-            dummy.rotation.set(0, Math.random()*Math.PI, 0); // Random spin
-            const s = 0.4 + Math.random() * 0.6;
+            dummy.rotation.set(0, rand()*Math.PI, 0); // Random spin
+            const s = 0.25 + rand() * 0.25; // was 0.4-1.0: heads were dinner-plate sized
             dummy.scale.set(s, s, s);
             dummy.updateMatrix();
             state.flowerMesh.setMatrixAt(valid, dummy.matrix);

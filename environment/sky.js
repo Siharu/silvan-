@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('sky');
 export function createSky() {
     const skyGeo = new THREE.SphereGeometry(1200, 32, 32);
     state.skyMat = new THREE.ShaderMaterial({
@@ -113,13 +115,13 @@ export function createSky() {
     const starPos = new Float32Array(starCount * 3);
     const starSizes = new Float32Array(starCount);
     for(let i=0; i<starCount; i++) {
-        const r = 1000 + Math.random() * 200;
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos((Math.random() * 2) - 1);
+        const r = 1000 + rand() * 200;
+        const theta = rand() * Math.PI * 2;
+        const phi = Math.acos((rand() * 2) - 1);
         starPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
         starPos[i*3+1] = Math.abs(r * Math.cos(phi)); // Keep stars mostly in upper hemisphere
         starPos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
-        starSizes[i] = Math.random();
+        starSizes[i] = rand();
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
     starGeo.setAttribute('aSize', new THREE.BufferAttribute(starSizes, 1));

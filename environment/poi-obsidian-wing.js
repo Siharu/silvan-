@@ -7,6 +7,8 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('obsidian');
 export function createObsidianWing(x, y, z) {
     const group = new THREE.Group();
 
@@ -24,10 +26,10 @@ export function createObsidianWing(x, y, z) {
         const frag = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.5, 0.4), fragmentMat);
         frag.position.set(
             Math.cos(i) * 4,
-            8 + (Math.random() - 0.5) * 4, // height 8±2
+            8 + (rand() - 0.5) * 4, // height 8±2
             Math.sin(i) * 4
         );
-        frag.rotation.set(Math.random(), Math.random(), Math.random());
+        frag.rotation.set(rand(), rand(), rand());
         group.add(frag);
 
         const fragLight = new THREE.PointLight(0xd98a3d, 0.6, 6);

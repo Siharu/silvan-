@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { heightAt as getElevation } from '../core/heightmap.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('puddles');
 export function createPuddles() {
     const puddleCount = 120;
     const geo = new THREE.PlaneGeometry(1, 1);
@@ -55,15 +57,15 @@ export function createPuddles() {
     const dummy = new THREE.Object3D();
     let validPuddles = 0;
     for (let i = 0; i < puddleCount; i++) {
-        const x = (Math.random() - 0.5) * 300;
-        const z = (Math.random() - 0.5) * 300;
+        const x = (rand() - 0.5) * 300;
+        const z = (rand() - 0.5) * 300;
         const y = getElevation(x, z);
 
         if (y > 1.8 && y < 15.0) { // Keep them in low areas but out of the lake
             dummy.position.set(x, y + 0.02, z);
-            const s = 1.0 + Math.random() * 4.0;
+            const s = 1.0 + rand() * 4.0;
             dummy.scale.set(s, 1, s);
-            dummy.rotation.set(0, Math.random() * Math.PI, 0);
+            dummy.rotation.set(0, rand() * Math.PI, 0);
             dummy.updateMatrix();
             state.puddleMesh.setMatrixAt(validPuddles++, dummy.matrix);
         }

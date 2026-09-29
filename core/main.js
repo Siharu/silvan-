@@ -1,19 +1,27 @@
+import '../src/tailwind.css';
+import { Howl, Howler } from 'howler';
+window.Howl = Howl; window.Howler = Howler; // audio.js/settings.js/blip.js/input.js use the globals
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
 // + sky tint + a sun/moon glint in the shader below instead.
 
 import { state } from './state.js';
-import { getElevation, createProceduralTextures, shouldShowTouchControls } from './utils.js';
+import { createProceduralTextures, shouldShowTouchControls } from './utils.js';
 import { initAudio, updateAudioListener } from './audio.js';
 import { setupInput, onWindowResize, wireTitleScreen, wireTitleMenu, wirePauseMenu, enterGame, showGameplayUI } from './input.js';
 import { initTouchControls } from './touch-controls.js';
 import { startTutorial, updateTutorial } from './tutorial.js';
 import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCounter } from './settings.js';
 import { updatePlayer } from './player-controller.js';
+import { bakeHeightmap, heightAt } from './heightmap.js';
+import { bakeSplat } from './splat.js';
+import { applyQuality, noteGrassBuilt, updateShadowFollow, updateAdaptiveRes } from './render-quality.js';
+import { initDebug, debugFrame } from './debug.js';
 import { updateAtmosphere } from '../atmosphere/day-night-cycle.js';
 
 import { createSky } from '../environment/sky.js';
@@ -24,10 +32,11 @@ import { createLake } from '../environment/lake.js';
 import { createFlowers } from '../environment/flowers.js';
 import { generateFractalForest } from '../environment/forest.js';
 import { createRocks } from '../environment/rocks.js';
+import { createGrandBlueTrees, createLeaningPalms, updateLeaningPalms } from '../environment/landmark-trees.js';
 import { createRainSystem, createRainSplashes } from '../fx/rain.js';
 import { createFireflies } from '../fx/fireflies.js';
 import { createDustParticles } from '../fx/dust.js';
-import { createPOIs, updatePOIInteraction, updatePOIs } from '../environment/pois.js';
+import { POIS, createPOIs, updatePOIInteraction, updatePOIs } from '../environment/pois.js';
 
 // Yields one real animation frame — used between init()'s heavy steps below
 // so the loading-screen progress bar actually gets a chance to repaint
@@ -38,6 +47,7 @@ function nextFrame() {
 }
 
 function setLoadingProgress(pct, label) {
+    lastProgressAt = performance.now();
     const fill = document.getElementById('loading-screen-fill');
     const pctEl = document.getElementById('loading-screen-pct');
     const labelEl = document.getElementById('loading-screen-label');
@@ -46,7 +56,20 @@ function setLoadingProgress(pct, label) {
     if (labelEl && label) labelEl.textContent = label;
 }
 
-const INIT_TIMEOUT_MS = 15000;
+// B-19: was a 15 s cap on the WHOLE init() (incl. network fetch of the .glb) —
+// a slow laptop or connection tripped it though nothing was broken. Now only
+// fails if the loading bar makes NO progress for INIT_STALL_MS.
+function wireContextLoss(canvas) {
+    const note = document.createElement('div');
+    note.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#f0a545;font:1.1rem monospace;z-index:99998;text-align:center;padding:2rem';
+    note.textContent = 'the light flickered out — recovering the world…';
+    document.body.appendChild(note);
+    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); state.contextLost = true; note.style.display = 'flex'; console.warn('[webgl] context lost'); });
+    canvas.addEventListener('webglcontextrestored', () => { state.contextLost = false; note.style.display = 'none'; console.warn('[webgl] context restored'); });
+}
+
+const INIT_STALL_MS = 30000;
+let lastProgressAt = performance.now();
 
 // Puts the loading screen into a visible, explicit failure state instead
 // of leaving the bar frozen with no signal anything's wrong (Phase 0 #3).
@@ -66,10 +89,14 @@ function showLoadingError(message) {
     if (errorBox) errorBox.classList.add('visible');
 }
 
-function timeout(ms) {
-    return new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`init() exceeded ${ms}ms timeout`)), ms)
-    );
+function stallWatchdog(ms) {
+    let id; lastProgressAt = performance.now();
+    const promise = new Promise((_, reject) => {
+        id = setInterval(() => {
+            if (performance.now() - lastProgressAt > ms) { clearInterval(id); reject(new Error(`init() made no progress for ${ms}ms`)); }
+        }, 1000);
+    });
+    return { promise, cancel: () => clearInterval(id) };
 }
 
 // Was called directly on window.onload — meaning this entire scene build
@@ -85,9 +112,9 @@ async function init() {
 
     state.globalTextures = createProceduralTextures();
 
-    state.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
+    state.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.25, 2000); // far must exceed sky dome radius (1200) + player offset from origin
 
-    state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", logarithmicDepthBuffer: true });
+    state.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     state.renderer.setSize(window.innerWidth, window.innerHeight);
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25)); // Optimized pixel ratio
     state.renderer.shadowMap.enabled = true;
@@ -95,6 +122,7 @@ async function init() {
     state.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     state.renderer.toneMappingExposure = 1.08;
     document.getElementById('canvas-container').appendChild(state.renderer.domElement);
+    wireContextLoss(state.renderer.domElement);
 
     const renderScene = new RenderPass(state.scene, state.camera);
     // Optimized: Half-resolution bloom pass for better performance
@@ -106,9 +134,10 @@ async function init() {
     state.composer = new EffectComposer(state.renderer);
     state.composer.addPass(renderScene);
     state.composer.addPass(state.bloomPass);
+    state.composer.addPass(new OutputPass()); // B-01: tone mapping + sRGB happen here, LAST
 
-    // Boosted ambient light to fix pitch-black grass/shadows
-    const hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 1.15);
+    // Ambient retuned after OutputPass (B-01) — the old 1.15 compensated for missing output stage
+    const hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 0.55);
     state.scene.add(hemiLight);
     state.hemiLight = hemiLight;
 
@@ -123,8 +152,10 @@ async function init() {
     state.sunLight.shadow.camera.left = -d;
     state.sunLight.shadow.camera.right = d;
     state.sunLight.shadow.camera.top = d;
-    state.sunLight.shadow.bottom = -d;
-    state.sunLight.shadow.bias = -0.0001;
+    state.sunLight.shadow.camera.bottom = -d;
+    state.sunLight.shadow.camera.updateProjectionMatrix();
+    state.sunLight.shadow.normalBias = 0.6;
+    state.sunLight.shadow.bias = -0.0002;
     state.scene.add(state.sunLight);
 
     state.moonLight = new THREE.DirectionalLight(0x7799ff, 0.3);
@@ -133,6 +164,10 @@ async function init() {
     setLoadingProgress(5, 'waking the sky');
     createSky();
     await nextFrame();
+
+    setLoadingProgress(8, 'measuring the ground');
+    await bakeHeightmap((f) => setLoadingProgress(8 + f * 8, 'measuring the ground'));
+    await bakeSplat(POIS, (f) => setLoadingProgress(16 + f * 4, 'marking the trails'));
 
     setLoadingProgress(20, 'raising the hearth');
     createTerrain();
@@ -144,6 +179,7 @@ async function init() {
 
     setLoadingProgress(55, 'growing the undergrowth');
     createGrass();
+    noteGrassBuilt();
     await nextFrame();
 
     setLoadingProgress(65, 'scattering wildflowers');
@@ -157,6 +193,8 @@ async function init() {
 
     setLoadingProgress(88, 'planting the forest');
     generateFractalForest();
+    createGrandBlueTrees();
+    createLeaningPalms();
     await nextFrame();
 
     setLoadingProgress(95, 'stirring the weather');
@@ -170,10 +208,12 @@ async function init() {
     await createPOIs(); // async: broken_shell.glb loads over the network
     await nextFrame();
 
+    applyQuality(state.qualityKey); // tier: pixel ratio, shadows, bloom, particle budgets
+
     // (200, 0) sits on stable lowland well clear of the central crater/peak
     // and the surrounding ocean — world origin (0,0) is now partway up
     // The Serpent's Coil massif under the island terrain.
-    state.player.position.set(200, getElevation(200, 0) + state.player.height, 0);
+    state.player.position.set(200, heightAt(200, 0) + state.player.height, 0);
 
     initAudio();
     setLoadingProgress(100, 'the hearth is still');
@@ -195,9 +235,12 @@ async function startGame() {
     await nextFrame();
     await nextFrame();
 
+    const watchdog = stallWatchdog(INIT_STALL_MS);
     try {
-        await Promise.race([init(), timeout(INIT_TIMEOUT_MS)]);
+        await Promise.race([init(), watchdog.promise]);
+        watchdog.cancel();
     } catch (err) {
+        watchdog.cancel();
         console.error('[startGame] init() failed or timed out — the hearth never lit.', err);
         showLoadingError('the hearth failed to catch — something went wrong loading the world.');
         return; // leave the loading screen up in its error state; don't call enterGame()
@@ -230,17 +273,21 @@ function animate(time) {
     // purely cosmetic and imperceptible while the pause menu covers it.
     if (state.isPlaying) {
         updateAtmosphere(delta);
+        updateLeaningPalms(delta * state.timeMultiplier);
         updatePOIs(delta / 1000);
         updateTutorial(delta / 1000);
     }
     updatePlayer(delta / 1000);
+    updateShadowFollow(); // after atmosphere: re-centres the sun's shadow rig on the player
     updateGrass(time / 1000);
     updatePOIInteraction(delta / 1000);
     updateFpsCounter(delta);
     // Phase 5 #35: keep Howler's listener on the camera so Warm Paw's
     // positional fire loop pans/attenuates as the player moves and looks.
     updateAudioListener(state.camera);
-    state.composer.render();
+    updateAdaptiveRes(delta);
+    debugFrame(delta);
+    if (!state.contextLost) state.composer.render();
 }
 
 // setupInput() (keydown/keyup/mousemove/pointerlockchange) is wired
@@ -254,4 +301,5 @@ window.addEventListener('DOMContentLoaded', () => {
     wireCameraAudioSettings();
     wirePauseMenu();
     initTouchControls();
+    initDebug();
 });

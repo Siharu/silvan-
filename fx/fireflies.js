@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { state, WATER_LEVEL } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { heightAt as getElevation } from '../core/heightmap.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('fireflies');
 export function createFireflies() {
     const count = 1200;
     const geo = new THREE.PlaneGeometry(0.18, 0.18);
@@ -40,9 +42,9 @@ export function createFireflies() {
     state.fireflyMesh = new THREE.InstancedMesh(geo, state.fireflyMat, count);
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
-        const r = 10 + Math.random() * 220; const th = Math.random() * Math.PI * 2;
+        const r = 10 + rand() * 220; const th = rand() * Math.PI * 2;
         const x = Math.cos(th)*r; const z = Math.sin(th)*r;
-        dummy.position.set(x, getElevation(x,z) + 0.6 + Math.random()*3, z);
+        dummy.position.set(x, getElevation(x,z) + 0.6 + rand()*3, z);
         dummy.updateMatrix(); state.fireflyMesh.setMatrixAt(i, dummy.matrix);
     }
     state.scene.add(state.fireflyMesh);

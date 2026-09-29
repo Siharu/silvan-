@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('greenite');
 export function createGreeniteMouth(x, y, z) {
     const group = new THREE.Group();
 
@@ -36,16 +38,16 @@ export function createGreeniteMouth(x, y, z) {
     // 9 crystal spikes in a ~216-degree arc facing outward from the mouth
     for (let i = 0; i < 9; i++) {
         const angle = THREE.MathUtils.degToRad((i / 8) * 216 - 108);
-        const radius = 1.8 + Math.random() * 1.0;
+        const radius = 1.8 + rand() * 1.0;
         const spike = new THREE.Mesh(
-            new THREE.ConeGeometry(0.4 + Math.random() * 0.4, 2 + Math.random() * 2.5, 6),
+            new THREE.ConeGeometry(0.4 + rand() * 0.4, 2 + rand() * 2.5, 6),
             crystalMat
         );
         spike.position.set(Math.cos(angle) * radius, 1.5, Math.sin(angle) * radius);
         spike.rotation.set(
-            (Math.random() - 0.5) * 0.6,
-            Math.random() * Math.PI * 2,
-            (Math.random() - 0.5) * 0.6
+            (rand() - 0.5) * 0.6,
+            rand() * Math.PI * 2,
+            (rand() - 0.5) * 0.6
         );
         group.add(spike);
     }

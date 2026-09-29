@@ -1,79 +1,90 @@
 import * as THREE from 'three';
 import { state, WORLD_SIZE, TREE_COUNT } from '../core/state.js';
-import { getElevation, noise } from '../core/utils.js';
+import { noise } from '../core/utils.js';
+import { heightAt as getElevation, slopeAt } from '../core/heightmap.js';
+import { POIS } from './pois.js';
+import { pathAt, rockAt } from '../core/splat.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('forest');
 export function generateFractalForest() {
     const baseTrunkColor = new THREE.Color(0x28201a);
     const pineLeafMatrices = [];
     const pineLeafColors = [];
+    const trunkM = [], trunkC = [];   // depth-0 trunks + pine trunks -> high-res mesh; thin branches -> low-res mesh
 
     function growBranch(matrix, depth, maxDepth, length, radius, leafBaseColor) {
         const branchMat = matrix.clone();
         const translate = new THREE.Matrix4().makeTranslation(0, length / 2, 0);
         const scale = new THREE.Matrix4().makeScale(radius, length, radius);
         branchMat.multiply(translate).multiply(scale);
-        state.branchMatrices.push(branchMat);
+        (depth === 0 ? trunkM : state.branchMatrices).push(branchMat);
         
         const bColor = baseTrunkColor.clone().offsetHSL(0, 0, depth * 0.04);
-        state.branchColors.push(bColor.r, bColor.g, bColor.b);
+        (depth === 0 ? trunkC : state.branchColors).push(bColor.r, bColor.g, bColor.b);
 
         const endMat = matrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, length, 0));
 
         if (depth >= maxDepth) {
             for (let i = 0; i < 4; i++) {
                 const leafRot = new THREE.Matrix4().makeRotationFromEuler(
-                    new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI)
+                    new THREE.Euler(rand()*Math.PI, rand()*Math.PI, rand()*Math.PI)
                 );
                 const leafScale = new THREE.Matrix4().makeScale(length*3.2, length*3.2, length*3.2);
                 state.leafMatrices.push(endMat.clone().multiply(leafRot).multiply(leafScale));
-                const lColor = leafBaseColor.clone().offsetHSL(Math.random()*0.1-0.05, Math.random()*0.2, Math.random()*0.1-0.05);
+                const lColor = leafBaseColor.clone().offsetHSL(rand()*0.1-0.05, rand()*0.2, rand()*0.1-0.05);
                 state.leafColors.push(lColor.r, lColor.g, lColor.b);
             }
             return;
         }
 
-        const numSplits = depth === 0 ? 3 + Math.floor(Math.random()*2) : (depth === 1 ? 3 : 2); 
+        const numSplits = depth === 0 ? 3 + Math.floor(rand()*2) : (depth === 1 ? 3 : 2); 
         for (let i = 0; i < numSplits; i++) {
-            const angleY = (Math.PI * 2 / numSplits) * i + (Math.random() * 0.8 - 0.4);
-            const angleX = 0.35 + (depth * 0.12) + (Math.random() * 0.2);
+            const angleY = (Math.PI * 2 / numSplits) * i + (rand() * 0.8 - 0.4);
+            const angleX = 0.35 + (depth * 0.12) + (rand() * 0.2);
             const rotMat = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(angleX, angleY, 0, 'YXZ'));
-            growBranch(endMat.clone().multiply(rotMat), depth + 1, maxDepth, length * (0.68 + Math.random()*0.12), radius * 0.65, leafBaseColor);
+            growBranch(endMat.clone().multiply(rotMat), depth + 1, maxDepth, length * (0.68 + rand()*0.12), radius * 0.65, leafBaseColor);
         }
     }
 
     for (let i = 0; i < TREE_COUNT; i++) {
-        const r = 25 + Math.random() * (WORLD_SIZE/2 - 50);
-        const theta = Math.random() * Math.PI * 2;
+        const r = 25 + rand() * (WORLD_SIZE/2 - 50);
+        const theta = rand() * Math.PI * 2;
         const x = Math.cos(theta) * r;
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z);
         
-        if (y < 4.0) continue; // Keep trees off the wet sand/beach — matches terrain.js's own wet-sand-to-lowland line (y < 4.0), not the old lake-basin's waterline this threshold was originally tuned against
+        if (y < 4.0) continue;
+        if (slopeAt(x, z) > 35) continue;                 // no trees on cliffs
+        if (Math.hypot(x, z + 12) < 55) continue;         // none in the crater bowl
+        if (POIS.some((p) => Math.hypot(x - p.x, z - p.z) < (p.radius || 10) + 10)) continue; // keep POIs clear
+        if (pathAt(x, z) > 0.15) continue;                // keep trails open (splat mask, audit 6.3)
+        if (rockAt(x, z) > 0.6) continue;                 // no trees on bare rock
+        // // Keep trees off the wet sand/beach — matches terrain.js's own wet-sand-to-lowland line (y < 4.0), not the old lake-basin's waterline this threshold was originally tuned against
 
         const baseMatrix = new THREE.Matrix4().makeTranslation(x, y - 0.3, z);
-        baseMatrix.multiply(new THREE.Matrix4().makeRotationY(Math.random() * Math.PI * 2));
-        const s = 0.85 + Math.random() * 1.3;
+        baseMatrix.multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI * 2));
+        const s = 0.85 + rand() * 1.3;
         
         const biomeVal = noise(x * 0.008, z * 0.008);
         
         if (biomeVal < 0.35 && y > 3.5) {
-            // PINE TREE (Prefers higher ground and specific biome noise)
-            const trunkHeight = 16 * s;
-            const trunkMat = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, trunkHeight/2, 0)).multiply(new THREE.Matrix4().makeScale(0.7*s, trunkHeight, 0.7*s));
-            state.branchMatrices.push(trunkMat);
-            state.branchColors.push(0.18, 0.14, 0.11); // Darker, slightly different trunk
-            
-            // Generate dense, drooping, jagged layers for the pine tree
-            const numLayers = 6 + Math.floor(Math.random()*4);
-            for(let j=0; j<numLayers; j++) {
-                const h = trunkHeight * (0.15 + (j / numLayers) * 0.85); // Leaves start lower
-                const lScale = (trunkHeight * 0.35) * (1.0 - Math.pow(j/numLayers, 1.2)); // Curve taper
-                const layerMat = baseMatrix.clone()
-                    .multiply(new THREE.Matrix4().makeTranslation(0, h, 0))
-                    .multiply(new THREE.Matrix4().makeScale(lScale, lScale * 0.9, lScale))
-                    .multiply(new THREE.Matrix4().makeRotationY(Math.random()*Math.PI));
-                pineLeafMatrices.push(layerMat);
-                const pc = new THREE.Color(0x1a3320).offsetHSL(Math.random()*0.03-0.015, 0.1, Math.random()*0.05-0.025);
+            // PINE TREE: trunk ends INSIDE the crown (no bare stub), tiers overlap, top apex = total height
+            const H = 16 * s, trunkH = H * 0.8;
+            trunkM.push(baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, trunkH / 2, 0)).multiply(new THREE.Matrix4().makeScale(0.5 * s, trunkH, 0.5 * s)));
+            trunkC.push(0.18, 0.14, 0.11);
+            const n = 6 + Math.floor(rand() * 3);
+            const pcBase = new THREE.Color(0x22452a).offsetHSL(rand() * 0.03 - 0.015, 0.05, rand() * 0.05 - 0.025);
+            for (let j = 0; j < n; j++) {
+                const t = j / (n - 1);
+                const hk = H * (0.30 - 0.13 * t);
+                const yk = H * 0.16 + t * (H * 0.84 - H * 0.17);
+                const R = H * (0.27 - 0.21 * Math.pow(t, 0.9)) * (0.92 + rand() * 0.16);
+                pineLeafMatrices.push(baseMatrix.clone()
+                    .multiply(new THREE.Matrix4().makeTranslation(0, yk, 0))
+                    .multiply(new THREE.Matrix4().makeRotationY(rand() * Math.PI))
+                    .multiply(new THREE.Matrix4().makeScale(R, hk, R)));
+                const pc = pcBase.clone().offsetHSL(0, 0, t * 0.03);
                 pineLeafColors.push(pc.r, pc.g, pc.b);
             }
             state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
@@ -84,9 +95,9 @@ export function generateFractalForest() {
             if (biomeVal > 0.65) {
                 // Maple Tree (Autumn colors based on biome)
                 const autumn = [0x992211, 0xaa4411, 0xbb8811, 0xcc3311];
-                leafBase.setHex(autumn[Math.floor(Math.random()*autumn.length)]);
+                leafBase.setHex(autumn[Math.floor(rand()*autumn.length)]);
             }
-            growBranch(baseMatrix, 0, Math.random() > 0.8 ? 5 : 4, 7.5 * s, 0.75 * s, leafBase);
+            growBranch(baseMatrix, 0, rand() > 0.8 ? 5 : 4, 7.5 * s, 0.75 * s, leafBase);
             state.colliders.push({ x: x, z: z, r: (0.7 * s) + 0.6 });
         }
     }
@@ -173,11 +184,16 @@ export function generateFractalForest() {
         );
     };
 
-    const branchMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, state.branchMatrices.length);
-    branchMesh.castShadow = true; branchMesh.receiveShadow = true;
-    branchMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(state.branchColors), 3);
-    for(let i=0; i < state.branchMatrices.length; i++) branchMesh.setMatrixAt(i, state.branchMatrices[i]);
-    state.scene.add(branchMesh);
+    const lowGeo = new THREE.CylinderGeometry(0.85, 1.25, 1, 6, 2); // thin branches: ~36 tris instead of 288
+    const mkTrunks = (geo, mats, cols) => {
+        const m = new THREE.InstancedMesh(geo, trunkMat, mats.length);
+        m.castShadow = true; m.receiveShadow = true;
+        m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cols), 3);
+        for (let i = 0; i < mats.length; i++) m.setMatrixAt(i, mats[i]);
+        state.scene.add(m);
+    };
+    mkTrunks(trunkGeo, trunkM, trunkC);
+    mkTrunks(lowGeo, state.branchMatrices, state.branchColors);
 
     const leafGeo = new THREE.PlaneGeometry(1.4, 1.4);
     const leafMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, side: THREE.DoubleSide, map: state.globalTextures.leaf, alphaTest: 0.4, transparent: true });
@@ -206,22 +222,15 @@ export function generateFractalForest() {
     state.scene.add(leafMesh);
     
     // PROCEDURAL JAGGED PINE LEAVES
-    const pineGeo = new THREE.ConeGeometry(1, 1, 9, 3, true); 
-    pineGeo.translate(0, 0.5, 0); // Anchor to bottom
+    const pineGeo = new THREE.ConeGeometry(1, 1, 10, 1, false); // closed: underside visible from below
+    pineGeo.translate(0, 0.5, 0);
     const pPos = pineGeo.attributes.position;
-    // Distort vertices to create an organic, drooping pine needle silhouette
-    for(let i=0; i < pPos.count; i++) {
-        let y = pPos.getY(i);
-        let x = pPos.getX(i);
-        let z = pPos.getZ(i);
-        if (y < 0.9) { 
-            let angle = Math.atan2(z, x);
-            // Jagged star pattern
-            let radiusVar = 1.0 + 0.25 * Math.sin(angle * 7.0); 
-            pPos.setX(i, x * radiusVar);
-            pPos.setZ(i, z * radiusVar);
-            // Droop the edges heavily to look like heavy pine branches
-            pPos.setY(i, y - 0.25 - Math.random() * 0.15);
+    for (let i = 0; i < pPos.count; i++) {
+        const y = pPos.getY(i);
+        if (y < 0.5) {   // rim + underside: star outline, slight droop
+            const x = pPos.getX(i), z = pPos.getZ(i), ang = Math.atan2(z, x);
+            const rv = 1.0 + 0.18 * Math.sin(ang * 5.0);
+            pPos.setX(i, x * rv); pPos.setZ(i, z * rv); pPos.setY(i, y - 0.06);
         }
     }
     pineGeo.computeVertexNormals();

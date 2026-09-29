@@ -41,7 +41,21 @@ function n2(x, z) {
 // as fractions of WORLD_SIZE so they carry over to this project's 800-unit
 // map unchanged, while absolute heights (peak/crater depth) are tuned
 // directly for this world's scale rather than linearly scaled by 2.5x.
-export function getElevation(x, z) {
+// POI ground pads (terrain v2 B-25 fix): flattens the terrain under each
+// prop so it sits level instead of floating/sinking on a slope. Coordinates
+// mirror environment/pois.js's POIS table (mockup units, same SCALE) —
+// duplicated here rather than imported to avoid a circular import
+// (pois.js -> heightmap.js -> utils.js). Keep the two lists in sync.
+// serpents_coil is deliberately excluded: that crater IS the terrain.
+const _PAD_SCALE = WORLD_SIZE / 320;
+const _PAD_DEFS = [
+    { x: 45, z: -60, r: 30 }, { x: -70, z: -25, r: 12 }, { x: 85, z: 65, r: 8 },
+    { x: -35, z: 45, r: 10 }, { x: -95, z: 80, r: 12 }, { x: 90, z: -75, r: 8 },
+    { x: -100, z: -15, r: 8 }, { x: 30, z: 120, r: 8 },
+].map((p) => ({ x: p.x * _PAD_SCALE, z: p.z * _PAD_SCALE, r: p.r }));
+let _pads = null; // {x,z,r,baseY}[], baseY filled in lazily from rawElevation
+
+function rawElevation(x, z) {
     const nx = x / WORLD_SIZE;
     const nz = z / WORLD_SIZE;
     const dist = Math.sqrt(x * x + z * z) / (WORLD_SIZE * 0.45);
@@ -88,6 +102,19 @@ export function getElevation(x, z) {
     }
 
     return Math.max(-5, elevation);
+}
+
+export function getElevation(x, z) {
+    if (!_pads) _pads = _PAD_DEFS.map((p) => ({ ...p, baseY: rawElevation(p.x, p.z) }));
+    let e = rawElevation(x, z);
+    for (const p of _pads) {
+        const d = Math.hypot(x - p.x, z - p.z);
+        if (d < p.r + 8) {
+            const t = 1 - THREE.MathUtils.smoothstep(d, p.r, p.r + 8);
+            e = e * (1 - t) + p.baseY * t;
+        }
+    }
+    return e;
 }
 
 // Phase 6 #36: shared touch-capability check, used by both input.js and

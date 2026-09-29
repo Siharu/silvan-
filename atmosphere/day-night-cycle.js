@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state, DAY_LENGTH_MS, WEATHER_CHANGE_INTERVAL_MS } from '../core/state.js';
-import { getElevation } from '../core/utils.js';
+import { heightAt as getElevation } from '../core/heightmap.js';
 
 // Cached once instead of getElementById() every frame (Phase 3 #20) — these
 // three never change identity for the life of the page.

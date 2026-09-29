@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { state, WORLD_SIZE, WATER_LEVEL } from './state.js';
-import { getElevation } from './utils.js';
+import { heightAt as getElevation } from './heightmap.js';
 
 const SPRINT_MULTIPLIER = 1.6;
 const JUMP_SPEED = 6.5;
 const GRAVITY = 18;
 const SPRINT_FOV_KICK = 7;      // degrees added while sprinting
 let fovKick = 0;
-let landDip = 0;                // camera sinks briefly after a hard landing
+let landDip = 0;
+const MAX_CLIMB_SLOPE = 0.9;     // rise/run (~42 deg): steeper uphill motion is blocked (B-13)
+const _dir = new THREE.Vector3(), _right = new THREE.Vector3();  // reused: no per-frame garbage                // camera sinks briefly after a hard landing
 
 // Phase 6 #37: jump didn't exist for keyboard OR touch before this — the
 // dedicated touch-jump-btn in index.html pointed at nothing. Edge-triggered
@@ -28,12 +30,21 @@ export function updatePlayer(delta) {
     // true whenever isLocked is (see input.js's pointerlockchange handler),
     // so this is a strict superset for desktop and the actual fix for touch.
     if (!state.isPlaying) return;
+    if (state.debugTour) { state.camera.position.copy(state.player.position); return; } // perf tour drives the camera
+    if (state.debugNoclip) {   // debug free-cam (core/debug.js): fly along the view direction, ignore ground/colliders
+        state.camera.getWorldDirection(_dir);
+        const sp = state.player.speed * (state.keys.shift ? 4 : 1.5) * delta;
+        if (state.keys.w) state.player.position.addScaledVector(_dir, sp);
+        if (state.keys.s) state.player.position.addScaledVector(_dir, -sp);
+        state.camera.position.copy(state.player.position);
+        return;
+    }
     state.player.velocity.set(0, 0, 0);
-    const dir = new THREE.Vector3(); state.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+    const dir = _dir; state.camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
     // Phase 7 #38: was cross(up, dir), which points LEFT — A/D were swapped
     // below to compensate. cross(dir, up) is the true right vector, and
     // D now adds it / A subtracts it.
-    const right = new THREE.Vector3().crossVectors(dir, state.camera.up).normalize();
+    const right = _right.crossVectors(dir, state.camera.up).normalize();
     if (state.keys.w) state.player.velocity.add(dir); if (state.keys.s) state.player.velocity.sub(dir);
     if (state.keys.d) state.player.velocity.add(right); if (state.keys.a) state.player.velocity.sub(right);
     if (state.player.velocity.lengthSq() > 0) {
@@ -52,8 +63,14 @@ export function updatePlayer(delta) {
         // Ocean acts as a wall: block movement onto any ground tile that
         // sits below the water surface, same pattern as the collider check
         // above (per-axis, so grazing the shoreline at an angle still slides).
-        if (getElevation(nX, state.player.position.z) < WATER_LEVEL) colX = true;
-        if (getElevation(state.player.position.x, nZ) < WATER_LEVEL) colZ = true;
+        const px = state.player.position.x, pz = state.player.position.z;
+        const h0 = getElevation(px, pz);
+        const hX = getElevation(nX, pz), hZ = getElevation(px, nZ);
+        if (hX < WATER_LEVEL) colX = true;
+        if (hZ < WATER_LEVEL) colZ = true;
+        // Slope limiter: block only the uphill component, so you slide along steep walls instead of climbing them.
+        if (Math.abs(nX - px) > 1e-5 && (hX - h0) / Math.abs(nX - px) > MAX_CLIMB_SLOPE) colX = true;
+        if (Math.abs(nZ - pz) > 1e-5 && (hZ - h0) / Math.abs(nZ - pz) > MAX_CLIMB_SLOPE) colZ = true;
         if (!colX && Math.abs(nX) < WORLD_SIZE/2) state.player.position.x = nX;
         if (!colZ && Math.abs(nZ) < WORLD_SIZE/2) state.player.position.z = nZ;
         const stepGap = state.keys.shift ? 300 : 450;

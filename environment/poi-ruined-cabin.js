@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('cabin');
 export function createRuinedCabin(x, y, z) {
     const group = new THREE.Group();
 
@@ -14,10 +16,10 @@ export function createRuinedCabin(x, y, z) {
 
     // Deck planks
     for (let px = -3; px <= 3; px += 0.8) {
-        if (Math.random() < 0.15) continue; // gaps in the deck
+        if (rand() < 0.15) continue; // gaps in the deck
         const plank = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.15, 6), woodMat);
         plank.position.set(px, 0.075, 0);
-        plank.rotation.y = (Math.random() - 0.5) * 0.08;
+        plank.rotation.y = (rand() - 0.5) * 0.08;
         plank.castShadow = true; plank.receiveShadow = true;
         group.add(plank);
     }
@@ -29,7 +31,7 @@ export function createRuinedCabin(x, y, z) {
         post.castShadow = true; post.receiveShadow = true;
         wall.add(post);
         for (let wy = 0.3; wy < h; wy += 0.55) {
-            if (Math.random() < 0.3) continue; // decayed gaps
+            if (rand() < 0.3) continue; // decayed gaps
             const log = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 2.5), woodMat);
             log.position.set(0, wy, 1.2);
             log.castShadow = true; log.receiveShadow = true;
@@ -47,12 +49,12 @@ export function createRuinedCabin(x, y, z) {
     // Crumbling stone chimney
     const chimney = new THREE.Group();
     for (let course = 0; course < 11; course++) {
-        if (course > 7 && Math.random() < 0.45) continue; // collapsing upper courses
+        if (course > 7 && rand() < 0.45) continue; // collapsing upper courses
         const brick = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), stoneMat);
         brick.position.set(
-            (Math.random() - 0.5) * 0.15,
+            (rand() - 0.5) * 0.15,
             course * 0.4 + 0.2,
-            (Math.random() - 0.5) * 0.15
+            (rand() - 0.5) * 0.15
         );
         brick.castShadow = true; brick.receiveShadow = true;
         chimney.add(brick);

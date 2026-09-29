@@ -8,16 +8,9 @@ import { state } from './state.js';
 const QUALITY_KEY = 'silvan-quality';
 const FPS_KEY = 'silvan-show-fps';
 
-// bladeCount is the only quality-driven value anything currently reads
-// (environment/grass.js's `(state.quality && state.quality.bladeCount) ||
-// BLADE_COUNT` fallback). Other quality-scaled values (shadow map size,
-// tree/rock counts) aren't wired to state.quality yet — same fallback
-// pattern would extend to them later without changing this file's shape.
-export const QUALITY_PRESETS = {
-    high: { bladeCount: 220000 },
-    medium: { bladeCount: 130000 },
-    low: { bladeCount: 50000 },
-};
+// Tier table lives in render-quality.js (applied live, no reload).
+import { QUALITY_PRESETS, applyQuality } from './render-quality.js';
+export { QUALITY_PRESETS };
 
 // Called once at the start of main.js's init(), before createGrass() runs,
 // so state.quality exists by the time anything reads it.
@@ -32,11 +25,8 @@ export function loadQuality() {
 function setQuality(key) {
     if (!QUALITY_PRESETS[key]) return;
     localStorage.setItem(QUALITY_KEY, key);
-    state.qualityKey = key;
     highlightActiveQualityButtons(key);
-    // Labeled "(applies on reload)" in index.html — bladeCount only feeds
-    // createGrass() at init() time, so this intentionally doesn't try to
-    // rebuild the grass mesh live; the stored value takes effect next load.
+    applyQuality(key); // live: pixel ratio, shadows, bloom, particles, grass rebuild
 }
 
 function highlightActiveQualityButtons(key) {

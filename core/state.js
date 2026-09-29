@@ -5,9 +5,9 @@ import * as THREE from 'three';
 // (Mirrors the state.userData.shader self-reference pattern used in the main
 // Silvan codebase for day-night-cycle.js uniform feeds.)
 
-export const WORLD_SIZE = 800;
+export const WORLD_SIZE = 1024; // was 800 (terrain v2: bigger island). Kept a multiple of 256/1024 so heightmap.js's bake-to-mesh ratio (k=4) stays exact.
 export const WATER_LEVEL = 1.6; // Must match waterMesh.position.y in environment/lake.js createLake()
-export const TREE_COUNT = 380;
+export const TREE_COUNT = 620; // was 380, scaled by new/old world area (1.64x) to keep density constant
 // Phase 4 #25: was 90000 (90 real seconds per full day) — a normal
 // wandering session blew through several day/night cycles by accident.
 // 20 real minutes per cycle reads as a proper day without dragging.

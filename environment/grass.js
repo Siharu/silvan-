@@ -29,8 +29,11 @@
 // in this file assumes a particular terrain profile.
 
 import * as THREE from 'three';
-import { bakeHeightMapTexture, makeSmoothNoiseTexture, makeGrassDiffuseTexture } from '../core/procedural-textures.js';
-import { state, WATER_LEVEL } from '../core/state.js';
+import { makeSmoothNoiseTexture, makeGrassDiffuseTexture } from '../core/procedural-textures.js';
+import { state, WATER_LEVEL, WORLD_SIZE } from '../core/state.js';
+import { getMeshHeights, MESH_SEGMENTS } from '../core/heightmap.js';
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('grass');
 
 const PATCH_SIZE = 30;  // world units per side of the sliding-window patch. The reference GhibliGrass project runs patchSize:20 with count:200000 (~500 blades/sq-unit); 30 keeps a visible-coverage radius (~15 units) while landing close to reference density at the bladeCount below.
 const BLADE_COUNT = 130000; // fallback if state.quality is missing — matches medium tier
@@ -65,6 +68,8 @@ uniform float uRandomHeightAmount;
 uniform float uNearFullRadius;
 uniform float uFarBladeScale;
 uniform float uNearBladeScale;
+uniform vec3 uBaseColor;
+uniform vec3 uTipColor;
 
 float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
@@ -104,19 +109,19 @@ void main() {
         map(worldPos.z, uBoundingBoxMin.z, uBoundingBoxMax.z, 0.0, 1.0)
     );
 
-    vec2 texSize = vec2(textureSize(uHeightMap, 0));
-    vec2 uvTexel = uv * texSize - 0.5;
-    vec2 uvFloor = floor(uvTexel) / texSize;
-    vec2 uvCeil = ceil(uvTexel) / texSize;
-    vec2 uvFrac = fract(uvTexel);
-
-    float h00 = texture(uHeightMap, uvFloor).r;
-    float h10 = texture(uHeightMap, vec2(uvCeil.x, uvFloor.y)).r;
-    float h01 = texture(uHeightMap, vec2(uvFloor.x, uvCeil.y)).r;
-    float h11 = texture(uHeightMap, uvCeil).r;
-
-    float terrainHeight = mix(mix(h00, h10, uvFrac.x), mix(h01, h11, uvFrac.x), uvFrac.y);
-    float displacement = map(terrainHeight, 0.0, 1.0, uBoundingBoxMin.y, uBoundingBoxMax.y);
+    // B-05: uHeightMap is a FLOAT texture of the terrain mesh's own vertex
+    // heights (same array core/heightmap.js heightAt() reads). Nearest
+    // texelFetch + manual bilinear at exact node coordinates: no 8-bit
+    // quantisation, no half-texel shift, no double filtering.
+    ivec2 texSize = textureSize(uHeightMap, 0);
+    vec2 t = clamp(uv, 0.0, 1.0) * vec2(texSize - ivec2(1));
+    ivec2 i0 = min(ivec2(floor(t)), texSize - ivec2(2));
+    vec2 uvFrac = t - vec2(i0);
+    float h00 = texelFetch(uHeightMap, i0, 0).r;
+    float h10 = texelFetch(uHeightMap, i0 + ivec2(1, 0), 0).r;
+    float h01 = texelFetch(uHeightMap, i0 + ivec2(0, 1), 0).r;
+    float h11 = texelFetch(uHeightMap, i0 + ivec2(1, 1), 0).r;
+    float displacement = mix(mix(h00, h10, uvFrac.x), mix(h01, h11, uvFrac.x), uvFrac.y);
     transformed.y += displacement;
 
     vec3 heightNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency)).rgb;
@@ -129,7 +134,7 @@ void main() {
     edgeFactor = pow(max(edgeFactor, 0.0), uFalloffSharpness);
 
     float baldPatchOffset = heightNoise.r * (uBaldPatchModifier * (1.0 - edgeFactor));
-    heightModifier -= baldPatchOffset;
+    heightModifier = max(heightModifier - baldPatchOffset, 0.15); // never negative: blades no longer sink into the ground
 
     // Keep grass off the beach/underwater. displacement above is already
     // real-world elevation, so this compares directly against the actual
@@ -137,7 +142,9 @@ void main() {
     // minimum (which would drift every time the terrain shape changes,
     // e.g. The Hearth's island vs. the old lake basin).
     float shoreFade = smoothstep(uWaterLevel + 0.5, uWaterLevel + 3.5, displacement);
-    heightModifier *= shoreFade;
+    float highFade = 1.0 - smoothstep(24.0, 36.0, displacement);
+    float craterFade = smoothstep(40.0, 62.0, length(worldPos.xz - vec2(0.0, -12.0)));
+    heightModifier *= shoreFade * highFade * craterFade;
 
     // NOTE: this previously called smoothstep(max, max - 2.0, x) on the
     // "far" side — edge0 > edge1, which is undefined behavior per the GLSL
@@ -180,14 +187,14 @@ void main() {
     // invisible) every time the height scale changed elsewhere — it's
     // what caused both the original "grass missing near player" bug and
     // this one. Presence-based gating survives future height retuning.
-    float presence = shoreFade * edgeFade;
+    float presence = shoreFade * edgeFade * highFade * craterFade;
     float width = uBladeWidth * sizeFactor * presence;
     transformed += aYaw * (width / 2.0) * factor;
     float scaledHeightModifier = heightModifier * sizeFactor;
 
-    vColor = texture(uDiffuseMap, uv * 10.0).rgb * color;
+    vColor = mix(uBaseColor, uTipColor, color.g); // color.r/.b are corner flags (0.1): never use them as colour
     vec3 colorNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
-    vColor *= colorNoise;
+    vColor *= mix(0.65, 1.15, colorNoise.g); // B-04: brightness only, hue stays from diffuse
 
     // NOTE: previously squashed heightModifier near the player (via an
     // innerCircleFactor mix) to stop blades poking through the camera at
@@ -239,9 +246,17 @@ void main() {
 `;
 
 export function createGrass() {
-    const heightMap = bakeHeightMapTexture(256);
+    const half0 = WORLD_SIZE / 2;
+    const N = MESH_SEGMENTS + 1;
+    const htex = new THREE.DataTexture(getMeshHeights(), N, N, THREE.RedFormat, THREE.FloatType);
+    htex.minFilter = htex.magFilter = THREE.NearestFilter;
+    htex.wrapS = htex.wrapT = THREE.ClampToEdgeWrapping;
+    htex.generateMipmaps = false;
+    htex.needsUpdate = true;
+    const heightMap = { texture: htex, boundsMin: new THREE.Vector3(-half0, 0, -half0), boundsMax: new THREE.Vector3(half0, 0, half0) };
     const noiseTexture = makeSmoothNoiseTexture(256, 20);
     const diffuseTexture = makeGrassDiffuseTexture(128);
+    diffuseTexture.colorSpace = THREE.SRGBColorSpace;
 
     const positions = [];
     const colors = [];
@@ -252,10 +267,10 @@ export function createGrass() {
     const half = PATCH_SIZE * 0.5;
     const bladeCount = (state.quality && state.quality.bladeCount) || BLADE_COUNT;
     for (let i = 0; i < bladeCount; i++) {
-        const ox = THREE.MathUtils.randFloat(-half, half);
-        const oz = THREE.MathUtils.randFloat(-half, half);
+        const ox = (rand() * 2 - 1) * half;
+        const oz = (rand() * 2 - 1) * half;
 
-        const yaw = Math.random() * Math.PI * 2;
+        const yaw = rand() * Math.PI * 2;
         const yawX = Math.sin(yaw);
         const yawZ = -Math.cos(yaw);
 
@@ -317,6 +332,8 @@ export function createGrass() {
             uRandomHeightAmount: { value: 0.25 },
             uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays at uNearBladeScale
             uFarBladeScale: { value: 0.35 },  // size at the patch edge, relative to base blade size
+            uBaseColor: { value: new THREE.Color(0x16301a) },
+            uTipColor: { value: new THREE.Color(0x4f7a34) },
             uNearBladeScale: { value: 1.0 },  // no near-player boost — once base blade scale is correctly sized (see uHeightNoiseAmplitude above), the old gap-closing rationale for boosting this doesn't apply; leaving it at 1.0 (neutral) avoids stacking another multiplier on top of an already-tuned base size. uFarBladeScale below still shrinks distant blades for performance.
         },
     });

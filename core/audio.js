@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { state, SOUNDS } from './state.js';
-import { getElevation } from './utils.js';
+import { heightAt as getElevation } from './heightmap.js';
 import { POIS } from '../environment/pois.js';
 
 const _dirVec = new THREE.Vector3();

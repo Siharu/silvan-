@@ -18,6 +18,8 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('radio');
 // The whole tower + shack is built at 1x and scaled up as one group. Light
 // distances aren't affected by parent scale, so they're multiplied to match.
 export const RADIO_TOWER_SCALE = 4;
@@ -37,7 +39,7 @@ export function createRadioTower(x, y, z) {
     const matBase = new THREE.MeshStandardMaterial({ color: 0x2a2624, roughness: 0.9, metalness: 0.8 });
     const matRust = new THREE.MeshStandardMaterial({ color: 0x5a2319, roughness: 1.0, metalness: 0.2 });
     function getMaterial() {
-        return Math.random() > 0.75 ? matRust : matBase;
+        return rand() > 0.75 ? matRust : matBase;
     }
 
     const towerGroup = new THREE.Group();
@@ -243,9 +245,9 @@ export function createRadioTower(x, y, z) {
 
     for (let i = 0; i < 4; i++) {
         const board = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 0.05), matRust);
-        board.position.set(1.63, 1.25 + i * 0.25 + Math.random() * 0.05, (Math.random() - 0.5) * 0.1);
+        board.position.set(1.63, 1.25 + i * 0.25 + rand() * 0.05, (rand() - 0.5) * 0.1);
         board.rotation.y = Math.PI / 2;
-        board.rotation.z = (Math.random() - 0.5) * 0.3;
+        board.rotation.z = (rand() - 0.5) * 0.3;
         shackGroup.add(board);
     }
 

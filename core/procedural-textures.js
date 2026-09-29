@@ -16,53 +16,18 @@
 //     hand-painted grass color map.
 
 import * as THREE from 'three';
-import { WORLD_SIZE } from './state.js';
-import { getElevation } from './utils.js';
 
-export function bakeHeightMapTexture(resolution = 256) {
-    const half = WORLD_SIZE / 2;
-    const heights = new Float32Array(resolution * resolution);
-    let minY = Infinity, maxY = -Infinity;
-
-    for (let j = 0; j < resolution; j++) {
-        const z = (j / (resolution - 1)) * WORLD_SIZE - half;
-        for (let i = 0; i < resolution; i++) {
-            const x = (i / (resolution - 1)) * WORLD_SIZE - half;
-            const h = getElevation(x, z);
-            heights[j * resolution + i] = h;
-            if (h < minY) minY = h;
-            if (h > maxY) maxY = h;
-        }
-    }
-
-    const range = (maxY - minY) || 1;
-    const data = new Uint8Array(resolution * resolution);
-    for (let k = 0; k < heights.length; k++) {
-        data[k] = Math.round(((heights[k] - minY) / range) * 255);
-    }
-
-    const texture = new THREE.DataTexture(data, resolution, resolution, THREE.RedFormat, THREE.UnsignedByteType);
-    texture.needsUpdate = true;
-    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-
-    return {
-        texture,
-        boundsMin: new THREE.Vector3(-half, minY, -half),
-        boundsMax: new THREE.Vector3(half, maxY, half),
-    };
-}
-
+import { rngFor } from './rng.js';
+const rand = rngFor('ptex');
 export function makeSmoothNoiseTexture(size = 256, cells = 20) {
     const small = document.createElement('canvas');
     small.width = small.height = cells;
     const sctx = small.getContext('2d');
     const simg = sctx.createImageData(cells, cells);
     for (let i = 0; i < cells * cells; i++) {
-        simg.data[i * 4 + 0] = Math.random() * 255;
-        simg.data[i * 4 + 1] = Math.random() * 255;
-        simg.data[i * 4 + 2] = Math.random() * 255;
+        simg.data[i * 4 + 0] = rand() * 255;
+        simg.data[i * 4 + 1] = rand() * 255;
+        simg.data[i * 4 + 2] = rand() * 255;
         simg.data[i * 4 + 3] = 255;
     }
     sctx.putImageData(simg, 0, 0);
@@ -90,15 +55,15 @@ export function makeGrassDiffuseTexture(size = 128) {
     ctx.fillStyle = '#20281a';
     ctx.fillRect(0, 0, size, size);
     for (let i = 0; i < 900; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const shade = 0.5 + Math.random() * 0.6;
+        const x = rand() * size;
+        const y = rand() * size;
+        const shade = 0.5 + rand() * 0.6;
         const r = Math.round(28 * shade);
         const g = Math.round(34 * shade + 6);
         const b = Math.round(16 * shade);
         ctx.fillStyle = `rgba(${r},${g},${b},0.55)`;
         ctx.beginPath();
-        ctx.arc(x, y, 1.2 + Math.random() * 2.2, 0, Math.PI * 2);
+        ctx.arc(x, y, 1.2 + rand() * 2.2, 0, Math.PI * 2);
         ctx.fill();
     }
     const texture = new THREE.CanvasTexture(canvas);

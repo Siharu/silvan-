@@ -18,6 +18,8 @@
 import * as THREE from 'three';
 import { state } from '../core/state.js';
 
+import { rngFor } from '../core/rng.js';
+const rand = rngFor('maw');
 const JITTER_INTERVAL = 1 / 15; // re-roll ~15 times per second, any framerate
 
 export function createHowlingMaw(x, y, z) {
@@ -57,16 +59,16 @@ export function createHowlingMaw(x, y, z) {
 
             const pos = geo.attributes.position;
             for (let j = 0; j < pos.count; j++) {
-                pos.setX(j, pos.getX(j) * (0.6 + Math.random() * 0.8));
-                pos.setY(j, pos.getY(j) * (0.6 + Math.random() * 0.8));
-                pos.setZ(j, pos.getZ(j) * (0.6 + Math.random() * 0.8));
+                pos.setX(j, pos.getX(j) * (0.6 + rand() * 0.8));
+                pos.setY(j, pos.getY(j) * (0.6 + rand() * 0.8));
+                pos.setZ(j, pos.getZ(j) * (0.6 + rand() * 0.8));
             }
             geo.computeVertexNormals();
 
             const mesh = new THREE.Mesh(geo, graniteMaterial);
             mesh.position.y = i * segmentHeight;
-            mesh.rotation.y = Math.random() * Math.PI;
-            mesh.rotation.z = (Math.random() - 0.5) * 0.3;
+            mesh.rotation.y = rand() * Math.PI;
+            mesh.rotation.z = (rand() - 0.5) * 0.3;
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             fangGroup.add(mesh);
@@ -132,11 +134,11 @@ export function createHowlingMaw(x, y, z) {
 
     // Surrounding hostile landscape
     for (let i = 0; i < 25; i++) {
-        const rock = createCraggyFang(6 + Math.random() * 10, 3 + Math.random() * 5);
-        const angle = Math.random() * Math.PI;
-        const dist = 12 + Math.random() * 15;
+        const rock = createCraggyFang(6 + rand() * 10, 3 + rand() * 5);
+        const angle = rand() * Math.PI;
+        const dist = 12 + rand() * 15;
         rock.position.set(Math.cos(angle) * dist, -2, -10 - Math.sin(angle) * 15);
-        rock.rotation.set(Math.random() - 0.5, Math.random() * Math.PI, Math.random() - 0.5);
+        rock.rotation.set(rand() - 0.5, rand() * Math.PI, rand() - 0.5);
         mawGroup.add(rock);
     }
 
@@ -162,17 +164,17 @@ export function createHowlingMaw(x, y, z) {
         const coneGeo = new THREE.ConeGeometry(0.5, 1, 5);
 
         for (let i = 0; i < count; i++) {
-            const length = 1.5 + Math.random() * 5;
-            const thickness = 0.15 + Math.random() * 0.3;
+            const length = 1.5 + rand() * 5;
+            const thickness = 0.15 + rand() * 0.3;
 
             const icicle = new THREE.Mesh(coneGeo, icicleMaterial);
             icicle.scale.set(thickness, length, thickness);
 
-            const ix = (Math.random() - 0.5) * areaWidth;
-            const iz = (Math.random() - 0.5) * areaDepth;
+            const ix = (rand() - 0.5) * areaWidth;
+            const iz = (rand() - 0.5) * areaDepth;
             icicle.position.set(ix, -length / 2, iz);
-            icicle.rotation.x = (Math.random() - 0.5) * 0.3;
-            icicle.rotation.z = (Math.random() - 0.5) * 0.3;
+            icicle.rotation.x = (rand() - 0.5) * 0.3;
+            icicle.rotation.z = (rand() - 0.5) * 0.3;
 
             if (isGround) {
                 icicle.position.y = length / 2;
