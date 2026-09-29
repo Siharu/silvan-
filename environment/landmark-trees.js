@@ -8,7 +8,8 @@
 // purpose — these are all gameplay/interaction systems, not tree shape):
 //   - chop() / health / die() (axe-chopping the tree down)
 //   - ignite() / wetness / fire particles (burning, rain extinguishing it)
-//   - GrandBlueTree's night-time heal/poison proximity effect + glow pulse
+//   - GrandBlueTree's night-time heal/poison proximity effect (the blue
+//     glow + pulse IS ported — see updateGrandBlueGlow below)
 //   - BurrowingCoconut's loose coconut fruit props + wind-sway per frond
 //     (the sink-underground-at-night burrow animation IS ported — see
 //     updateLeaningPalms below)
@@ -25,19 +26,39 @@ import { rngFor } from '../core/rng.js';
 const rand = rngFor('landmark-trees');
 const SCALE = WORLD_SIZE / 320; // same convention as environment/pois.js
 
+// Hand-placed landmarks. Exported so forest.js can keep its undergrowth off the
+// buttress roots / out from under the canopy instead of growing through them.
+export const GRAND_BLUE_SPOTS = [
+    { x: 20 * SCALE, z: 30 * SCALE, scale: 0.75 },
+    { x: -116, z: 22, scale: 0.65 },   // was (-176,176): that spot is beach (h 1.7). Nothing on the west coast is flat enough for the root flare, so it moved inland west of the crater
+    { x: 60 * SCALE, z: -30 * SCALE, scale: 0.8 },
+    { x: -25 * SCALE, z: -55 * SCALE, scale: 0.7 },
+];
+export const GRAND_BLUE_CLEAR_R = 55; // per unit of tree scale: flared roots reach ~50 u
+
+// Shared uniforms so ONE update drives every Grand Blue material (trunk, limbs, leaves).
+const glow = {
+    uGlow: { value: 0 },
+    uTimeG: { value: 0 },
+    uGlowColor: { value: new THREE.Color(0.10, 0.62, 1.0) }, // linear, cyan-blue
+};
+
 // ---- shared canvas textures (ported from the prototype's createFoliageTexture
 // / createPalmFrondTextures, same technique Silvan's own utils.js already
 // uses for its leaf/flower textures) ----------------------------------------
 function buildGrandBlueFoliageTexture() {
+    // A clump of small overlapping leaves (not a few big circles) so each card
+    // reads as foliage with a ragged edge rather than a flat sticker.
     const cvs = document.createElement('canvas');
     cvs.width = 128; cvs.height = 128;
     const ctx = cvs.getContext('2d');
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'white';
-    ctx.shadowBlur = 8;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 36; i++) {
+        const a = rand() * Math.PI * 2, d = Math.sqrt(rand()) * 44;
+        const x = 64 + Math.cos(a) * d, y = 64 + Math.sin(a) * d;
+        const shade = 185 + Math.floor(rand() * 70);   // per-leaf brightness = fake depth
+        ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
         ctx.beginPath();
-        ctx.arc(64 + (rand() - 0.5) * 50, 64 + (rand() - 0.5) * 50, 15 + rand() * 20, 0, Math.PI * 2);
+        ctx.ellipse(x, y, 10 + rand() * 8, 4.5 + rand() * 3.5, a + (rand() - 0.5) * 1.2, 0, Math.PI * 2);
         ctx.fill();
     }
     const tex = new THREE.CanvasTexture(cvs);
@@ -72,16 +93,56 @@ function buildPalmFrondTextures() {
     return { map, alphaMap };
 }
 
-// ---- Grand Blue Tree: massive ancient flared-root tree with a domed canopy
+// ---- Grand Blue Tree: massive ancient flared-root tree with a domed canopy.
+// Bark = grooves + moss at the roots (same idea as forest.js's trunks) plus
+// cyan "veins" that light up at night; leaves and veins share one glow uniform.
+function makeBarkMaterial(color, mossAmount) {
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.95 });
+    mat.onBeforeCompile = (shader) => {
+        Object.assign(shader.uniforms, glow, { uMoss: { value: mossAmount } });
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+                varying vec3 vLocalPos;
+                varying vec3 vWorldNormal;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+                vLocalPos = position;`)
+            .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
+                vWorldNormal = normalize(mat3(instanceMatrix) * objectNormal);`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+                uniform float uGlow; uniform float uTimeG; uniform vec3 uGlowColor; uniform float uMoss;
+                varying vec3 vLocalPos;
+                varying vec3 vWorldNormal;`)
+            .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `
+                vec4 diffuseColor = vec4( diffuse, opacity );
+                {
+                    float ang = atan(vLocalPos.z, vLocalPos.x);
+                    float g1 = sin(ang * 22.0 + sin(vLocalPos.y * 0.25) * 2.0);
+                    float g2 = sin(ang * 9.0 - vLocalPos.y * 0.08);
+                    float groove = smoothstep(-0.2, 0.9, g1 * 0.6 + g2 * 0.4);
+                    vec3 bark = mix(diffuse * 0.32, diffuse * 1.2, groove);
+                    float seg = mod(floor((ang / 6.2831853 + 0.5) * 12.0), 12.0);
+                    bark *= 0.82 + 0.34 * fract(sin(floor(vLocalPos.y * 0.5) * 12.9898 + seg * 78.233) * 43758.5453);
+                    float up = clamp(vWorldNormal.y * 1.2 + 0.1, 0.0, 1.0);
+                    float low = 1.0 - smoothstep(4.0, 24.0, vLocalPos.y);
+                    float mn = 0.5 + 0.5 * sin(ang * 13.0 + vLocalPos.y * 0.9) * sin(vLocalPos.y * 0.4);
+                    float moss = clamp(low * (0.35 + up * 0.6) * (0.6 + 0.4 * mn), 0.0, 1.0) * uMoss;
+                    bark = mix(bark, vec3(0.10, 0.24, 0.09), moss * 0.85);
+                    diffuseColor.rgb = bark;
+                }`)
+            .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+                {
+                    float a2 = atan(vLocalPos.z, vLocalPos.x);
+                    float vein = smoothstep(0.86, 0.98, sin(a2 * 7.0 + vLocalPos.y * 0.12 + sin(vLocalPos.y * 0.3) * 1.2));
+                    float pulse = 0.75 + 0.25 * sin(uTimeG * 1.1 + vLocalPos.y * 0.05);
+                    totalEmissiveRadiance += uGlowColor * uGlow * pulse * (vein * 1.5 + 0.05);
+                }`);
+    };
+    return mat;
+}
+
 export function createGrandBlueTrees() {
-    // Hand-placed, not random: these are landmarks meant to be composed, not
-    // scattered. Kept away from POIs/crater/steep ground (checked below).
-    const spots = [
-        { x: 20 * SCALE, z: 30 * SCALE, scale: 0.75 },
-        { x: -55 * SCALE, z: 55 * SCALE, scale: 0.65 },
-        { x: 60 * SCALE, z: -30 * SCALE, scale: 0.8 },
-        { x: -25 * SCALE, z: -55 * SCALE, scale: 0.7 },
-    ];
+    const spots = GRAND_BLUE_SPOTS;
 
     const trunkHeight = 90; // base height before per-instance `scale`
     const trunkGeo = new THREE.CylinderGeometry(4.5, 14, trunkHeight, 16, 12);
@@ -101,52 +162,142 @@ export function createGrandBlueTrees() {
     }
     trunkGeo.translate(0, trunkHeight / 2, 0); // base sits at the instance's y=0
     trunkGeo.computeVertexNormals();
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3222, roughness: 0.95, flatShading: true });
+    const trunkMat = makeBarkMaterial(0x6a4a33, 1.0);
+    const limbMat = makeBarkMaterial(0x5d4230, 0.0);
 
-    const foliageTex = buildGrandBlueFoliageTexture();
+    // Big limbs reaching into the canopy: hides the blunt trunk top and makes it read as a tree.
+    const LIMBS_PER_TREE = 7, LIMB_LEN = 30;
+    const limbGeo = new THREE.CylinderGeometry(1.3, 3.0, LIMB_LEN, 8, 4);
+    limbGeo.translate(0, LIMB_LEN / 2, 0);
+
     const leafMat = new THREE.MeshStandardMaterial({
-        map: foliageTex, color: 0x1a4a55, transparent: true, alphaTest: 0.4,
-        side: THREE.DoubleSide, roughness: 0.9,
+        map: buildGrandBlueFoliageTexture(), color: 0xffffff, transparent: true, alphaTest: 0.45,
+        side: THREE.DoubleSide, roughness: 0.85,
     });
+    leafMat.onBeforeCompile = (shader) => {
+        Object.assign(shader.uniforms, glow);
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+                varying float vPhase;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+                vPhase = fract(sin(dot(instanceMatrix[3].xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453);`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+                uniform float uGlow; uniform float uTimeG; uniform vec3 uGlowColor;
+                varying float vPhase;`)
+            .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+                {
+                    float pulse = 0.65 + 0.35 * sin(uTimeG * 1.4 + vPhase * 6.2831);
+                    // night glow + a faint always-on fill so the canopy underside never goes pure black
+                    totalEmissiveRadiance += uGlowColor * (0.7 + 0.6 * vPhase) * uGlow * pulse * 1.2 + vec3(0.02, 0.06, 0.07);
+                }`);
+    };
     const leafGeo = new THREE.PlaneGeometry(10, 10);
-    const LEAVES_PER_TREE = 60; // was 1500 in the prototype — cut hard for perf, canopy silhouette barely changes
+    const LEAVES_PER_TREE = 280;
 
     const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, spots.length);
     trunkMesh.castShadow = true; trunkMesh.receiveShadow = true;
+    const limbMesh = new THREE.InstancedMesh(limbGeo, limbMat, spots.length * LIMBS_PER_TREE);
+    limbMesh.castShadow = true; limbMesh.receiveShadow = true;
+
     const dummy = new THREE.Object3D();
+    const limbLocal = new THREE.Matrix4(), limbQ = new THREE.Quaternion(), limbS = new THREE.Vector3(), limbP = new THREE.Vector3();
     const colliders = [];
+    const col = new THREE.Color();
+    blueTrees.length = 0;
+
     spots.forEach((s, i) => {
         const y = getElevation(s.x, s.z);
-        dummy.position.set(s.x, y, s.z);
+        // sink the root flare into hillsides so the downhill buttresses don't hang in the air
+        const sink = (1.5 + slopeAt(s.x, s.z) / 4) * s.scale;
+        dummy.position.set(s.x, y - sink, s.z);
         dummy.rotation.y = rand() * Math.PI * 2;
         dummy.scale.setScalar(s.scale);
         dummy.updateMatrix();
         trunkMesh.setMatrixAt(i, dummy.matrix);
-        colliders.push({ x: s.x, z: s.z, r: 6 * s.scale });
+        colliders.push({ x: s.x, z: s.z, r: 16 * s.scale }); // buttress roots, not just the upper trunk
+        blueTrees.push({ x: s.x, y, z: s.z, scale: s.scale });
+
+        for (let k = 0; k < LIMBS_PER_TREE; k++) {
+            const a = (k / LIMBS_PER_TREE) * Math.PI * 2 + rand() * 0.6;
+            const pitch = 0.6 + rand() * 0.55;                       // ~35-65 deg up from horizontal
+            const dir = new THREE.Vector3(Math.cos(a) * Math.cos(pitch), Math.sin(pitch), Math.sin(a) * Math.cos(pitch));
+            limbQ.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+            limbP.set(0, 52 + rand() * 30, 0);
+            const len = 0.9 + rand() * 0.8, thick = 0.8 + rand() * 0.6;
+            limbS.set(thick, len, thick);
+            limbLocal.compose(limbP, limbQ, limbS);
+            limbMesh.setMatrixAt(i * LIMBS_PER_TREE + k, dummy.matrix.clone().multiply(limbLocal));
+        }
 
         const leaves = new THREE.InstancedMesh(leafGeo, leafMat, LEAVES_PER_TREE);
         leaves.castShadow = true;
         const leafDummy = new THREE.Object3D();
+        const center = new THREE.Vector3(0, trunkHeight - 12, 0);
         for (let j = 0; j < LEAVES_PER_TREE; j++) {
-            const phi = Math.acos(-1 + (2 * j) / LEAVES_PER_TREE);
-            const theta = Math.sqrt(LEAVES_PER_TREE * Math.PI) * phi;
-            const r = 20 + rand() * 25;
-            leafDummy.position.setFromSphericalCoords(r, phi, theta);
-            leafDummy.position.x *= 1.8; leafDummy.position.y *= 0.5; leafDummy.position.z *= 1.8;
-            leafDummy.position.y += trunkHeight - 4;
-            leafDummy.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
-            const ls = 1.0 + rand() * 1.5;
-            leafDummy.scale.setScalar(ls);
+            // upper dome plus a short skirt (no cards hanging below the crown)
+            const u = (j + 0.5) / LEAVES_PER_TREE;
+            const phi = Math.acos(1 - u * 1.35);
+            const theta = j * 2.399963;                             // golden angle: even spread
+            const r = 24 + rand() * 20;
+            leafDummy.position.set(
+                r * Math.sin(phi) * Math.cos(theta) * 1.8,
+                r * Math.cos(phi) * 0.55 + trunkHeight - 2,
+                r * Math.sin(phi) * Math.sin(theta) * 1.8,
+            );
+            // face the card outward from the crown centre, then spin it in-plane
+            const out = leafDummy.position.clone().sub(center).normalize();
+            out.x += (rand() - 0.5) * 0.5; out.y += (rand() - 0.5) * 0.5; out.z += (rand() - 0.5) * 0.5;
+            leafDummy.lookAt(leafDummy.position.clone().add(out));
+            leafDummy.rotateZ(rand() * Math.PI * 2);
+            leafDummy.scale.setScalar(1.1 + rand() * 1.3);
             leafDummy.updateMatrix();
-            // bake this tree's world transform (position+rotation+scale) into every leaf instance,
+            // bake this tree's world transform into every leaf instance,
             // since InstancedMesh entries are absolute matrices, not parented to the trunk
-            const world = dummy.matrix.clone().multiply(leafDummy.matrix);
-            leaves.setMatrixAt(j, world);
+            leaves.setMatrixAt(j, dummy.matrix.clone().multiply(leafDummy.matrix));
+            col.setHSL(0.5 + rand() * 0.08, 0.45 + rand() * 0.15, 0.24 + rand() * 0.16, THREE.SRGBColorSpace);
+            leaves.setColorAt(j, col);
         }
         state.scene.add(leaves);
     });
     state.scene.add(trunkMesh);
+    state.scene.add(limbMesh);
     state.colliders.push(...colliders);
+
+    // ONE point light that hops to the nearest Grand Blue tree (audit: keep visible point lights few).
+    // Intensity, not .visible, is what changes, so the shader never recompiles at dusk.
+    glowLight = new THREE.PointLight(0x4cc9ff, 0, 120, 2);
+    state.scene.add(glowLight);
+}
+
+const blueTrees = [];
+let glowLight = null, glowTree = null;
+
+// Night glow for the Grand Blue trees: ramps up through dusk, stays on all night, fades at dawn.
+// Same night window as day-night-cycle.js (gameTime < 0.25 || > 0.79), with a soft edge each side.
+const sstep = THREE.MathUtils.smoothstep;
+export function updateGrandBlueGlow(dt) {
+    glow.uTimeG.value += dt;
+    const t = state.gameTime;
+    let night;
+    if (t > 0.79 || t < 0.25) night = 1;
+    else if (t >= 0.25 && t < 0.33) night = 1 - sstep(t, 0.25, 0.33);
+    else if (t > 0.70) night = sstep(t, 0.70, 0.79);
+    else night = 0;
+    const g = night * (0.88 + 0.12 * Math.sin(glow.uTimeG.value * 0.8));
+    glow.uGlow.value = g;
+    if (!glowLight || !blueTrees.length) return;
+
+    const p = state.player.position;
+    let best = blueTrees[0], bd = Infinity;
+    for (const bt of blueTrees) { const d = Math.hypot(bt.x - p.x, bt.z - p.z); if (d < bd) { bd = d; best = bt; } }
+    // hysteresis so the light doesn't flip-flop between two trees at equal distance
+    if (!glowTree || (glowTree !== best && Math.hypot(glowTree.x - p.x, glowTree.z - p.z) - bd > 20)) glowTree = best;
+    // sit just outside the trunk, on the player's side, so the bark actually catches it
+    const dx = p.x - glowTree.x, dz = p.z - glowTree.z, dl = Math.hypot(dx, dz) || 1;
+    const off = 22 * glowTree.scale;
+    glowLight.position.set(glowTree.x + (dx / dl) * off, glowTree.y + 20 * glowTree.scale, glowTree.z + (dz / dl) * off);
+    glowLight.intensity = 900 * g;
 }
 
 // ---- Leaning shore palm: curved trunk + collar + drooping fronds, placed
