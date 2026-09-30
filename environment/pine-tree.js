@@ -247,11 +247,11 @@ export function finishPines() {
     for (let v = 0; v < PINE_VARIANTS; v++) {
         const b = buckets[v];
         if (!b.m.length) continue;
-        const make = (geo, mat, colored) => {
+        const make = (geo, mat, colored, castsShadow) => {
             const im = new THREE.InstancedMesh(geo, mat, b.m.length);
             for (let i = 0; i < b.m.length; i++) im.setMatrixAt(i, b.m[i]);
             if (colored) im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(b.c), 3);
-            im.castShadow = true; im.receiveShadow = true;
+            im.castShadow = castsShadow; im.receiveShadow = true;
             im.customDepthMaterial = depthMat;
             im.computeBoundingSphere();
             // branches fold/sway a little outside the baked bounds; pad so culling never pops a tree
@@ -259,8 +259,16 @@ export function finishPines() {
             state.scene.add(im);
             return im;
         };
-        make(variants[v].wood, woodMat, false);
-        make(variants[v].needles, needleMat, true);
+        // Needles: dense, thin, overlapping tuft geometry (~0.15u wide) vs the
+        // scene's global sun.shadow.normalBias (0.6, tuned for terrain acne in
+        // main.js) — the bias pushes the shadow sample past a needle's own
+        // thickness into its neighbours in the same tuft, so it falsely
+        // self-shadows and the blotches merge into a solid black mass at any
+        // tier where shadows are actually on (medium/high; potato disables
+        // shadows outright, which is why it never showed there). Needles still
+        // receive shadow from the trunk/branches/terrain; they just don't cast.
+        make(variants[v].wood, woodMat, false, true);
+        make(variants[v].needles, needleMat, true, false);
         tris += b.m.length * (variants[v].wood.attributes.position.count + variants[v].needles.attributes.position.count) / 3;
     }
     state.pineStats = { trees: buckets.reduce((s, b) => s + b.m.length, 0), instancedTris: Math.round(tris) };
