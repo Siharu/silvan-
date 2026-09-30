@@ -141,6 +141,27 @@ function makeBarkMaterial(color, mossAmount) {
     return mat;
 }
 
+// The root flare (see the vertex warp below) reaches roughly this far from
+// the trunk centre at scale 1 — used both to seat the tree into the terrain
+// and to size its collider, so the two stay consistent with each other.
+const ROOT_FLARE_REACH = 30;
+
+// A single centre-point elevation sample isn't enough to seat a ~60u-wide
+// irregular root flare on real terrain — on any slope, half the roots would
+// float and half would clip. Sample a ring around the flare's actual reach
+// and use the lowest point, so the whole base sits at or below grade
+// everywhere (the comment below on `sink` covers the small extra buffer).
+function seatElevation(cx, cz, scale) {
+    let minY = getElevation(cx, cz);
+    const r = ROOT_FLARE_REACH * scale;
+    const SAMPLES = 8;
+    for (let k = 0; k < SAMPLES; k++) {
+        const a = (k / SAMPLES) * Math.PI * 2;
+        minY = Math.min(minY, getElevation(cx + Math.cos(a) * r, cz + Math.sin(a) * r));
+    }
+    return minY;
+}
+
 export function createGrandBlueTrees() {
     const spots = GRAND_BLUE_SPOTS;
 
@@ -208,14 +229,23 @@ export function createGrandBlueTrees() {
 
     spots.forEach((s, i) => {
         const y = getElevation(s.x, s.z);
-        // sink the root flare into hillsides so the downhill buttresses don't hang in the air
-        const sink = (1.5 + slopeAt(s.x, s.z) / 4) * s.scale;
-        dummy.position.set(s.x, y - sink, s.z);
+        // Old version sank a fixed guess below the CENTRE point only, so on
+        // any real slope one side of the ~60u root spread floated while the
+        // other clipped into the hill. Seat instead at the lowest point the
+        // flare actually reaches, minus a small buffer so the lowest root
+        // finger still bites into the ground rather than sitting exactly at grade.
+        const seatY = seatElevation(s.x, s.z, s.scale) - 0.6 * s.scale;
+        dummy.position.set(s.x, seatY, s.z);
         dummy.rotation.y = rand() * Math.PI * 2;
         dummy.scale.setScalar(s.scale);
         dummy.updateMatrix();
         trunkMesh.setMatrixAt(i, dummy.matrix);
-        colliders.push({ x: s.x, z: s.z, r: 16 * s.scale }); // buttress roots, not just the upper trunk
+        // Was r: 16*scale — smaller than even the unflared trunk base (radius
+        // 14) before the flare multiplies it up to ~3.7x near the ground, which
+        // is why the roots could be walked straight through. A single circle
+        // can't chase the star-shaped flare exactly; this matches its average
+        // reach rather than the tips of its longest fingers.
+        colliders.push({ x: s.x, z: s.z, r: ROOT_FLARE_REACH * s.scale });
         blueTrees.push({ x: s.x, y, z: s.z, scale: s.scale });
 
         for (let k = 0; k < LIMBS_PER_TREE; k++) {

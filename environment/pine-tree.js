@@ -24,7 +24,7 @@ const CFG = {
     levels: 14, height: PINE_BASE_HEIGHT, baseRadius: 1.15,
     branchesPerLevel: 7, branchLengthBase: 8.6, branchRadiusBase: 0.32,
 };
-const NEEDLES_PER_TUFT = 7;
+const NEEDLES_PER_TUFT = 9;
 
 // Shared by every pine material (main + depth) so one write moves all trees.
 const U = { uClump: { value: 0 }, uPineTime: { value: 0 }, uPineH: { value: PINE_BASE_HEIGHT } };
@@ -108,11 +108,11 @@ function makeTuft(rand) {
     const P = [], N = [], C = [];
     for (let i = 0; i < NEEDLES_PER_TUFT; i++) {
         const angle = rand() * Math.PI * 2;
-        const spread = Math.pow(rand(), 1.4) * Math.PI * 0.42 + 0.06;
-        const len = 0.8 + rand() * 0.7;
+        const spread = Math.pow(rand(), 1.4) * Math.PI * 0.28 + 0.06;
+        const len = 0.55 + rand() * 0.45;
         const dir = new THREE.Vector3(Math.sin(spread) * Math.cos(angle), Math.cos(spread), Math.sin(spread) * Math.sin(angle));
         const tip = dir.clone().multiplyScalar(len);
-        const w = 0.075;
+        const w = 0.11;
         const ta = rand() * Math.PI;
         const tx = Math.cos(ta) * w, tz = Math.sin(ta) * w;
         const a = new THREE.Vector3(-tx, 0, -tz), b = new THREE.Vector3(tx, 0, tz);
@@ -121,7 +121,7 @@ function makeTuft(rand) {
         nrm.lerp(new THREE.Vector3(0, 1, 0), 0.5).normalize();
         P.push(a.x, a.y, a.z, b.x, b.y, b.z, tip.x, tip.y, tip.z);
         for (let k = 0; k < 3; k++) N.push(nrm.x, nrm.y, nrm.z);
-        C.push(0.55, 0.55, 1.15);   // AO ramp: base, base, tip
+        C.push(0.78, 0.78, 1.3);   // AO ramp: base, base, tip — was 0.55/1.15, too dark under ACES tonemapping
     }
     return { P, N, C };
 }
@@ -215,7 +215,7 @@ function addTuft(acc, tuft, matrix, pivot, fold) {
 // ---- public API -------------------------------------------------------------
 let variants = null;
 const buckets = [];          // per variant: { m: Matrix4[], c: number[] }
-const NEEDLE_BASE = new THREE.Color(0x2d6a4f);
+const NEEDLE_BASE = new THREE.Color(0x3b7f5c);
 
 export function beginPines(seedBase = 0x51ee) {
     variants = [];

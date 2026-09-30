@@ -35,8 +35,8 @@ import { getMeshHeights, MESH_SEGMENTS } from '../core/heightmap.js';
 import { rngFor } from '../core/rng.js';
 const rand = rngFor('grass');
 
-const PATCH_SIZE = 30;  // world units per side of the sliding-window patch. The reference GhibliGrass project runs patchSize:20 with count:200000 (~500 blades/sq-unit); 30 keeps a visible-coverage radius (~15 units) while landing close to reference density at the bladeCount below.
-const BLADE_COUNT = 130000; // fallback if state.quality is missing — matches medium tier
+const PATCH_SIZE = 45;  // world units per side of the sliding-window patch (~22.5u visible radius). Was 30 (~15u) — that's what was reading as "grass stops a few steps out." Bumped bladeCount in render-quality.js's QUALITY_PRESETS alongside this so near-camera density doesn't thin out; far blades already shrink via uFarBladeScale, so the extra radius costs less than the raw area increase.
+const BLADE_COUNT = 210000; // fallback if state.quality is missing — matches medium tier
 const BLADE_WIDTH = 0.08;
 
 const vertexShader = `
