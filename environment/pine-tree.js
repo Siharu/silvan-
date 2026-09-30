@@ -208,7 +208,7 @@ function addTuft(acc, tuft, matrix, pivot, fold) {
     for (let i = 0; i < tuft.P.length; i += 3) {
         _v.set(tuft.P[i], tuft.P[i + 1], tuft.P[i + 2]).applyMatrix4(matrix);
         _n.set(tuft.N[i], tuft.N[i + 1], tuft.N[i + 2]).applyMatrix3(nm).normalize();
-        acc.vert(_v.x, _v.y, _v.z, _n.x, _n.y, _n.z, pivot, fold, tuft.C[i]);
+        acc.vert(_v.x, _v.y, _v.z, _n.x, _n.y, _n.z, pivot, fold, tuft.C[i / 3]);
     }
 }
 
