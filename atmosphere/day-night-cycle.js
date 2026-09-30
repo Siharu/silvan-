@@ -114,10 +114,10 @@ export function updateAtmosphere(delta) {
         state.camera.getWorldDirection(camDir);
         const verticalFacing = Math.abs(camDir.y);
         u.uUvSquash.value = THREE.MathUtils.lerp(1, 0.05, verticalFacing);
-        u.uSize.value = 5 * THREE.MathUtils.lerp(1, 0.7, verticalFacing) * (0.5 + 0.5 * u.uUvSquash.value);
+        u.uSize.value = 7 * THREE.MathUtils.lerp(1, 0.7, verticalFacing) * (0.5 + 0.5 * u.uUvSquash.value);
 
         u.uColor.value.copy(RAIN_COL_DAY).lerp(RAIN_COL_NIGHT, 1 - dayBlend);
-        u.uOpacity.value = 0.6 * Math.min(1.0, state.currentRainIntensity * 2.0);
+        u.uOpacity.value = THREE.MathUtils.lerp(0.15, 0.95, Math.min(1.0, state.currentRainIntensity * 1.3));
 
         const activeCount = Math.max(0, Math.floor(45000 * state.currentRainIntensity));
         state.rainMesh.geometry.setDrawRange(0, activeCount);
@@ -125,7 +125,7 @@ export function updateAtmosphere(delta) {
     }
 
     if (state.rainSplashMat) {
-        state.rainSplashMat.opacity = 0.5 * Math.min(1.0, state.currentRainIntensity * 1.8);
+        state.rainSplashMat.opacity = THREE.MathUtils.lerp(0.2, 0.85, Math.min(1.0, state.currentRainIntensity * 1.3));
         state.rainSplashMesh.visible = state.currentRainIntensity > 0.15; // match the CLEAR/LIGHT RAIN threshold above
     }
 

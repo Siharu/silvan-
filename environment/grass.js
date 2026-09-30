@@ -35,8 +35,8 @@ import { getMeshHeights, MESH_SEGMENTS } from '../core/heightmap.js';
 import { rngFor } from '../core/rng.js';
 const rand = rngFor('grass');
 
-const PATCH_SIZE = 45;  // world units per side of the sliding-window patch (~22.5u visible radius). Was 30 (~15u) — that's what was reading as "grass stops a few steps out." Bumped bladeCount in render-quality.js's QUALITY_PRESETS alongside this so near-camera density doesn't thin out; far blades already shrink via uFarBladeScale, so the extra radius costs less than the raw area increase.
-const BLADE_COUNT = 210000; // fallback if state.quality is missing — matches medium tier
+const PATCH_SIZE = 70;  // world units per side of the sliding-window patch (~35u visible radius). Was 45 (~22.5u) — still reading as short range. Bumped bladeCount in render-quality.js's QUALITY_PRESETS alongside this; also see uFarBladeScale/uFalloffSharpness below, which matter as much as raw radius for how far grass reads as "there."
+const BLADE_COUNT = 360000; // fallback if state.quality is missing — matches medium tier
 const BLADE_WIDTH = 0.08;
 
 const vertexShader = `
@@ -324,14 +324,14 @@ export function createGrass() {
             uWindSpeed: { value: 0.3 },
             uWindNoiseScale: { value: 0.9 },
             uBaldPatchModifier: { value: 2.5 },
-            uFalloffSharpness: { value: 0.35 },
+            uFalloffSharpness: { value: 0.25 },
             uHeightNoiseFrequency: { value: 12 },
             uHeightNoiseAmplitude: { value: 1.1 }, // was 3 — combined with uMaxBladeHeight below this made blades up to ~3 world units tall (taller than the player), which the old buggy near-player suppression happened to hide right where the camera would notice; fixing that suppression exposed the true oversized base scale. Typical height now (heightNoise sum ~1.5 avg) ~1.5 * 0.35 * 1.1 ≈ 0.6 units — ankle/knee-height, not building-height.
             uMaxBendAngle: { value: 22 },
             uMaxBladeHeight: { value: 0.35 },
             uRandomHeightAmount: { value: 0.25 },
             uNearFullRadius: { value: 0.35 }, // fraction of halfPatchSize (~5.25 of 15 units) that stays at uNearBladeScale
-            uFarBladeScale: { value: 0.35 },  // size at the patch edge, relative to base blade size
+            uFarBladeScale: { value: 0.55 },  // size at the patch edge, relative to base blade size — was 0.35, which combined with the bigger patch made distant grass shrink to near-nothing right where it needed to read as coverage
             uBaseColor: { value: new THREE.Color(0x16301a) },
             uTipColor: { value: new THREE.Color(0x4f7a34) },
             uNearBladeScale: { value: 1.0 },  // no near-player boost — once base blade scale is correctly sized (see uHeightNoiseAmplitude above), the old gap-closing rationale for boosting this doesn't apply; leaving it at 1.0 (neutral) avoids stacking another multiplier on top of an already-tuned base size. uFarBladeScale below still shrinks distant blades for performance.
