@@ -52,8 +52,17 @@ export function createFlowers() {
         `);
     };
 
+    // Stems (B-10): thin tapered cylinder, separate InstancedMesh since it
+    // needs its own green material instead of the flower head's texture/
+    // alphaTest map. One extra draw call, not merged into flowerGeo above.
+    const stemGeo = new THREE.CylinderGeometry(0.015, 0.025, 1, 4, 1);
+    stemGeo.translate(0, 0.5, 0); // anchor at bottom, same as the head planes
+    const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b2e, roughness: 0.95 });
+    state.flowerStemMesh = new THREE.InstancedMesh(stemGeo, stemMat, count);
+
     state.flowerMesh = new THREE.InstancedMesh(flowerGeo, mat, count);
     const dummy = new THREE.Object3D();
+    const stemDummy = new THREE.Object3D();
     const colors = [];
     // White Daisy, Blue Forget-me-not, Violet, Goldenrod
     const palette = [new THREE.Color(0xffffff), new THREE.Color(0x4488ff), new THREE.Color(0xa255ff), new THREE.Color(0xffcc22)];
@@ -77,6 +86,14 @@ export function createFlowers() {
             dummy.scale.set(s, s, s);
             dummy.updateMatrix();
             state.flowerMesh.setMatrixAt(valid, dummy.matrix);
+
+            // Stem: same x/z/rotation, full height to the ground (not
+            // sunk like the head) so it reads as planted, not floating.
+            stemDummy.position.set(x, y, z);
+            stemDummy.rotation.copy(dummy.rotation);
+            stemDummy.scale.set(1, s * 1.1, 1); // length scales with head size, width stays thin
+            stemDummy.updateMatrix();
+            state.flowerStemMesh.setMatrixAt(valid, stemDummy.matrix);
             
             // Group colors by micro-biomes
             const c = palette[Math.floor((biome - 0.5) * 2 * palette.length) % palette.length] || palette[0];
@@ -86,6 +103,8 @@ export function createFlowers() {
     }
     state.flowerMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(colors), 3);
     state.flowerMesh.count = valid;
+    state.flowerStemMesh.count = valid;
     state.scene.add(state.flowerMesh);
+    state.scene.add(state.flowerStemMesh);
 }
 

@@ -19,6 +19,7 @@ import { initTouchControls } from './touch-controls.js';
 import { startTutorial, updateTutorial } from './tutorial.js';
 import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCounter } from './settings.js';
 import { updatePlayer } from './player-controller.js';
+import { updateRest } from './rest.js';
 import { bakeHeightmap, heightAt } from './heightmap.js';
 import { bakeSplat } from './splat.js';
 import { applyQuality, noteGrassBuilt, updateShadowFollow, updateAdaptiveRes } from './render-quality.js';
@@ -287,6 +288,7 @@ function animate(time) {
         updatePines(delta / 1000);
         updatePOIs(delta / 1000);
         updateTutorial(delta / 1000);
+        updateRest(delta / 1000);
     }
     updatePlayer(delta / 1000);
     updateShadowFollow(); // after atmosphere: re-centres the sun's shadow rig on the player

@@ -41,6 +41,7 @@ export function updatePlayer(delta) {
     // so this is a strict superset for desktop and the actual fix for touch.
     if (!state.isPlaying) return;
     if (state.debugTour) { state.camera.position.copy(state.player.position); return; } // perf tour drives the camera
+    if (state.isResting) return; // B-17: frozen during the rest fade/skip/fade-back sequence
     if (boundaryT > 0) boundaryT -= delta;
     touchBoundary(delta);
     if (state.debugNoclip) {   // debug free-cam (core/debug.js): fly along the view direction, ignore ground/colliders

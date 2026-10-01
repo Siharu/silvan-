@@ -51,6 +51,7 @@ export const SOUNDS = {
 export const state = {
     timeMultiplier: 1,
     isPlaying: false,
+    isResting: false,   // true for the whole rest.js fade/skip/fade-back sequence — freezes player movement
     isLocked: false,
     hasStarted: false, // true once init() has fully built the game world — see main.js's startGame() / core/input.js's pause-vs-title branching
     gameTime: 0.35,
@@ -72,6 +73,7 @@ export const state = {
     puddleMesh: null, puddleMaterial: null,
     waterMesh: null, waterMaterial: null,
     flowerMesh: null,
+    flowerStemMesh: null,
     globalTextures: null,
 
     branchMatrices: [],

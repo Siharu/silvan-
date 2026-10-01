@@ -23,7 +23,7 @@ export function updateAtmosphere(delta) {
     if (!dayEl) dayEl = document.getElementById('day-display');
     if (!timeEl) timeEl = document.getElementById('time-display');
 
-    state.timeMultiplier = state.keys.g ? 50 : 1;
+    state.timeMultiplier = 1; // B-17: no longer a free `keys.g ? 50 : 1` fast-forward — see core/rest.js
     
     // WEATHER LOGIC
     state.weatherChangeTimer += delta * state.timeMultiplier;
