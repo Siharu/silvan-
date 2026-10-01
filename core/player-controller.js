@@ -10,6 +10,8 @@ const SPRINT_FOV_KICK = 7;      // degrees added while sprinting
 let fovKick = 0;
 let landDip = 0;
 const MAX_CLIMB_SLOPE = 0.9;     // rise/run (~42 deg): steeper uphill motion is blocked (B-13)
+const CURRENT_STRENGTH = 26;     // u/s at full depth — exceeds speed*SPRINT_MULTIPLIER (12*1.6=19.2) so the current always wins
+const SAFETY = WORLD_SIZE / 2 + 300; // last-resort bound; the current above should make this unreachable in practice
 let boundaryEl = null, boundaryT = 0;   // dead boundary-message CSS is now wired: shown while the ocean blocks you
 function touchBoundary(delta) {
     if (!boundaryEl) boundaryEl = document.getElementById('boundary-message');
@@ -78,19 +80,29 @@ export function updatePlayer(delta) {
         // Y always tracks bare terrain elevation (getElevation below), never
         // a raycast against nearby props. Revisit for v3 if a POI needs the
         // player to climb onto it; not needed for Map 1's current design.
-        // Ocean acts as a wall: block movement onto any ground tile that
-        // sits below the water surface, same pattern as the collider check
-        // above (per-axis, so grazing the shoreline at an angle still slides).
         const px = state.player.position.x, pz = state.player.position.z;
         const h0 = getElevation(px, pz);
         const hX = getElevation(nX, pz), hZ = getElevation(px, nZ);
-        if (hX < WATER_LEVEL) { colX = true; boundaryT = 1.6; }
-        if (hZ < WATER_LEVEL) { colZ = true; boundaryT = 1.6; }
+        // Terrain v2 / B-20: ocean is a CURRENT, not a wall. Was a hard
+        // block the moment ground dipped below WATER_LEVEL (plus a flat
+        // Math.abs(n) < WORLD_SIZE/2 clamp below) — you'd hit it like
+        // glass. Now wading in is allowed; past the shoreline, a push back
+        // toward the island centre ramps in with depth (full strength by
+        // 6u underwater) until it exceeds even a sprinting swim speed, so
+        // the player drifts to a dead stop in the shallows instead of being
+        // stopped outright. CURRENT_STRENGTH (26) > speed*SPRINT_MULTIPLIER
+        // (12*1.6=19.2) is what guarantees that.
+        let pushX = 0, pushZ = 0;
+        const depthX = WATER_LEVEL - hX, depthZ = WATER_LEVEL - hZ;
+        if (depthX > 0) { pushX = -Math.sign(nX || 1) * Math.min(1, depthX / 6) * CURRENT_STRENGTH * delta; boundaryT = 1.6; }
+        if (depthZ > 0) { pushZ = -Math.sign(nZ || 1) * Math.min(1, depthZ / 6) * CURRENT_STRENGTH * delta; boundaryT = 1.6; }
         // Slope limiter: block only the uphill component, so you slide along steep walls instead of climbing them.
         if (Math.abs(nX - px) > 1e-5 && (hX - h0) / Math.abs(nX - px) > MAX_CLIMB_SLOPE) colX = true;
         if (Math.abs(nZ - pz) > 1e-5 && (hZ - h0) / Math.abs(nZ - pz) > MAX_CLIMB_SLOPE) colZ = true;
-        if (!colX && Math.abs(nX) < WORLD_SIZE/2) state.player.position.x = nX;
-        if (!colZ && Math.abs(nZ) < WORLD_SIZE/2) state.player.position.z = nZ;
+        // SAFETY is a last-resort bound (never meant to be felt - the current
+        // above should always win first), not the primary edge mechanism.
+        if (!colX) state.player.position.x = THREE.MathUtils.clamp(nX + pushX, -SAFETY, SAFETY);
+        if (!colZ) state.player.position.z = THREE.MathUtils.clamp(nZ + pushZ, -SAFETY, SAFETY);
         const stepGap = state.keys.shift ? 300 : 450;
         if (performance.now() - state.stepTimer > stepGap && state.player.isGrounded) {
             state.stepAudio.rate(0.92 + Math.random() * 0.22); // vary pitch so steps don't sound looped

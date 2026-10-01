@@ -1,23 +1,50 @@
 import * as THREE from 'three';
-import { state, WORLD_SIZE, WATER_LEVEL } from '../core/state.js';
+import { state, WATER_LEVEL } from '../core/state.js';
 import { heightAt as getElevation } from '../core/heightmap.js';
 
+// Terrain v2 / B-20: was PlaneGeometry(WORLD_SIZE, WORLD_SIZE, ...) fixed at
+// the world origin — correct only because the hard shoreline wall in
+// player-controller.js meant nobody could ever walk far enough to see its
+// edge, and it scaled with WORLD_SIZE (a 1600u world = a 1600u water plane,
+// most of it never visible at once). Now that the shoreline is a current
+// instead of a wall (same change), the plane has to actually follow the
+// player to keep looking infinite, and can be a fixed, modest size
+// regardless of world size — same "cost independent of world size"
+// principle 4.3's terrain chunks already established.
+const PLANE_SIZE = 700;      // covers the ~380u fog/draw radius from any recenter position with margin
+const SEGMENTS = 48;         // unchanged from the old fixed plane — wave displacement is low-frequency, doesn't need more
+const RECENTER_DIST = 48;    // re-centre once the player's drifted this far from the last snap point
+const SNAP = 16;             // snap the new centre to a grid so the recentre itself is imperceptible, not just "close enough"
+
+let localX = null, localZ = null; // per-vertex LOCAL offsets (fixed for this plane's lifetime)
+let centerX = 0, centerZ = 0;      // current world-space centre (where the plane is actually positioned)
+
+function recomputeDepths(geo) {
+    const pos = geo.attributes.position;
+    const depthAttr = geo.getAttribute('aDepth');
+    for (let i = 0; i < pos.count; i++) {
+        const depth = Math.max(0, WATER_LEVEL - getElevation(localX[i] + centerX, localZ[i] + centerZ));
+        depthAttr.setX(i, Math.min(depth / 20.0, 1.0));
+    }
+    depthAttr.needsUpdate = true;
+}
+
 export function createLake() {
-    const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 48, 48);
+    const geo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE, SEGMENTS, SEGMENTS);
     geo.rotateX(-Math.PI / 2);
 
-    // Per-vertex depth, sampled once from real terrain data (not a periodic
-    // function) — drives shallow/deep color grading and shoreline foam so both
-    // actually follow the basin shape instead of tiling.
     const posAttr = geo.attributes.position;
-    const depths = new Float32Array(posAttr.count);
-    for (let i = 0; i < posAttr.count; i++) {
-        const wx = posAttr.getX(i);
-        const wz = posAttr.getZ(i);
-        const depth = Math.max(0, WATER_LEVEL - getElevation(wx, wz));
-        depths[i] = Math.min(depth / 20.0, 1.0);
-    }
-    geo.setAttribute('aDepth', new THREE.BufferAttribute(depths, 1));
+    localX = new Float32Array(posAttr.count);
+    localZ = new Float32Array(posAttr.count);
+    for (let i = 0; i < posAttr.count; i++) { localX[i] = posAttr.getX(i); localZ[i] = posAttr.getZ(i); }
+
+    // Per-vertex depth, sampled from real terrain data (not a periodic
+    // function) — drives shallow/deep color grading and shoreline foam so
+    // both actually follow the basin shape instead of tiling. Recomputed
+    // whenever the plane recentres (updateLake), since it's now keyed to
+    // world position rather than baked once for a plane that never moved.
+    geo.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(posAttr.count), 1));
+    recomputeDepths(geo);
 
     state.waterMaterial = new THREE.MeshStandardMaterial({
         color: 0x0d2f3d,
@@ -115,11 +142,25 @@ export function createLake() {
         );
     };
     state.waterMesh = new THREE.Mesh(geo, state.waterMaterial);
-    state.waterMesh.position.y = 1.6; // Water surface level
+    state.waterMesh.position.set(centerX, 1.6, centerZ); // Water surface level
     state.waterMesh.receiveShadow = true;
     state.scene.add(state.waterMesh);
     // Lily pads dropped here — this is now open ocean around The Hearth's
     // island, not a lake basin, so lily-pad set dressing no longer fits.
     // (Vegetation/set-dressing passes for Map 1 are being handled separately.)
+}
+
+// Call every frame (main.js's animate()) — cheap no-op unless the player has
+// actually drifted RECENTER_DIST from the last snap point, same pattern as
+// terrain.js's chunk streaming.
+export function updateLake(px, pz) {
+    if (!state.waterMesh) return;
+    const dx = px - centerX, dz = pz - centerZ;
+    if (dx * dx + dz * dz < RECENTER_DIST * RECENTER_DIST) return;
+    centerX = Math.round(px / SNAP) * SNAP;
+    centerZ = Math.round(pz / SNAP) * SNAP;
+    state.waterMesh.position.x = centerX;
+    state.waterMesh.position.z = centerZ;
+    recomputeDepths(state.waterMesh.geometry);
 }
 

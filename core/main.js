@@ -26,10 +26,10 @@ import { initDebug, debugFrame } from './debug.js';
 import { updateAtmosphere } from '../atmosphere/day-night-cycle.js';
 
 import { createSky } from '../environment/sky.js';
-import { createTerrain } from '../environment/terrain.js';
+import { createTerrainChunks, updateTerrainChunks } from '../environment/terrain.js';
 import { createPuddles } from '../environment/puddles.js';
 import { createGrass, updateGrass } from '../environment/grass.js';
-import { createLake } from '../environment/lake.js';
+import { createLake, updateLake } from '../environment/lake.js';
 import { createFlowers } from '../environment/flowers.js';
 import { generateFractalForest } from '../environment/forest.js';
 import { createRocks } from '../environment/rocks.js';
@@ -178,11 +178,12 @@ async function init() {
     await bakeSplat(POIS, (f) => setLoadingProgress(16 + f * 4, 'marking the trails'));
 
     setLoadingProgress(20, 'raising the hearth');
-    createTerrain();
+    createTerrainChunks(200, 0);
     await nextFrame();
 
     setLoadingProgress(35, 'filling the shallows');
     createLake();
+    updateLake(200, 0); // ocean ring (B-20): centre on the known spawn point, same reasoning as createTerrainChunks(200,0) above
     await nextFrame();
 
     setLoadingProgress(55, 'growing the undergrowth');
@@ -289,6 +290,8 @@ function animate(time) {
     }
     updatePlayer(delta / 1000);
     updateShadowFollow(); // after atmosphere: re-centres the sun's shadow rig on the player
+    updateTerrainChunks(state.player.position.x, state.player.position.z);
+    updateLake(state.player.position.x, state.player.position.z);
     updateGrass(time / 1000);
     updatePOIInteraction(delta / 1000);
     updateFpsCounter(delta);

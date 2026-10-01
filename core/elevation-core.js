@@ -71,14 +71,18 @@ const _PAD_DEFS = [
 let _pads = null; // {x,z,r,baseY}[], baseY filled in lazily from rawElevation
 
 function rawElevation(x, z) {
-    const nx = x / WORLD_SIZE;
-    const nz = z / WORLD_SIZE;
     const dist = Math.sqrt(x * x + z * z) / (WORLD_SIZE * 0.45);
 
-    const noiseVal = n2(nx * 2.5, nz * 2.5) * 1.0
-                    + n2(nx * 6.0, nz * 6.0) * 0.4
-                    + n2(nx * 14.0, nz * 14.0) * 0.2
-                    + n2(nx * 30.0, nz * 30.0) * 0.05;
+    // Authored at WORLD_SIZE=1024 — these are now fixed world-unit
+    // wavelengths (e.g. OCT1 = 1 cycle per ~410u), not fractions of
+    // WORLD_SIZE, so the numbers below are chosen to reproduce the exact
+    // previous look at today's WORLD_SIZE and simply hold steady if the
+    // world is widened later instead of stretching every hill with it.
+    const OCT1 = 2.5 / 1024, OCT2 = 6.0 / 1024, OCT3 = 14.0 / 1024, OCT4 = 30.0 / 1024;
+    const noiseVal = n2(x * OCT1, z * OCT1) * 1.0
+                    + n2(x * OCT2, z * OCT2) * 0.4
+                    + n2(x * OCT3, z * OCT3) * 0.2
+                    + n2(x * OCT4, z * OCT4) * 0.05;
 
     let elevation = 0;
     if (dist < 1.0) {
@@ -113,7 +117,8 @@ function rawElevation(x, z) {
 
     // Shoreline dune texture
     if (elevation > 0 && elevation < 4.0) {
-        elevation += n2(nx * 35, nz * 35) * 0.4;
+        const OCT_DUNE = 35 / 1024;
+        elevation += n2(x * OCT_DUNE, z * OCT_DUNE) * 0.4;
     }
 
     return Math.max(-5, elevation);
