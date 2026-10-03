@@ -5,31 +5,38 @@
 //     getElevation(), into a Float32Array (2049 x 2049 nodes over
 //     WORLD_SIZE = ~0.5 u spacing). Terrain v2 4.2: this used to be a
 //     main-thread loop yielding every 64 rows; now it's off-thread entirely.
-//  2. buildMeshHeights() resamples that array at the terrain mesh's vertex
-//     grid. The terrain mesh, the grass shader's height texture, the player,
-//     colliders' Y, tree/rock/flower/POI placement ALL read this mesh grid,
-//     so roots sit on exactly the ground that is drawn.
-//  3. heightAt(x,z) = triangle-exact height of the DRAWN mesh (PlaneGeometry
-//     splits each cell along the b-d diagonal). analyticHeightAt() = raw
-//     high-res bilinear on the bake, for things that want the "true" shape.
-//  4. normalAt(x,z) / shoreDistanceAt(x,z): central-difference helpers for
+//  2. B-05 REBUILD (was still open as of the last audit re-read): terrain v2
+//     chunking (environment/terrain.js) made the DRAWN mesh sample this bake
+//     directly via analyticHeightAt() at each chunk's own LOD resolution (as
+//     fine as 1u near the player) — but heightAt() here was still resampling
+//     the bake onto a SEPARATE, fixed 256-segment (4u-cell) grid first, and
+//     every non-terrain-geometry consumer (player Y, colliders, grass's
+//     height texture, forest/rocks/flowers/POI placement, slope/normal) read
+//     THAT grid. Two ground truths again, same shape as the original bug:
+//     the player/grass/trees could sit up to ~1.8u off the ground actually
+//     being drawn under them (worst case measured at the crater rim before
+//     terrain v2; the chunked LOD only widened the gap by making the drawn
+//     mesh finer while the consumer grid stayed fixed).
+//     FIX: heightAt() now bilinear-samples the bake directly — no
+//     intermediate resample — so it IS analyticHeightAt(), and every caller
+//     above reads the exact same field terrain.js's fillChunkHeights() draws
+//     from. Grass's GPU height texture (getBakeHeights()/HM_RES, below)
+//     switched from the old 257x257 resample to this same 2049x2049 bake for
+//     the same reason. One array, read the same way everywhere.
+//  3. normalAt(x,z) / shoreDistanceAt(x,z): central-difference helpers for
 //     anything that wants a ground normal or an approximate distance to the
 //     WATER_LEVEL contour (core/splat.js's biome mask, future terrain
 //     shading) without every caller re-deriving it from heightAt.
 import { WORLD_SIZE, WATER_LEVEL } from './state.js';
 
 export const HM_RES = 2049;              // bake nodes per side (~0.5 u/texel) — was 1025
-export const MESH_SEGMENTS = 256;        // terrain mesh segments per side (4 u cells = 8 bake cells)
 const HALF = WORLD_SIZE / 2;
 const HM_STEP = WORLD_SIZE / (HM_RES - 1);
-const MESH_STEP = WORLD_SIZE / MESH_SEGMENTS;
-const MESH_N = MESH_SEGMENTS + 1;
 
 let bake = null;       // Float32Array HM_RES^2
-let meshH = null;      // Float32Array MESH_N^2
 let worker = null;
 
-export function isHeightmapReady() { return meshH !== null; }
+export function isHeightmapReady() { return bake !== null; }
 
 export function bakeHeightmap(onProgress) {
     return new Promise((resolve, reject) => {
@@ -40,7 +47,6 @@ export function bakeHeightmap(onProgress) {
                 if (onProgress) onProgress(msg.value);
             } else if (msg.type === 'done') {
                 bake = new Float32Array(msg.buffer);
-                buildMeshHeights();
                 worker.terminate();
                 worker = null;
                 resolve();
@@ -55,34 +61,15 @@ export function bakeHeightmap(onProgress) {
     });
 }
 
-function buildMeshHeights() {
-    meshH = new Float32Array(MESH_N * MESH_N);
-    const k = MESH_STEP / HM_STEP; // = 8 exactly (4u mesh cells / 0.5u bake cells)
-    for (let j = 0; j < MESH_N; j++)
-        for (let i = 0; i < MESH_N; i++)
-            meshH[j * MESH_N + i] = bake[Math.round(j * k) * HM_RES + Math.round(i * k)];
-}
+// Raw bake array + its side length, for anything that needs to feed the GPU
+// directly (grass.js's height texture) rather than calling heightAt() per
+// texel on the CPU.
+export function getBakeHeights() { return bake; }
 
-export function getMeshHeights() { return meshH; }
-
-// Height of the DRAWN terrain mesh (triangle-exact).
+// Height of the ground — bilinear on the bake, same sample every consumer
+// (player, colliders, grass, vegetation/POI placement, and terrain.js's own
+// chunk vertices) reads, so roots/feet/collision all agree with what's drawn.
 export function heightAt(x, z) {
-    let fx = (x + HALF) / MESH_STEP, fz = (z + HALF) / MESH_STEP;
-    fx = Math.min(Math.max(fx, 0), MESH_N - 1.0001);
-    fz = Math.min(Math.max(fz, 0), MESH_N - 1.0001);
-    const ix = Math.floor(fx), iz = Math.floor(fz);
-    const u = fx - ix, v = fz - iz;
-    const a = meshH[iz * MESH_N + ix];               // (0,0)
-    const b = meshH[(iz + 1) * MESH_N + ix];         // (0,1)
-    const c = meshH[(iz + 1) * MESH_N + ix + 1];     // (1,1)
-    const d = meshH[iz * MESH_N + ix + 1];           // (1,0)
-    return (u + v <= 1)
-        ? a + u * (d - a) + v * (b - a)
-        : c + (1 - u) * (b - c) + (1 - v) * (d - c);
-}
-
-// High-res analytic bilinear on the bake (true island shape, not the mesh).
-export function analyticHeightAt(x, z) {
     let fx = (x + HALF) / HM_STEP, fz = (z + HALF) / HM_STEP;
     fx = Math.min(Math.max(fx, 0), HM_RES - 1.0001);
     fz = Math.min(Math.max(fz, 0), HM_RES - 1.0001);
@@ -92,6 +79,11 @@ export function analyticHeightAt(x, z) {
     const h01 = bake[(iz + 1) * HM_RES + ix], h11 = bake[(iz + 1) * HM_RES + ix + 1];
     return (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
 }
+
+// Kept as a name for callers that want to be explicit that they're reading
+// the true analytic shape (terrain.js's fillChunkHeights) — identical to
+// heightAt() now that there is only the one field.
+export const analyticHeightAt = heightAt;
 
 // Slope in degrees from the mesh (central difference, 2 u baseline).
 export function slopeAt(x, z) {

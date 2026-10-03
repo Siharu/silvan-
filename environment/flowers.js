@@ -58,6 +58,27 @@ export function createFlowers() {
     const stemGeo = new THREE.CylinderGeometry(0.015, 0.025, 1, 4, 1);
     stemGeo.translate(0, 0.5, 0); // anchor at bottom, same as the head planes
     const stemMat = new THREE.MeshStandardMaterial({ color: 0x3f6b2e, roughness: 0.95 });
+    // B-10 (remaining half): heads swayed via the onBeforeCompile below on
+    // `mat`, but this stem material had no shader hook at all, so a swaying
+    // head sat on a perfectly rigid stem - visually disconnected up close.
+    // Same sway formula (same wPos basis, same phase/amplitude), scaled by
+    // this geometry's own position.y (0 at the planted base, 1 at the tip,
+    // just like the head planes), so stem and head bend together instead of
+    // the stem staying dead still underneath a moving head. uTime is fed by
+    // atmosphere/day-night-cycle.js's generic `scene.traverse` sweep (it
+    // feeds any material with userData.shader, not just hand-picked ones),
+    // so adding that one assignment below is the only wiring this needs.
+    stemMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 };
+        stemMat.userData.shader = shader;
+        shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\nuniform float uTime;`);
+        shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+            #include <begin_vertex>
+            vec4 wPos = instanceMatrix * vec4(position, 1.0);
+            transformed.x += sin(wPos.x * 4.0 + uTime * 1.5) * 0.15 * position.y;
+            transformed.z += cos(wPos.z * 4.0 + uTime * 1.5) * 0.15 * position.y;
+        `);
+    };
     state.flowerStemMesh = new THREE.InstancedMesh(stemGeo, stemMat, count);
 
     state.flowerMesh = new THREE.InstancedMesh(flowerGeo, mat, count);
@@ -75,11 +96,21 @@ export function createFlowers() {
         const z = Math.sin(theta) * r;
         const y = getElevation(x, z);
         
-        if (grassAt(x, z) < 0.35 || pathAt(x, z) > 0.1) continue; // meadow only: grass mask, off trails (replaces the old y<4 line)
+        const g = grassAt(x, z);
+        if (g < 0.35 || pathAt(x, z) > 0.1) continue; // meadow only: grass mask, off trails (replaces the old y<4 line)
         if (y < 4.0) continue; // Match grass/forest's wet-sand line — flowers are meant to sink into grass (see below), so they shouldn't appear where grass doesn't grow
         
         const biome = noise(x * 0.02, z * 0.02);
         if (biome > 0.5) { // Cluster flower fields
+            // Density mask (B-10, remaining half): the line above was a flat
+            // yes/no on the same grassAt() channel grass itself reads, but
+            // never used its actual VALUE - a texel at 0.36 (barely past the
+            // floor) got placed exactly as readily as one at 0.95 (thick
+            // grass), so clusters were uniformly dense everywhere above the
+            // cutoff instead of thinning out toward the meadow's edges the
+            // way the grass under them visibly does. Re-roll against g so
+            // acceptance odds scale with it.
+            if (rand() > g) continue;
             dummy.position.set(x, y - 0.1, z); // Sink into grass slightly
             dummy.rotation.set(0, rand()*Math.PI, 0); // Random spin
             const s = 0.25 + rand() * 0.25; // was 0.4-1.0: heads were dinner-plate sized

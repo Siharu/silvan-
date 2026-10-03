@@ -31,7 +31,8 @@
 import * as THREE from 'three';
 import { makeSmoothNoiseTexture, makeGrassDiffuseTexture } from '../core/procedural-textures.js';
 import { state, WATER_LEVEL, WORLD_SIZE } from '../core/state.js';
-import { getMeshHeights, MESH_SEGMENTS } from '../core/heightmap.js';
+import { getBakeHeights, HM_RES } from '../core/heightmap.js';
+import { getSplatTexture } from '../core/splat.js';
 import { rngFor } from '../core/rng.js';
 const rand = rngFor('grass');
 
@@ -50,6 +51,8 @@ uniform vec3 uPlayerPosition;
 uniform sampler2D uHeightMap;
 uniform sampler2D uDiffuseMap;
 uniform sampler2D uNoiseTexture;
+uniform sampler2D uSplat;
+uniform float uWorld;
 uniform vec3 uBoundingBoxMin;
 uniform vec3 uBoundingBoxMax;
 uniform float uWaterLevel;
@@ -144,7 +147,22 @@ void main() {
     float shoreFade = smoothstep(uWaterLevel + 0.5, uWaterLevel + 3.5, displacement);
     float highFade = 1.0 - smoothstep(24.0, 36.0, displacement);
     float craterFade = smoothstep(40.0, 62.0, length(worldPos.xz - vec2(0.0, -12.0)));
-    heightModifier *= shoreFade * highFade * craterFade;
+
+    // Trails (audit: visible dirt path on the ground, but grass still
+    // spawned right over it when walking by). core/splat.js already bakes
+    // an alpha "path" channel that forest.js/rocks.js/flowers.js read via
+    // CPU-side pathAt() to keep trees/rocks/flowers off the trails — grass
+    // never checked it, because its blades are GPU-placed by this shader's
+    // sliding-window trick with no per-blade CPU culling pass to hook into.
+    // Same texture, sampled here instead: same UV mapping terrain.js uses
+    // to shade the path colour, same channel. Smoothstep (not a hard cutoff)
+    // because this runs per-blade every frame at sub-texel resolution, so a
+    // sharp threshold would visibly crawl/shimmer as the player moves.
+    vec2 splatUV = (worldPos.xz + 0.5 * uWorld) / uWorld;
+    float pathMask = texture(uSplat, splatUV).a;
+    float trailFade = 1.0 - smoothstep(0.08, 0.3, pathMask);
+
+    heightModifier *= shoreFade * highFade * craterFade * trailFade;
 
     // NOTE: this previously called smoothstep(max, max - 2.0, x) on the
     // "far" side — edge0 > edge1, which is undefined behavior per the GLSL
@@ -187,7 +205,7 @@ void main() {
     // invisible) every time the height scale changed elsewhere — it's
     // what caused both the original "grass missing near player" bug and
     // this one. Presence-based gating survives future height retuning.
-    float presence = shoreFade * edgeFade * highFade * craterFade;
+    float presence = shoreFade * edgeFade * highFade * craterFade * trailFade;
     float width = uBladeWidth * sizeFactor * presence;
     transformed += aYaw * (width / 2.0) * factor;
     float scaledHeightModifier = heightModifier * sizeFactor;
@@ -247,8 +265,17 @@ void main() {
 
 export function createGrass() {
     const half0 = WORLD_SIZE / 2;
-    const N = MESH_SEGMENTS + 1;
-    const htex = new THREE.DataTexture(getMeshHeights(), N, N, THREE.RedFormat, THREE.FloatType);
+    // B-05 rebuild: this used to be a separate 257x257 (4u-cell) resample of
+    // the bake, built once in heightmap.js and never touched again — a
+    // second, coarser ground truth than the chunked terrain mesh (which
+    // samples the bake directly at up to 1u resolution near the player).
+    // Now it's the same HM_RES bake every other consumer (heightAt(), used
+    // by the player, colliders, and tree/rock/flower/POI placement) reads,
+    // so grass roots, feet, and the drawn ground all agree. The vertex
+    // shader's manual bilinear (textureSize() + texelFetch) already works
+    // at any resolution — only this array/size changes.
+    const N = HM_RES;
+    const htex = new THREE.DataTexture(getBakeHeights(), N, N, THREE.RedFormat, THREE.FloatType);
     htex.minFilter = htex.magFilter = THREE.NearestFilter;
     htex.wrapS = htex.wrapT = THREE.ClampToEdgeWrapping;
     htex.generateMipmaps = false;
@@ -315,6 +342,8 @@ export function createGrass() {
             uHeightMap: { value: heightMap.texture },
             uDiffuseMap: { value: diffuseTexture },
             uNoiseTexture: { value: noiseTexture },
+            uSplat: { value: getSplatTexture() }, // bakeSplat() runs before createGrass() in main.js, so this is already the real texture, not a placeholder
+            uWorld: { value: WORLD_SIZE },
             uBoundingBoxMin: { value: heightMap.boundsMin },
             uBoundingBoxMax: { value: heightMap.boundsMax },
             uWaterLevel: { value: WATER_LEVEL },
