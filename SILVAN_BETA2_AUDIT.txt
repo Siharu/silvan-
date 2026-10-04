@@ -1,4 +1,37 @@
 ================================================================================
+STATUS UPDATE 9b - the revert itself broke init() - fixed (2026-10-04)
+================================================================================
+  [x]       The Status Update 9 revert (forest.js/pine-tree.js restored,
+            deciduous-tree.js removed) broke the game entirely on load:
+            "init() failed or timed out — the hearth never lit, TypeError:
+            Cannot read properties of undefined (reading 'push')". Cause:
+            core/state.js had state.branchMatrices/branchColors/
+            leafMatrices/leafColors REMOVED at some point when the merged-
+            mesh deciduous-tree.js system (which keeps its own buffers
+            internally, no shared state arrays needed) replaced the old
+            inline-recursion forest.js that pushes directly into those
+            four arrays on state. Reverting forest.js without also
+            checking state.js for arrays it depends on left those pushes
+            hitting undefined - didn't catch this before shipping the
+            revert since there's no WebGL here to actually run init() and
+            see it fail; should have grepped forest.js's state.* usage
+            against state.js's fields before calling the revert done, not
+            after the fact.
+            FIX: added the four arrays back to core/state.js (empty arrays,
+            same as they were before the LOD system existed), right next
+            to colliders. Grepped the whole project for any other file
+            touching them (none) and for any other state.* field forest.js/
+            pine-tree.js reference that might be similarly missing (none -
+            only state.gameTime, state.scene, state.colliders, state.
+            globalTextures, state.pineStats, all present).
+  Verified with `vite build` (clean, 65 modules). This is a build-only
+  check, same limitation as every update - but this specific failure
+  (undefined.push) would have been caught by ANY attempt to actually run
+  init(), which is exactly what the reported error was. Please confirm the
+  game actually loads and the trees look right before this is trusted.
+================================================================================
+
+================================================================================
 STATUS UPDATE 9 - reverted the new pine/deciduous LOD system - trees were
 rendering bare/broken (reported bug) (2026-10-04)
 ================================================================================

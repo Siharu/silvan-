@@ -94,6 +94,16 @@ isGrounded: true
     keys: { w: false, a: false, s: false, d: false, g: false, e: false, shift: false, k: false },
     colliders: [],
 
+    // Scratch buffers for forest.js's old (restored) inline growBranch()
+    // recursion — the merged-mesh/LOD deciduous system that briefly
+    // replaced it (deciduous-tree.js, since reverted) kept its own matrix
+    // buffers internally and didn't need these on state, so they'd been
+    // dropped from here. Put back since forest.js pushes into them.
+    branchMatrices: [],
+    branchColors: [],
+    leafMatrices: [],
+    leafColors: [],
+
     lastTime: performance.now(),
     stepTimer: 0
 };
