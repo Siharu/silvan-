@@ -6,6 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { updatePines, updatePineLOD } from '../environment/pine-tree.js';
+import { updateDeciduousLOD, updateDeciduousSway } from '../environment/deciduous-tree.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
@@ -32,7 +33,7 @@ import { createPuddles } from '../environment/puddles.js';
 import { createGrass, updateGrass } from '../environment/grass.js';
 import { createGrassMidRing, updateGrassMidRing } from '../environment/grass-midring.js';
 import { createLake, updateLake } from '../environment/lake.js';
-import { createFlowers } from '../environment/flowers.js';
+import { createFlowers, updateFlowerLOD } from '../environment/flowers.js';
 import { generateFractalForest } from '../environment/forest.js';
 import { createRocks, updateRockLOD } from '../environment/rocks.js';
 import { createGrandBlueTrees, createLeaningPalms, updateLeaningPalms, updateGrandBlueGlow, updateGrandBlueCanopy } from '../environment/landmark-trees.js';
@@ -298,7 +299,10 @@ function animate(time) {
     updateTerrainChunks(state.player.position.x, state.player.position.z);
     updateLake(state.player.position.x, state.player.position.z);
     updateRockLOD(state.player.position.x, state.player.position.z);
+    updateFlowerLOD(state.player.position.x, state.player.position.z);
     updatePineLOD(state.player.position.x, state.player.position.z);
+    updateDeciduousLOD(state.player.position.x, state.player.position.z);
+    updateDeciduousSway(delta / 1000);
     updateGrass(time / 1000);
     updateGrassMidRing(time / 1000);
     updatePOIInteraction(delta / 1000);

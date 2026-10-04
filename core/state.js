@@ -76,11 +76,7 @@ export const state = {
     flowerMesh: null,
     flowerStemMesh: null,
     globalTextures: null,
-
-    branchMatrices: [],
-    leafMatrices: [],
-    branchColors: [],
-    leafColors: [],
+    interactors: [], // B-5.6: NPC/animal THREE.Vector3 positions (beyond the player) that bend grass away; populated by whatever system owns them
 
     player: {
 position: new THREE.Vector3(0, 0, 0),

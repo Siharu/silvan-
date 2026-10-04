@@ -6,6 +6,22 @@ import { grassAt, pathAt } from '../core/splat.js';
 
 import { rngFor } from '../core/rng.js';
 const rand = rngFor('flowers');
+
+// Flower LOD (audit section 7): every placed flower (up to 19,000) drew every
+// frame regardless of distance — a meadow you'll never walk is exactly as
+// expensive as the one under your feet. Unlike rocks/pines/deciduous trees
+// there's no far impostor; past FLOWER_CULL_RADIUS a flower patch reads as
+// part of the grass/ground colour anyway (audit 5.1's "ground colour trick"),
+// so distant flowers just aren't drawn at all rather than LOD-swapped. Same
+// re-partition-on-movement pattern as rocks.js/pine-tree.js: flowerData holds
+// every valid placement, updateFlowerLOD() compacts the in-range subset to
+// the front of the (fixed-capacity) instanced buffers each time the player
+// has moved far enough for the cull boundary to matter.
+const FLOWER_CULL_RADIUS = 60;
+const FLOWER_LOD_HYSTERESIS = 12;
+let flowerData = []; // { matrix, stemMatrix, x, z, color: THREE.Color }
+let lodLastPx = null, lodLastPz = null;
+
 export function createFlowers() {
     const count = 19000; // was 12000, scaled by 1.64x world area
     
@@ -80,14 +96,25 @@ export function createFlowers() {
         `);
     };
     state.flowerStemMesh = new THREE.InstancedMesh(stemGeo, stemMat, count);
-
     state.flowerMesh = new THREE.InstancedMesh(flowerGeo, mat, count);
+    // Capacity = count (every slot the placement loop could fill); .count
+    // (how many actually draw) is set by updateFlowerLOD() below, every
+    // frame-ish, to just the subset within FLOWER_CULL_RADIUS.
+    state.flowerMesh.count = 0;
+    state.flowerStemMesh.count = 0;
+    state.flowerMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    // Which flowers occupy these buffers keeps changing as the player moves
+    // (same reasoning as rocks.js/pine-tree.js's LOD meshes), so skip the
+    // frustum test entirely rather than cull against a stale bounding sphere.
+    state.flowerMesh.frustumCulled = false;
+    state.flowerStemMesh.frustumCulled = false;
+
     const dummy = new THREE.Object3D();
     const stemDummy = new THREE.Object3D();
-    const colors = [];
     // White Daisy, Blue Forget-me-not, Violet, Goldenrod
     const palette = [new THREE.Color(0xffffff), new THREE.Color(0x4488ff), new THREE.Color(0xa255ff), new THREE.Color(0xffcc22)];
-    
+
+    flowerData = [];
     let valid = 0;
     for (let i = 0; i < count * 3 && valid < count; i++) {
         const r = Math.sqrt(rand()) * (WORLD_SIZE * 0.35); // was hardcoded 280 (0.35 * old 800) -- now scales with world size
@@ -116,7 +143,6 @@ export function createFlowers() {
             const s = 0.25 + rand() * 0.25; // was 0.4-1.0: heads were dinner-plate sized
             dummy.scale.set(s, s, s);
             dummy.updateMatrix();
-            state.flowerMesh.setMatrixAt(valid, dummy.matrix);
 
             // Stem: same x/z/rotation, full height to the ground (not
             // sunk like the head) so it reads as planted, not floating.
@@ -124,18 +150,47 @@ export function createFlowers() {
             stemDummy.rotation.copy(dummy.rotation);
             stemDummy.scale.set(1, s * 1.1, 1); // length scales with head size, width stays thin
             stemDummy.updateMatrix();
-            state.flowerStemMesh.setMatrixAt(valid, stemDummy.matrix);
-            
-            // Group colors by micro-biomes
+
+            // Group colors by micro-biomes — since `biome` is smooth, spatially
+            // continuous noise, nearby flowers land in the same palette bucket
+            // already, which is most of what "patches of one colour" (section 7)
+            // asks for; the cull below is this section's other half.
             const c = palette[Math.floor((biome - 0.5) * 2 * palette.length) % palette.length] || palette[0];
-            colors.push(c.r, c.g, c.b);
+            flowerData.push({ matrix: dummy.matrix.clone(), stemMatrix: stemDummy.matrix.clone(), x, z, color: c });
             valid++;
         }
     }
-    state.flowerMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(colors), 3);
-    state.flowerMesh.count = valid;
-    state.flowerStemMesh.count = valid;
     state.scene.add(state.flowerMesh);
     state.scene.add(state.flowerStemMesh);
+    lodLastPx = null; lodLastPz = null; // force the first updateFlowerLOD() call to actually partition
+}
+
+// Re-partitions flowerData into the visible (<FLOWER_CULL_RADIUS) subset,
+// compacted to the front of the fixed-capacity instanced buffers — same
+// technique as rocks.js's updateRockLOD, minus the far mesh (flowers beyond
+// the cull radius just aren't drawn; see the comment above flowerData).
+export function updateFlowerLOD(px, pz) {
+    if (!flowerData.length) return;
+    if (lodLastPx !== null) {
+        const moved = Math.hypot(px - lodLastPx, pz - lodLastPz);
+        if (moved < FLOWER_LOD_HYSTERESIS) return;
+    }
+    lodLastPx = px; lodLastPz = pz;
+
+    const r2 = FLOWER_CULL_RADIUS * FLOWER_CULL_RADIUS;
+    let visI = 0;
+    for (const f of flowerData) {
+        const dx = f.x - px, dz = f.z - pz;
+        if (dx * dx + dz * dz > r2) continue;
+        state.flowerMesh.setMatrixAt(visI, f.matrix);
+        state.flowerStemMesh.setMatrixAt(visI, f.stemMatrix);
+        state.flowerMesh.instanceColor.setXYZ(visI, f.color.r, f.color.g, f.color.b);
+        visI++;
+    }
+    state.flowerMesh.count = visI;
+    state.flowerStemMesh.count = visI;
+    state.flowerMesh.instanceMatrix.needsUpdate = true;
+    state.flowerStemMesh.instanceMatrix.needsUpdate = true;
+    state.flowerMesh.instanceColor.needsUpdate = true;
 }
 

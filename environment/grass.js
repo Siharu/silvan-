@@ -41,8 +41,16 @@ const BLADE_COUNT = 360000; // fallback if state.quality is missing — matches 
 const BLADE_WIDTH = 0.08;
 
 const vertexShader = `
-in vec3 aYaw;
-in vec3 aBladeOrigin;
+// B-5.4: was 3 duplicated full-attribute vertices per blade (position, color,
+// uv, aYaw, aBladeOrigin = 14 floats x 3 verts = 168 bytes/blade, [MEASURED]
+// 21.8 MB at 130k blades). Now one shared 3-vertex base geometry (position
+// only, encodes corner via x = -1/+1/0 and the height-blend factor via y =
+// 0/0/1 — replaces the old color.r/color.b/color.g corner-flag trick) plus
+// per-INSTANCE attributes: aOrigin (vec2), aYaw (float), aRand (float) = 16
+// bytes/blade. Same look, ~10x less GPU memory, matches the audit's spec.
+in vec2 aOrigin;
+in float aYaw;
+in float aRand;
 
 out vec3 vColor;
 
@@ -73,6 +81,12 @@ uniform float uFarBladeScale;
 uniform float uNearBladeScale;
 uniform vec3 uBaseColor;
 uniform vec3 uTipColor;
+// B-5.6: player + up to 7 NPC/animal slots (state.interactors, extended by
+// future systems e.g. animals.js) push nearby blades away; unused slots sit
+// far outside uInteractRadius so they never contribute.
+uniform vec3 uInteractors[8];
+uniform float uInteractRadius;
+uniform float uInteractBendAngle;
 
 float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
@@ -95,8 +109,11 @@ float map(float value, float inMin, float inMax, float outMin, float outMax) {
 }
 
 void main() {
-    vec3 transformed = position;
-    vec3 origin = aBladeOrigin;
+    // position.x = corner (-1 left, +1 right, 0 tip); position.y = heightG (0 base verts, 1 tip)
+    float cornerFactor = position.x;
+    float heightG = position.y;
+    vec3 transformed = vec3(0.0);
+    vec3 origin = vec3(aOrigin.x, 0.0, aOrigin.y);
 
     float halfPatchSize = uPatchSize * 0.5;
     origin.x = mod(origin.x - uPlayerPosition.x + halfPatchSize, uPatchSize) - halfPatchSize;
@@ -196,7 +213,6 @@ void main() {
     // without an visible loss of coverage.
     float sizeFactor = mix(uNearBladeScale, uFarBladeScale, smoothstep(uNearFullRadius, 1.0, distFromPlayer));
 
-    float factor = (color.r == 0.1) ? 1.0 : (color.b == 0.1) ? -1.0 : 0.0;
     // Width now comes straight from uBladeWidth, gated by the actual
     // presence factors (shoreFade/edgeFade already computed above), not
     // reverse-engineered from heightModifier's absolute magnitude via a
@@ -207,10 +223,12 @@ void main() {
     // this one. Presence-based gating survives future height retuning.
     float presence = shoreFade * edgeFade * highFade * craterFade * trailFade;
     float width = uBladeWidth * sizeFactor * presence;
-    transformed += aYaw * (width / 2.0) * factor;
+    float yawX = sin(aYaw), yawZ = -cos(aYaw);
+    transformed.x += yawX * (width / 2.0) * cornerFactor;
+    transformed.z += yawZ * (width / 2.0) * cornerFactor;
     float scaledHeightModifier = heightModifier * sizeFactor;
 
-    vColor = mix(uBaseColor, uTipColor, color.g); // color.r/.b are corner flags (0.1): never use them as colour
+    vColor = mix(uBaseColor, uTipColor, heightG);
     vec3 colorNoise = texture(uNoiseTexture, uv.yx * vec2(uHeightNoiseFrequency) + (uTime * 0.1)).rgb;
     vColor *= mix(0.65, 1.15, colorNoise.g); // B-04: brightness only, hue stays from diffuse
 
@@ -232,11 +250,11 @@ void main() {
         cos(uWindDirection), -sin(uWindDirection),
         sin(uWindDirection), cos(uWindDirection)
     );
-    vec2 rotatedNoiseUV = rotation * noiseUV + uTime * vec2(uWindSpeed);
+    vec2 rotatedNoiseUV = rotation * noiseUV + uTime * vec2(uWindSpeed) + aRand * 0.37; // per-blade phase offset so instances sway slightly out of sync
     vec3 windNoise = texture(uNoiseTexture, rotatedNoiseUV).rgb;
 
     vec3 axis = vec3(windNoise.g, 0.0, windNoise.b);
-    float angle = radians(map(windNoise.g + windNoise.b, 0.0, 2.0, -uMaxBendAngle, uMaxBendAngle)) * color.g;
+    float angle = radians(map(windNoise.g + windNoise.b, 0.0, 2.0, -uMaxBendAngle, uMaxBendAngle)) * heightG;
     mat3 rotationMatrix = rotate3d(axis, angle);
 
     vec3 basePosition = vec3(transformed.x, transformed.y - scaledHeightModifier, transformed.z);
@@ -244,7 +262,30 @@ void main() {
     relativePosition = rotationMatrix * relativePosition;
     transformed = basePosition + relativePosition;
 
-    transformed.y += scaledHeightModifier * color.g;
+    transformed.y += scaledHeightModifier * heightG;
+
+    // B-5.6: interaction — player + up to 7 NPC/animal slots bend nearby
+    // blades away from themselves. Purely a function of current distance
+    // (no stored per-blade state), so blades "spring back" for free the
+    // instant the interactor leaves uInteractRadius — cheap, matches the
+    // audit's "no pop, no simulation" ask. Only the tip moves (gated by
+    // heightG, same as the wind bend above), which also gives a visible
+    // flattened trail since trampled blades stay bent toward their own base.
+    vec2 pushDir = vec2(0.0);
+    for (int k = 0; k < 8; k++) {
+        vec2 d = worldPos.xz - uInteractors[k].xz;
+        float dist = length(d);
+        float influence = 1.0 - smoothstep(0.0, uInteractRadius, dist);
+        if (influence > 0.0) pushDir += (dist > 0.0001 ? d / dist : vec2(1.0, 0.0)) * influence;
+    }
+    float pushLen = length(pushDir);
+    if (pushLen > 0.0001) {
+        vec3 pushAxis = normalize(vec3(-pushDir.y, 0.0, pushDir.x));
+        float pushAngle = radians(min(pushLen, 1.0) * uInteractBendAngle) * heightG;
+        mat3 pushRot = rotate3d(pushAxis, pushAngle);
+        vec3 pBase = vec3(transformed.x, transformed.y - scaledHeightModifier * heightG, transformed.z);
+        transformed = pBase + pushRot * (transformed - pBase);
+    }
 
     vec4 modelPosition = modelMatrix * vec4(transformed, 1.0);
     vec4 viewPosition = viewMatrix * modelPosition;
@@ -285,47 +326,37 @@ export function createGrass() {
     const diffuseTexture = makeGrassDiffuseTexture(128);
     diffuseTexture.colorSpace = THREE.SRGBColorSpace;
 
-    const positions = [];
-    const colors = [];
-    const uvs = [];
-    const yaws = [];
-    const bladeOrigins = [];
-
+    // B-5.4: one shared 3-vertex base blade (not instanced — just the
+    // corner/height encoding) + per-instance origin/yaw/rand. See the
+    // vertex shader header comment for the byte-count math.
     const half = PATCH_SIZE * 0.5;
     const bladeCount = (state.quality && state.quality.bladeCount) || BLADE_COUNT;
+
+    const basePositions = new Float32Array([
+        -1, 0, 0,  // left base corner
+         1, 0, 0,  // right base corner
+         0, 1, 0,  // tip
+    ]);
+    const origins = new Float32Array(bladeCount * 2);
+    const yaws = new Float32Array(bladeCount);
+    const rands = new Float32Array(bladeCount);
     for (let i = 0; i < bladeCount; i++) {
-        const ox = (rand() * 2 - 1) * half;
-        const oz = (rand() * 2 - 1) * half;
-
-        const yaw = rand() * Math.PI * 2;
-        const yawX = Math.sin(yaw);
-        const yawZ = -Math.cos(yaw);
-
-        const verts = [
-            { pos: [ox, 0, oz], color: [0.1, 0, 0] },
-            { pos: [ox, 0, oz], color: [0, 0, 0.1] },
-            { pos: [ox, 0, oz], color: [1, 1, 1] },
-        ];
-        for (const v of verts) {
-            positions.push(...v.pos);
-            colors.push(...v.color);
-            uvs.push(0, 0); // unused by this shader — kept only so vertexColors/geometry stay a valid BufferGeometry
-            yaws.push(yawX, 0, yawZ);
-            bladeOrigins.push(ox, 0, oz);
-        }
+        origins[i * 2] = (rand() * 2 - 1) * half;
+        origins[i * 2 + 1] = (rand() * 2 - 1) * half;
+        yaws[i] = rand() * Math.PI * 2;
+        rands[i] = rand();
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3));
-    geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uvs), 2));
-    geometry.setAttribute('aYaw', new THREE.BufferAttribute(new Float32Array(yaws), 3));
-    geometry.setAttribute('aBladeOrigin', new THREE.BufferAttribute(new Float32Array(bladeOrigins), 3));
+    const geometry = new THREE.InstancedBufferGeometry();
+    geometry.instanceCount = bladeCount;
+    geometry.setAttribute('position', new THREE.BufferAttribute(basePositions, 3));
+    geometry.setAttribute('aOrigin', new THREE.InstancedBufferAttribute(origins, 2));
+    geometry.setAttribute('aYaw', new THREE.InstancedBufferAttribute(yaws, 1));
+    geometry.setAttribute('aRand', new THREE.InstancedBufferAttribute(rands, 1));
 
     const material = new THREE.ShaderMaterial({
         vertexShader,
         fragmentShader,
-        vertexColors: true,
         side: THREE.DoubleSide,
         // Required for the vertex shader's textureSize() call below — that's
         // a GLSL ES 3.00 built-in, but THREE.ShaderMaterial compiles as
@@ -364,6 +395,12 @@ export function createGrass() {
             uBaseColor: { value: new THREE.Color(0x16301a) },
             uTipColor: { value: new THREE.Color(0x4f7a34) },
             uNearBladeScale: { value: 1.0 },  // no near-player boost — once base blade scale is correctly sized (see uHeightNoiseAmplitude above), the old gap-closing rationale for boosting this doesn't apply; leaving it at 1.0 (neutral) avoids stacking another multiplier on top of an already-tuned base size. uFarBladeScale below still shrinks distant blades for performance.
+            // B-5.6: slot 0 is always the player; slots 1-7 start far outside
+            // uInteractRadius (no effect) until something populates
+            // state.interactors (e.g. a future animals.js).
+            uInteractors: { value: Array.from({ length: 8 }, () => new THREE.Vector3(1e5, 0, 1e5)) },
+            uInteractRadius: { value: 1.5 },
+            uInteractBendAngle: { value: 55 },
         },
     });
 
@@ -387,6 +424,16 @@ export function updateGrass(elapsedSeconds) {
             state.player.position.y,
             state.player.position.z
         );
+    }
+    // B-5.6: slot 0 = player, slots 1-7 = state.interactors (NPC/animal
+    // positions, pushed by whatever system owns them — empty today).
+    // Leftover slots keep their far-away sentinel from creation, so they're
+    // just left alone rather than rewritten to the sentinel every frame.
+    const slots = state.grassMat.uniforms.uInteractors.value;
+    if (state.player) slots[0].copy(state.player.position);
+    const extra = state.interactors || [];
+    for (let i = 0; i < 7; i++) {
+        if (i < extra.length) slots[i + 1].copy(extra[i]);
     }
     // Feeds the same lighting values everything else in the scene already
     // responds to (main.js's hemiLight/sunLight) so grass tracks day/night
