@@ -1,4 +1,66 @@
 ================================================================================
+STATUS UPDATE 9 - reverted the new pine/deciduous LOD system - trees were
+rendering bare/broken (reported bug) (2026-10-04)
+================================================================================
+  [x]       REPORTED: "one of the bug fixes ruined the trees" - screenshot
+            showed a mix of normal leafy trees next to fully bare (branches-
+            only, no canopy) deciduous trees, up close, in the forest/
+            pinewood area. Confirmed this zip had tree-generation code far
+            beyond anything logged in this audit file (no status update
+            here covers it) - a full LOD rewrite had been added on top of
+            environment/forest.js, pine-tree.js, and a brand-new
+            environment/deciduous-tree.js, without a matching audit entry.
+            What was added: deciduous trees got the SAME merged-mesh + two-
+            tier LOD treatment pine-tree.js already had for pines - near
+            trees get full wood+leaf InstancedMeshes, far trees swap to a
+            shared low-poly trunk+sphere impostor, re-partitioned every
+            frame by updatePineLOD()/updateDeciduousLOD() in core/main.js's
+            animate loop. Read through both systems side by side - the
+            near/far compaction logic in updateDeciduousLOD() looks
+            structurally identical to pine's already-working version (same
+            per-variant bucket, same distance check, same instanceColor
+            resync), so nothing jumped out as an obvious one-line bug on a
+            read-through, and this environment has no WebGL to actually
+            run it and watch which code path produces the bare trees in the
+            screenshot.
+            DECISION: rather than guess-and-check blind on a shader/LOD bug
+            I can't visually verify, reverted to the known-good pre-LOD
+            tree code instead, since that's literally what was asked for.
+            environment/forest.js and environment/pine-tree.js replaced
+            with the versions from before this LOD work existed (confirmed
+            via diff against an earlier upload of this project - the only
+            differences were exactly the new impostor/LOD additions, same
+            placement logic, same exports otherwise). environment/
+            deciduous-tree.js deleted entirely - deciduous trees are back
+            to forest.js's original inline growBranch() recursion straight
+            into shared InstancedMeshes (one trunk mesh, one thin-branch
+            mesh, one leaf-quad mesh for the whole forest - the version
+            that was never reported as bare). core/main.js's imports/calls
+            for updatePineLOD, updateDeciduousLOD, updateDeciduousSway
+            removed (grepped the whole project first - nothing else
+            referenced them). updatePines() (the day/night branch-fold
+            sway, unrelated to the LOD work) kept as-is.
+            NOT TOUCHED, on purpose: rocks.js and flowers.js also picked up
+            their own LOD systems (updateRockLOD/updateFlowerLOD) at some
+            point after update 8, and grass got a mid-ring (grass-
+            midring.js) - none of those were reported as broken and the
+            screenshot only showed trees, so left alone. If those turn out
+            to have the same class of bug, same approach applies: revert
+            first, root-cause later with actual eyes on it.
+            FLAGGING for whoever re-adds tree LOD later: the actual bug in
+            the removed deciduous-tree.js was never found, only worked
+            around by deleting it. If draw-call count on the full forest
+            becomes a real problem again, the fix attempt should start with
+            a screenshot/playtest loop, not another blind pass - that's
+            exactly the gap that let this ship broken.
+  Verified with `vite build` (clean, 65 modules - was 63 before deciduous-
+  tree.js was removed and the two restored files added their own line
+  counts back in). NOT browser-verified - still no WebGL here. This one
+  specifically NEEDS an actual playtest before trusting it, given the
+  report that triggered it.
+================================================================================
+
+================================================================================
 STATUS UPDATE 8 - B-17 "hold to rest" wired up for real (2026-10-01)
 ================================================================================
   [x]       B-17 - REST IS NO LONGER A FREE 50X ANYWHERE: day-night-cycle.js's

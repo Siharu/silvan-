@@ -5,8 +5,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { updatePines, updatePineLOD } from '../environment/pine-tree.js';
-import { updateDeciduousLOD, updateDeciduousSway } from '../environment/deciduous-tree.js';
+import { updatePines } from '../environment/pine-tree.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
@@ -300,9 +299,6 @@ function animate(time) {
     updateLake(state.player.position.x, state.player.position.z);
     updateRockLOD(state.player.position.x, state.player.position.z);
     updateFlowerLOD(state.player.position.x, state.player.position.z);
-    updatePineLOD(state.player.position.x, state.player.position.z);
-    updateDeciduousLOD(state.player.position.x, state.player.position.z);
-    updateDeciduousSway(delta / 1000);
     updateGrass(time / 1000);
     updateGrassMidRing(time / 1000);
     updatePOIInteraction(delta / 1000);
