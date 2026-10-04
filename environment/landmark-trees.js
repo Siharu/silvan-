@@ -112,7 +112,35 @@ function makeBarkMaterial(color, mossAmount) {
             .replace('#include <common>', `#include <common>
                 uniform float uGlow; uniform float uTimeG; uniform vec3 uGlowColor; uniform float uMoss;
                 varying vec3 vLocalPos;
-                varying vec3 vWorldNormal;`)
+                varying vec3 vWorldNormal;
+                float tbHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+                float tbNoise(vec2 p) {
+                    vec2 i = floor(p), f = fract(p);
+                    f = f * f * (3.0 - 2.0 * f);
+                    return mix(mix(tbHash(i), tbHash(i + vec2(1.0, 0.0)), f.x),
+                               mix(tbHash(i + vec2(0.0, 1.0)), tbHash(i + vec2(1.0, 1.0)), f.x), f.y);
+                }
+                // shared so normal_fragment_maps (runs earlier) and the colour block
+                // below compute the identical moss factor from the same inputs
+                float mossFactor(vec3 lp, vec3 wn) {
+                    float ang = atan(lp.z, lp.x);
+                    float up = clamp(wn.y * 1.2 + 0.1, 0.0, 1.0);
+                    float low = 1.0 - smoothstep(4.0, 24.0, lp.y);
+                    float mn = 0.5 + 0.5 * sin(ang * 13.0 + lp.y * 0.9) * sin(lp.y * 0.4);
+                    return clamp(low * (0.35 + up * 0.6) * (0.6 + 0.4 * mn), 0.0, 1.0) * uMoss;
+                }`)
+            // B-27 fix (1): normal perturbation so moss patches catch light
+            // unevenly instead of shading as one flat lit plane - a small fbm
+            // bump, gated by the same moss factor the colour pass uses.
+            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+                {
+                    float mossN = mossFactor(vLocalPos, vWorldNormal);
+                    if (mossN > 0.02) {
+                        float nb = tbNoise(vLocalPos.xz * 2.2 + vLocalPos.y * 0.3);
+                        vec3 bump = normalize(vec3(dFdx(nb), dFdy(nb), 1.0));
+                        normal = normalize(mix(normal, normalize(normal + bump * 0.8), mossN));
+                    }
+                }`)
             .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `
                 vec4 diffuseColor = vec4( diffuse, opacity );
                 {
@@ -123,11 +151,15 @@ function makeBarkMaterial(color, mossAmount) {
                     vec3 bark = mix(diffuse * 0.32, diffuse * 1.2, groove);
                     float seg = mod(floor((ang / 6.2831853 + 0.5) * 12.0), 12.0);
                     bark *= 0.82 + 0.34 * fract(sin(floor(vLocalPos.y * 0.5) * 12.9898 + seg * 78.233) * 43758.5453);
-                    float up = clamp(vWorldNormal.y * 1.2 + 0.1, 0.0, 1.0);
-                    float low = 1.0 - smoothstep(4.0, 24.0, vLocalPos.y);
                     float mn = 0.5 + 0.5 * sin(ang * 13.0 + vLocalPos.y * 0.9) * sin(vLocalPos.y * 0.4);
-                    float moss = clamp(low * (0.35 + up * 0.6) * (0.6 + 0.4 * mn), 0.0, 1.0) * uMoss;
-                    bark = mix(bark, vec3(0.10, 0.24, 0.09), moss * 0.85);
+                    float moss = mossFactor(vLocalPos, vWorldNormal);
+                    // B-27 fix (1): the moss patch itself now carries groove-driven
+                    // colour variation (mossCol) instead of blending to one flat
+                    // constant, AND the blend is capped well below its old 0.85
+                    // ceiling so bark groove/segment detail survives underneath
+                    // even at full moss coverage near the base.
+                    vec3 mossCol = mix(vec3(0.07, 0.17, 0.06), vec3(0.15, 0.32, 0.13), mn);
+                    bark = mix(bark, mossCol, moss * 0.5);
                     diffuseColor.rgb = bark;
                 }`)
             .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -161,6 +193,40 @@ function seatElevation(cx, cz, scale) {
     }
     return minY;
 }
+
+// B-28 fix (1), the cheap option: seating at the ring minimum only stops the
+// LOW side of the flare from clipping - it guarantees nothing about the HIGH
+// side, which floats by exactly the amount the ground rises across the ring.
+// Tilting the whole tree toward the local slope normal (sampled at the same
+// reach used for seating) closes most of that gap on moderate slopes, for
+// free - it doesn't conform the flare's own curved bottom edge on terrain
+// that curves WITHIN its footprint (that needs the real per-vertex fix, (2)
+// in the audit, which binds the height bake into the bark shader itself).
+function surfaceNormal(cx, cz, sampleR) {
+    const hL = getElevation(cx - sampleR, cz);
+    const hR = getElevation(cx + sampleR, cz);
+    const hD = getElevation(cx, cz - sampleR);
+    const hU = getElevation(cx, cz + sampleR);
+    const nx = (hL - hR) / (2 * sampleR);
+    const nz = (hD - hU) / (2 * sampleR);
+    return new THREE.Vector3(nx, 1, nz).normalize();
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+// tiltQuat * yawQuat for a surface normal `n`, a yaw angle (radians), and a
+// max-tilt clamp - shared by both landmark species so a tree on a steep
+// slope still never looks like it's falling over.
+function tiltedQuaternion(n, yaw, maxTiltRad) {
+    let angle = Math.acos(THREE.MathUtils.clamp(n.y, -1, 1));
+    angle = Math.min(angle, maxTiltRad);
+    const axis = new THREE.Vector3().crossVectors(UP, n);
+    if (axis.lengthSq() < 1e-8) axis.set(1, 0, 0); else axis.normalize();
+    const tilt = new THREE.Quaternion().setFromAxisAngle(axis, angle);
+    const yawQ = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
+    return tilt.multiply(yawQ);
+}
+const MAX_TILT_TREE = THREE.MathUtils.degToRad(12); // Grand Blue: wide flare, keep conservative
+const MAX_TILT_PALM = THREE.MathUtils.degToRad(9);  // thinner trunk, smaller gap to begin with
 
 export function createGrandBlueTrees() {
     const spots = GRAND_BLUE_SPOTS;
@@ -236,7 +302,10 @@ export function createGrandBlueTrees() {
         // finger still bites into the ground rather than sitting exactly at grade.
         const seatY = seatElevation(s.x, s.z, s.scale) - 0.6 * s.scale;
         dummy.position.set(s.x, seatY, s.z);
-        dummy.rotation.y = rand() * Math.PI * 2;
+        const yaw = rand() * Math.PI * 2;
+        const n = surfaceNormal(s.x, s.z, ROOT_FLARE_REACH * s.scale * 0.6);
+        dummy.quaternion.copy(tiltedQuaternion(n, yaw, MAX_TILT_TREE));
+        dummy.rotation.setFromQuaternion(dummy.quaternion); // keep .rotation.y usable elsewhere if ever read
         dummy.scale.setScalar(s.scale);
         dummy.updateMatrix();
         trunkMesh.setMatrixAt(i, dummy.matrix);
@@ -282,13 +351,29 @@ export function createGrandBlueTrees() {
             leafDummy.rotateZ(rand() * Math.PI * 2);
             leafDummy.scale.setScalar(1.1 + rand() * 1.3);
             leafDummy.updateMatrix();
-            // bake this tree's world transform into every leaf instance,
-            // since InstancedMesh entries are absolute matrices, not parented to the trunk
-            leaves.setMatrixAt(j, dummy.matrix.clone().multiply(leafDummy.matrix));
+            // Leaf instance matrices stay in TRUNK-LOCAL space now (just
+            // leafDummy.matrix) instead of baking the tree's world transform
+            // in - the `leaves` mesh object itself carries that placement
+            // (position/quaternion/scale below), so the whole canopy can be
+            // spun slowly as one Object3D.rotation update per tree per frame
+            // (updateGrandBlueCanopy) instead of rewriting 280 instance
+            // matrices every tick.
+            leaves.setMatrixAt(j, leafDummy.matrix);
             col.setHSL(0.5 + rand() * 0.08, 0.45 + rand() * 0.15, 0.24 + rand() * 0.16, THREE.SRGBColorSpace);
             leaves.setColorAt(j, col);
         }
+        leaves.position.copy(dummy.position);
+        leaves.scale.copy(dummy.scale);
+        const baseQuat = dummy.quaternion.clone();
+        leaves.quaternion.copy(baseQuat);
         state.scene.add(leaves);
+        blueTrees[blueTrees.length - 1].leavesMesh = leaves;
+        blueTrees[blueTrees.length - 1].baseQuat = baseQuat;
+        // slight per-tree speed/phase offset so four canopies don't spin in
+        // lockstep - a uniform rotation looks mechanical, a few seconds of
+        // drift between them reads as organic instead
+        blueTrees[blueTrees.length - 1].spinSpeed = CANOPY_SPIN_SPEED * (0.85 + rand() * 0.3);
+        blueTrees[blueTrees.length - 1].spinAngle = rand() * Math.PI * 2;
     });
     state.scene.add(trunkMesh);
     state.scene.add(limbMesh);
@@ -302,6 +387,31 @@ export function createGrandBlueTrees() {
 
 const blueTrees = [];
 let glowLight = null, glowTree = null;
+
+// Slow canopy rotation, per user request. ~0.05 rad/s = one full turn every
+// ~2 minutes - meant to read as "the canopy is quietly turning" on a walking
+// sim's timescale, not as a spinning prop. Each leaf card already faces
+// outward from its own crown centre (see leafDummy.lookAt above), so
+// spinning the whole mesh keeps every card correctly oriented for free -
+// no per-leaf billboard re-aim needed.
+const CANOPY_SPIN_SPEED = 0.05; // rad/s, before the per-tree 0.85-1.15x jitter
+const _spinQ = new THREE.Quaternion();
+const _spinAxis = new THREE.Vector3(0, 1, 0);
+
+// One quaternion multiply per tree per frame (not per-leaf: the 280 leaf
+// instance matrices are static and local to the trunk - see the comment at
+// the leaves.setMatrixAt call site in createGrandBlueTrees). Spins around
+// the TREE'S OWN local Y (i.e. post-tilt from B-28), not world-up, so a
+// canopy on a tilted trunk still turns around its own trunk axis rather than
+// precessing oddly around true vertical.
+export function updateGrandBlueCanopy(dt) {
+    for (const bt of blueTrees) {
+        if (!bt.leavesMesh) continue;
+        bt.spinAngle = (bt.spinAngle + bt.spinSpeed * dt) % (Math.PI * 2);
+        _spinQ.setFromAxisAngle(_spinAxis, bt.spinAngle);
+        bt.leavesMesh.quaternion.copy(bt.baseQuat).multiply(_spinQ);
+    }
+}
 
 // Night glow for the Grand Blue trees: ramps up through dusk, stays on all night, fades at dawn.
 // Same night window as day-night-cycle.js (gameTime < 0.25 || > 0.79), with a soft edge each side.
@@ -406,7 +516,10 @@ export function createLeaningPalms() {
         if (slopeAt(x, z) > 20) continue;
 
         dummy.position.set(x, y, z);
-        dummy.rotation.y = rand() * Math.PI * 2;
+        const yaw = rand() * Math.PI * 2;
+        const n = surfaceNormal(x, z, 2.5);
+        dummy.quaternion.copy(tiltedQuaternion(n, yaw, MAX_TILT_PALM));
+        dummy.rotation.setFromQuaternion(dummy.quaternion);
         const s = 0.8 + rand() * 0.5;
         dummy.scale.setScalar(s);
         dummy.updateMatrix();
@@ -431,7 +544,7 @@ export function createLeaningPalms() {
             frondMesh.setMatrixAt(placed * FRONDS_PER_TREE + j, world);
         }
         palms.push({
-            index: placed, x, y, z, s, rotY: dummy.rotation.y, fronds, collider,
+            index: placed, x, y, z, s, rotY: yaw, tiltQuat: dummy.quaternion.clone(), fronds, collider,
             colliderR: collider.r, burrowProgress: 0,
         });
         placed++;
@@ -468,7 +581,7 @@ export function updateLeaningPalms(deltaMs) {
         // Sink deep enough that trunk + crown vanish below the terrain.
         const sinkDepth = 20.5 * p.s;
         _pDummy.position.set(p.x, p.y - p.burrowProgress * sinkDepth, p.z);
-        _pDummy.rotation.set(0, p.rotY, 0);
+        _pDummy.quaternion.copy(p.tiltQuat); // B-28: keep the placement-time slope tilt through burrow/rise
         _pDummy.scale.setScalar(p.s);
         _pDummy.updateMatrix();
         trunkMesh.setMatrixAt(p.index, _pDummy.matrix);

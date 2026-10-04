@@ -35,7 +35,7 @@ import { createLake, updateLake } from '../environment/lake.js';
 import { createFlowers } from '../environment/flowers.js';
 import { generateFractalForest } from '../environment/forest.js';
 import { createRocks, updateRockLOD } from '../environment/rocks.js';
-import { createGrandBlueTrees, createLeaningPalms, updateLeaningPalms, updateGrandBlueGlow } from '../environment/landmark-trees.js';
+import { createGrandBlueTrees, createLeaningPalms, updateLeaningPalms, updateGrandBlueGlow, updateGrandBlueCanopy } from '../environment/landmark-trees.js';
 import { createRainSystem, createRainSplashes } from '../fx/rain.js';
 import { createFireflies } from '../fx/fireflies.js';
 import { createDustParticles } from '../fx/dust.js';
@@ -287,6 +287,7 @@ function animate(time) {
         updateAtmosphere(delta);
         updateLeaningPalms(delta * state.timeMultiplier);
         updateGrandBlueGlow(delta / 1000);
+        updateGrandBlueCanopy(delta / 1000);
         updatePines(delta / 1000);
         updatePOIs(delta / 1000);
         updateTutorial(delta / 1000);

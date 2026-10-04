@@ -110,7 +110,41 @@ const FRAG_COLOR = `
         gMagma = (1.0 - smoothstep(10.0, 40.0, cd)) * (1.0 - smoothstep(50.0, 58.0, h));
         col = mix(col, uCMagma, gMagma);
 
+        // B-29 fix (1): the old grain wobble is a smooth +/-22% brightness
+        // blend shared identically by every surface type, so sand just reads
+        // as "mottled dirt" - nothing in it is sand-specific. Layer a much
+        // tighter stipple (several samples per unit, vs nFine's 0.9) on top,
+        // gated to the unblended wet/dry sand band only (not grass/rock/ash/
+        // path/magma, and not deep ocean), so grains read as grains instead
+        // of smearing the same noise everywhere.
+        float sandVis = (1.0 - sp.r) * (1.0 - sp.g) * (1.0 - sp.a) * (1.0 - ashW)
+                      * smoothstep(-0.6, 2.0, h) * (1.0 - smoothstep(4.2, 6.5, h));
+        float stipple = tNoise(vWPos.xz * 7.0) - 0.5;
+        col *= 1.0 + stipple * 0.5 * sandVis;
+
         diffuseColor.rgb *= col;
+    }
+`;
+
+// B-29 fix (1) continued: a colour stipple alone still shades as a flat
+// plane under changing light - the perceived "sand vs dirt" difference lives
+// mostly in grains catching/losing highlight as the sun moves. Perturb the
+// (flat-shaded, already faceted) normal with the same tight noise, gated by
+// the same sand-only mask duplicated here (normal_fragment_maps runs earlier
+// in the shader than color_fragment, so this can't share FRAG_COLOR's `sp`/
+// `sandVis` locals - one extra texture2D fetch per sand-ish fragment only).
+const FRAG_NORMAL = `
+    {
+        vec2 suvN = (vWPos.xz + 0.5 * uWorld) / uWorld;
+        vec4 spN = texture2D(uSplat, suvN);
+        float hN = vWPos.y;
+        float sandVisN = (1.0 - spN.r) * (1.0 - spN.g) * (1.0 - spN.a)
+                        * smoothstep(-0.6, 2.0, hN) * (1.0 - smoothstep(4.2, 6.5, hN));
+        if (sandVisN > 0.02) {
+            float nb = tNoise(vWPos.xz * 7.0);
+            vec3 bump = normalize(vec3(dFdx(nb), dFdy(nb), 1.0));
+            normal = normalize(mix(normal, normalize(normal + bump * 0.7), sandVisN));
+        }
     }
 `;
 
@@ -165,6 +199,7 @@ function buildMaterial() {
             .replace('#include <begin_vertex>', VERT_BODY);
         shader.fragmentShader = shader.fragmentShader
             .replace('#include <common>', '#include <common>\n' + FRAG_PARS)
+            .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + FRAG_NORMAL)
             .replace('#include <color_fragment>', '#include <color_fragment>\n' + FRAG_COLOR)
             // faint self-glow in the crater so it reads from spawn (audit acceptance)
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n    totalEmissiveRadiance += vec3(0.85, 0.10, 0.05) * gMagma * 0.55;');
