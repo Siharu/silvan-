@@ -69,6 +69,7 @@ export const state = {
     fireflyMesh: null, fireflyMat: null,
     dustMesh: null, dustMat: null, starMesh: null, starMat: null,
     grassMesh: null, grassMat: null,
+    grassMidMesh: null, grassMidMat: null, // mid-ring crossed-card tufts (audit 5.2)
     moonSprite: null, cloudMesh: null, cloudMat: null,
     puddleMesh: null, puddleMaterial: null,
     waterMesh: null, waterMaterial: null,

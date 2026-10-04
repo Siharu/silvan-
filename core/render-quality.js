@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { createGrass } from '../environment/grass.js';
+import { createGrassMidRing } from '../environment/grass-midring.js';
 
 export const QUALITY_PRESETS = {
     high:   { bladeCount: 580000, pixelRatio: 1.25, shadowMap: 2048, shadowRadius: 120, msaa: 4, bloom: true,  rainCount: 45000, fireflyCount: 1200, dustCount: 3500 },
@@ -60,7 +61,9 @@ export function applyQuality(key) {
     if (state.dustMesh) state.dustMesh.geometry.setDrawRange(0, Math.min(q.dustCount, state.dustMesh.geometry.attributes.position.count));
     if (state.fireflyMesh) state.fireflyMesh.count = Math.min(q.fireflyCount, state.fireflyMesh.instanceMatrix.count);
 
-    // Grass pool size is baked into the geometry: rebuild in place.
+    // Grass pool size is baked into the geometry: rebuild in place. The
+    // mid-ring's tuft count derives from the same bladeCount (see
+    // grass-midring.js's tuftCountFor), so it rebuilds on the same trigger.
     if (state.grassMesh && lastGrassCount !== q.bladeCount) {
         state.scene.remove(state.grassMesh);
         state.grassMesh.geometry.dispose();
@@ -68,6 +71,15 @@ export function applyQuality(key) {
         state.grassMat.dispose();
         state.grassMesh = state.grassMat = null;
         createGrass();
+
+        if (state.grassMidMesh) {
+            state.scene.remove(state.grassMidMesh);
+            state.grassMidMesh.geometry.dispose();
+            state.grassMidMat.uniforms.uHeightMap.value.dispose();
+            state.grassMidMat.dispose();
+            state.grassMidMesh = state.grassMidMat = null;
+        }
+        createGrassMidRing();
     }
     lastGrassCount = q.bladeCount;
 }

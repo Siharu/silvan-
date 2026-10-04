@@ -212,9 +212,64 @@ function addTuft(acc, tuft, matrix, pivot, fold) {
     }
 }
 
+// ---- pine LOD (audit STEP 3) ------------------------------------------------
+// Every pine drew its full wood+needle geometry (thousands of tris: 14
+// branch levels x 7 branches x several needle tufts each) at any distance.
+// Fine for the ~5-10 pines actually near the player, wasteful for the rest
+// of a forest that can run to the draw-distance fog line. Trees are static,
+// so rather than a per-frame CPU sort, this is a two-tier swap just like
+// rocks.js's: a simple trunk+cone impostor (no branch fold, no sway - not
+// visible at the range it's used) stands in beyond NEAR_RADIUS_PINE, and
+// updatePineLOD() re-partitions the REAL per-variant wood/needle meshes
+// (built once, at full capacity) down to just the near subset, compacted to
+// the front of each buffer, whenever the player has moved far enough for the
+// split to matter.
+const NEAR_RADIUS_PINE = 85;
+const LOD_HYSTERESIS_PINE = 12;
+
+// One shared low-poly silhouette: thin trunk cylinder + a cone canopy,
+// merged by hand (same technique flowers.js uses for its crossed planes) so
+// both pieces are one draw call, with vertex colours standing in for the
+// wood/needle material split since the impostor doesn't carry two materials.
+function buildImpostorGeometry() {
+    const H = PINE_BASE_HEIGHT;
+    const trunk = new THREE.CylinderGeometry(CFG.baseRadius * 0.3, CFG.baseRadius * 0.8, H * 0.55, 5, 1);
+    trunk.translate(0, H * 0.275, 0);
+    const canopy = new THREE.ConeGeometry(H * 0.26, H * 0.75, 7);
+    canopy.translate(0, H * 0.58, 0);
+
+    const woodCol = new THREE.Color(0x4a3620), needleCol = new THREE.Color(0x3b7f5c);
+    const merge = (geoA, colA, geoB, colB) => {
+        const pa = geoA.attributes.position, pb = geoB.attributes.position;
+        const positions = new Float32Array((pa.count + pb.count) * 3);
+        positions.set(pa.array, 0); positions.set(pb.array, pa.array.length);
+        const normals = new Float32Array((pa.count + pb.count) * 3);
+        normals.set(geoA.attributes.normal.array, 0); normals.set(geoB.attributes.normal.array, geoA.attributes.normal.array.length);
+        const colors = new Float32Array((pa.count + pb.count) * 3);
+        for (let i = 0; i < pa.count; i++) colors.set([colA.r, colA.g, colA.b], i * 3);
+        for (let i = 0; i < pb.count; i++) colors.set([colB.r, colB.g, colB.b], (pa.count + i) * 3);
+        const ia = geoA.index.array, ib = geoB.index.array;
+        const indices = new Uint32Array(ia.length + ib.length);
+        indices.set(ia, 0);
+        for (let i = 0; i < ib.length; i++) indices[ia.length + i] = ib[i] + pa.count;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+        g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        g.setIndex(new THREE.BufferAttribute(indices, 1));
+        return g;
+    };
+    return merge(trunk, woodCol, canopy, needleCol); // ~5+7 radial segments, a couple dozen tris total
+}
+
+let impostorMesh = null;
+let impostorCapacity = 0;
+
 // ---- public API -------------------------------------------------------------
 let variants = null;
 const buckets = [];          // per variant: { m: Matrix4[], c: number[] }
+const nearWood = [], nearNeedles = [];    // per variant InstancedMesh, built at full capacity
+let lodLastPx = null, lodLastPz = null;
 const NEEDLE_BASE = new THREE.Color(0x3b7f5c);
 
 export function beginPines(seedBase = 0x51ee) {
@@ -246,7 +301,7 @@ export function finishPines() {
 
     for (let v = 0; v < PINE_VARIANTS; v++) {
         const b = buckets[v];
-        if (!b.m.length) continue;
+        if (!b.m.length) { nearWood.push(null); nearNeedles.push(null); continue; }
         const make = (geo, mat, colored, castsShadow) => {
             const im = new THREE.InstancedMesh(geo, mat, b.m.length);
             for (let i = 0; i < b.m.length; i++) im.setMatrixAt(i, b.m[i]);
@@ -267,11 +322,78 @@ export function finishPines() {
         // tier where shadows are actually on (medium/high; potato disables
         // shadows outright, which is why it never showed there). Needles still
         // receive shadow from the trunk/branches/terrain; they just don't cast.
-        make(variants[v].wood, woodMat, false, true);
-        make(variants[v].needles, needleMat, true, false);
+        nearWood.push(make(variants[v].wood, woodMat, false, true));
+        nearNeedles.push(make(variants[v].needles, needleMat, true, false));
         tris += b.m.length * (variants[v].wood.attributes.position.count + variants[v].needles.attributes.position.count) / 3;
     }
     state.pineStats = { trees: buckets.reduce((s, b) => s + b.m.length, 0), instancedTris: Math.round(tris) };
+
+    // Far impostor (pine LOD): one InstancedMesh, capacity = every pine
+    // across all variants, filled in by updatePineLOD() below rather than
+    // here — at build time we don't know player position yet (this runs
+    // before main.js sets state.player.position), so count starts at 0 and
+    // the very first updatePineLOD() call (every frame, before render)
+    // fills in the real split before anything is drawn.
+    impostorCapacity = state.pineStats.trees;
+    if (impostorCapacity > 0) {
+        const impostorMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+        impostorMesh = new THREE.InstancedMesh(buildImpostorGeometry(), impostorMat, impostorCapacity);
+        impostorMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(impostorCapacity * 3), 3);
+        impostorMesh.count = 0;
+        impostorMesh.castShadow = false; // far enough that a shadow blob isn't worth the cost
+        impostorMesh.receiveShadow = true;
+        // Same reasoning as rocks.js's LOD meshes: which trees occupy this
+        // buffer keeps changing as the player moves, so a bounding sphere
+        // frozen at build time (when it's still empty, count 0) would cull
+        // everything forever. Skip the test entirely instead.
+        impostorMesh.frustumCulled = false;
+        state.scene.add(impostorMesh);
+    }
+}
+
+// Re-partitions every pine between its variant's near (full-detail) mesh and
+// the shared far impostor, by distance to (px,pz). Rewrites each near mesh's
+// matrix/colour buffers with just its current subset compacted to the front
+// (InstancedMesh.count controls how many of those get drawn) — cheap at
+// pine-forest scale (a few hundred trees total), so the only reason to
+// throttle is avoiding needless work on frames the player barely moved.
+export function updatePineLOD(px, pz) {
+    if (!impostorMesh) return;
+    if (lodLastPx !== null) {
+        const moved = Math.hypot(px - lodLastPx, pz - lodLastPz);
+        if (moved < LOD_HYSTERESIS_PINE) return;
+    }
+    lodLastPx = px; lodLastPz = pz;
+
+    const r2 = NEAR_RADIUS_PINE * NEAR_RADIUS_PINE;
+    let farI = 0;
+    for (let v = 0; v < PINE_VARIANTS; v++) {
+        const b = buckets[v];
+        const wood = nearWood[v], needles = nearNeedles[v];
+        if (!wood) continue;
+        let nearI = 0;
+        for (let i = 0; i < b.m.length; i++) {
+            const m = b.m[i];
+            const dx = m.elements[12] - px, dz = m.elements[14] - pz;
+            if (dx * dx + dz * dz <= r2) {
+                wood.setMatrixAt(nearI, m);
+                needles.setMatrixAt(nearI, m);
+                needles.instanceColor.setXYZ(nearI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
+                nearI++;
+            } else {
+                impostorMesh.setMatrixAt(farI, m);
+                impostorMesh.instanceColor.setXYZ(farI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
+                farI++;
+            }
+        }
+        wood.count = nearI; needles.count = nearI;
+        wood.instanceMatrix.needsUpdate = true;
+        needles.instanceMatrix.needsUpdate = true;
+        needles.instanceColor.needsUpdate = true;
+    }
+    impostorMesh.count = farI;
+    impostorMesh.instanceMatrix.needsUpdate = true;
+    impostorMesh.instanceColor.needsUpdate = true;
 }
 
 // Sleep cycle: same night window as day-night-cycle.js (gameTime < 0.25 || > 0.79),

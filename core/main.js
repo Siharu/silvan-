@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { updatePines } from '../environment/pine-tree.js';
+import { updatePines, updatePineLOD } from '../environment/pine-tree.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
@@ -30,10 +30,11 @@ import { createSky } from '../environment/sky.js';
 import { createTerrainChunks, updateTerrainChunks } from '../environment/terrain.js';
 import { createPuddles } from '../environment/puddles.js';
 import { createGrass, updateGrass } from '../environment/grass.js';
+import { createGrassMidRing, updateGrassMidRing } from '../environment/grass-midring.js';
 import { createLake, updateLake } from '../environment/lake.js';
 import { createFlowers } from '../environment/flowers.js';
 import { generateFractalForest } from '../environment/forest.js';
-import { createRocks } from '../environment/rocks.js';
+import { createRocks, updateRockLOD } from '../environment/rocks.js';
 import { createGrandBlueTrees, createLeaningPalms, updateLeaningPalms, updateGrandBlueGlow } from '../environment/landmark-trees.js';
 import { createRainSystem, createRainSplashes } from '../fx/rain.js';
 import { createFireflies } from '../fx/fireflies.js';
@@ -189,6 +190,7 @@ async function init() {
 
     setLoadingProgress(55, 'growing the undergrowth');
     createGrass();
+    createGrassMidRing();
     noteGrassBuilt();
     await nextFrame();
 
@@ -294,7 +296,10 @@ function animate(time) {
     updateShadowFollow(); // after atmosphere: re-centres the sun's shadow rig on the player
     updateTerrainChunks(state.player.position.x, state.player.position.z);
     updateLake(state.player.position.x, state.player.position.z);
+    updateRockLOD(state.player.position.x, state.player.position.z);
+    updatePineLOD(state.player.position.x, state.player.position.z);
     updateGrass(time / 1000);
+    updateGrassMidRing(time / 1000);
     updatePOIInteraction(delta / 1000);
     updateFpsCounter(delta);
     // Phase 5 #35: keep Howler's listener on the camera so Warm Paw's
