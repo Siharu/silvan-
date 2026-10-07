@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Silvan — Loading</title>
+<style>
+:root{
+  --bg:#071018;
+  --paper:#ddd8cc;
+  --muted:#7f8990;
+  --dim:#566168;
+  --cold:#a9b9bd;
+  --gold:#c6a15b;
+}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg)}
+body{font-family:Inter,Arial,sans-serif;color:var(--paper)}
+#scene{position:fixed;inset:0}
+canvas{width:100%;height:100%;display:block;image-rendering:pixelated}
+
+.overlay{position:fixed;inset:0;pointer-events:none}
+.grain{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+  opacity:.055;mix-blend-mode:screen
+}
+.scan{
+  background:repeating-linear-gradient(to bottom,transparent 0,transparent 3px,rgba(0,0,0,.18) 4px,transparent 5px);
+  opacity:.035
+}
+.vignette{
+  background:radial-gradient(circle at 50% 48%,transparent 34%,rgba(0,0,0,.34) 100%)
+}
+
+.ui{position:fixed;inset:0;pointer-events:none}
+.mark{
+  position:absolute;left:clamp(22px,4vw,62px);top:clamp(22px,4vw,52px);
+  font-size:10px;letter-spacing:.42em;color:#9ba7ad;opacity:.65
+}
+.meta{
+  position:absolute;right:clamp(22px,4vw,62px);top:clamp(22px,4vw,52px);
+  font:9px/1.8 "Courier New",monospace;letter-spacing:.16em;text-align:right;color:#68747b
+}
+.center{
+  position:absolute;left:50%;top:85%;transform:translate(-50%,-50%);
+  width:min(700px,82vw);text-align:center
+}
+.statement{
+  font:10px/1.8 "Courier New",monospace;letter-spacing:.34em;
+  color:#9da7aa;text-transform:uppercase;opacity:.9;min-height:19px
+}
+.title{
+  margin-top:7px;
+  font:300 clamp(20px,3vw,30px)/1.2 "Courier New",monospace;
+  letter-spacing:.22em;color:#e3ded2;
+  text-transform:uppercase
+}
+.rule{
+  width:min(480px,70vw);height:1px;margin:18px auto 11px;
+  background:linear-gradient(90deg,transparent,rgba(220,216,204,.45),transparent)
+}
+.loadrow{
+  display:flex;justify-content:center;align-items:center;gap:15px;
+  font:9px "Courier New",monospace;letter-spacing:.18em;color:#69757c
+}
+.pct{color:#c6a15b;min-width:38px;text-align:left}
+.bar{
+  width:min(390px,60vw);height:3px;background:rgba(220,216,204,.10);
+  border:1px solid rgba(220,216,204,.16);padding:0
+}
+.fill{width:0;height:100%;background:#c9b57e;box-shadow:0 0 10px rgba(201,181,126,.15)}
+.tip{
+  margin-top:13px;color:#536067;font:8px "Courier New",monospace;letter-spacing:.18em;
+  text-transform:uppercase
+}
+.corner{
+  position:absolute;width:24px;height:24px;opacity:.35
+}
+.a{left:18px;bottom:18px;border-left:1px solid #9ba7ad;border-bottom:1px solid #9ba7ad}
+.b{right:18px;bottom:18px;border-right:1px solid #9ba7ad;border-bottom:1px solid #9ba7ad}
+
+@media(max-width:700px){
+  .meta{display:none}
+  .center{top:85%;width:88vw}
+  .title{font-size:18px}
+  .bar{width:52vw}
+}
+@media(max-height:420px) and (orientation:landscape){
+  .meta{display:none}
+  .mark{top:10px;font-size:9px}
+  .center{top:78%;width:70vw}
+  .title{font-size:15px;margin-top:4px}
+  .rule{margin:10px auto 7px}
+  .tip{margin-top:7px}
+  .bar{width:38vw}
+  .corner{width:16px;height:16px}
+}
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+
+<div class="overlay grain"></div>
+<div class="overlay scan"></div>
+<div class="overlay vignette"></div>
+
+<div class="ui">
+  <div class="mark" id="nihilismType">A WORLD WITHOUT AN ANSWER</div>
+  <div class="meta" id="observationMeta">OBSERVATION / CONTINUOUS<br>NO CONCLUSION REQUIRED</div>
+
+  <div class="center">
+    <div id="statement" class="statement">THE WORLD CONTINUES</div>
+    <div id="title" class="title">WAITING FOR NOTHING</div>
+    <div class="rule"></div>
+    <div class="loadrow">
+      <span id="stage">OBSERVING</span>
+      <div class="bar"><div id="fill" class="fill"></div></div>
+      <span id="pct" class="pct">00%</span>
+    </div>
+    <div id="tip" class="tip">everything remains in motion</div>
+  </div>
+
+  <div class="corner a"></div>
+  <div class="corner b"></div>
+</div>
+
+<script>
+/* ============================================================
+   Canvas2D loading screen — visual parity port of loading-screen.html.
+   No WebGL context anywhere in this file. Same virtual world-space
+   layout (-14..14 horizontal / roughly -2..5 vertical), same
+   silhouette-generation math, same postMessage progress contract with
+   main.js. The moon-run minigame (click-to-play, jump, obstacles,
+   BGM) is intentionally NOT ported — visual scene only, by request.
+   ============================================================ */
+
+const canvas = document.createElement('canvas');
+document.getElementById('scene').appendChild(canvas);
+const ctx = canvas.getContext('2d');
+
+const PIXEL_RENDER_WIDTH = 480;
+let VW = 480, VH = 270;
+
+function resize() {
+  const iw = innerWidth || 1280;
+  const ih = innerHeight || 720;
+  const aspect = ih > 0 ? iw / ih : 16 / 9;
+  VH = Math.max(180, Math.round(PIXEL_RENDER_WIDTH / (Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9)));
+  VW = PIXEL_RENDER_WIDTH;
+  canvas.width = VW;
+  canvas.height = VH;
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  ctx.imageSmoothingEnabled = false;
+}
+addEventListener('resize', resize);
+resize();
+
+function toPx(x, y) {
+  const scale = VW / 28;
+  return [VW / 2 + x * scale, VH * 0.62 - y * scale];
+}
+function toPxScale(v) { return v * (VW / 28); }
+
+/* wrect/wcircle: world-space rect/circle helpers standing in for the
+   Three.js `plane()`/`CircleGeometry` primitives — same x/y/w/h units
+   as the original so every generator function below carries over its
+   numbers unchanged. */
+function wrect(x, y, w, h, color, alpha, rot) {
+  const [px, py] = toPx(x, y);
+  const pw = Math.max(1, toPxScale(w));
+  const ph = Math.max(1, toPxScale(h));
+  ctx.save();
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.fillStyle = color;
+  if (rot) {
+    ctx.translate(px, py);
+    ctx.rotate(rot);
+    ctx.fillRect(-pw / 2, -ph / 2, pw, ph);
+  } else {
+    ctx.fillRect(px - pw / 2, py - ph / 2, pw, ph);
+  }
+  ctx.restore();
+}
+function wcircle(x, y, r, color, alpha) {
+  const [px, py] = toPx(x, y);
+  const pr = Math.max(0.5, toPxScale(r));
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(px, py, pr, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+/* wshape: filled polygon under a flat base line, for mountain ranges
+   and forest ridges — mirrors the original's THREE.Shape + ShapeGeometry. */
+function wshape(pts, base, color, alpha) {
+  ctx.beginPath();
+  const [sx0, sy0] = toPx(-14, base);
+  ctx.moveTo(sx0, sy0);
+  for (const [x, y] of pts) {
+    const [px, py] = toPx(x, y);
+    ctx.lineTo(px, py);
+  }
+  const [sx1, sy1] = toPx(14, base);
+  ctx.lineTo(sx1, sy1);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+/* ---------------- sky ---------------- */
+const stars = [];
+for (let i = 0; i < 120; i++) {
+  stars.push({
+    x: -12 + Math.random() * 24, y: 1.5 + Math.random() * 6,
+    r: 0.012 + Math.random() * 0.035,
+    baseAlpha: 0.15 + Math.random() * 0.48,
+    phase: Math.random() * Math.PI * 2
+  });
+}
+
+/* ---------------- moon ---------------- */
+const moon = { x: 6.9, baseY: 4.0, r: 1.08 };
+const moonScars = [[-.27, .16, .09], [.25, -.27, .07], [-.1, -.4, .05], [.32, .33, .05]];
+const smear = { x: -3.8, y: 4.8, w: 16, h: .8, rot: -.05 };
+
+/* ---------------- distant mountains ---------------- */
+function mountainPoints(variant = 0) {
+  const pts = [];
+  const step = 1.15;
+  let x = -14;
+  while (x < 14.01) {
+    const t = (x + 14) / 28;
+    const envelope = 0.62 + Math.sin(t * Math.PI) * 0.52;
+    const broad = Math.sin(t * (2.0 + variant * 0.35) * Math.PI + Math.random() * 0.6) * 0.34;
+    const sharp = Math.random() * 1.15;
+    const y = -0.08 + envelope * (0.24 + broad + sharp);
+    pts.push([x, Math.min(2.05, y)]);
+    x += step + Math.random() * 0.45;
+  }
+  return pts;
+}
+const mountainBack = mountainPoints(0);
+const mountainFront = mountainPoints(1);
+const mountainHaze = [];
+for (let i = 0; i < 7; i++) {
+  mountainHaze.push({
+    x: -11 + Math.random() * 22, y: .45 + Math.random() * 1.15,
+    w: 2.0 + Math.random() * 2.8, h: .08 + Math.random() * .16,
+    alpha: .035 + Math.random() * .025, rot: (Math.random() - .5) * .05
+  });
+}
+
+/* ---------------- forest silhouette ---------------- */
+function forestPoints(layer) {
+  const pts = [];
+  let x = -14;
+  const step = 1.0 + Math.random() * 0.55;
+  while (x < 14.01) {
+    const y = -0.16 + Math.random() * (layer === 0 ? 1.18 : layer === 1 ? 0.92 : 0.62);
+    pts.push([x, y]);
+    if (Math.random() > 0.45) pts.push([x + 0.38 + Math.random() * 0.35, y - 0.15 + Math.random() * 0.28]);
+    x += step + Math.random() * 0.55;
+  }
+  return pts;
+}
+const forestRidges = [forestPoints(0), forestPoints(1), forestPoints(2)];
+
+/* midground forest: trunks, branch silhouettes, undergrowth */
+const midgroundTrunks = [];
+for (let i = 0; i < 42; i++) {
+  const x = -12 + Math.random() * 24;
+  const h = .35 + Math.random() * 1.25;
+  const branches = [];
+  for (let b = 0; b < 2 + (i % 3); b++) {
+    branches.push({
+      dx: (Math.random() - .5) * .35, y: -1.15 + h * (.2 + b * .13),
+      w: .16 + Math.random() * .28, rot: (Math.random() > .5 ? 1 : -1) * (.25 + Math.random() * .35)
+    });
+  }
+  midgroundTrunks.push({ x, h, w: .05 + Math.random() * .05, rot: (Math.random() - .5) * .08, branches });
+}
+const bushes = [];
+for (let i = 0; i < 55; i++) {
+  bushes.push({
+    x: -12 + Math.random() * 24, y: -2.0 + Math.random() * .48,
+    w: .08 + Math.random() * .17, h: .12 + Math.random() * .2,
+    rot: (Math.random() - .5) * .5
+  });
+}
+
+const cloudVeils = [];
+for (let i = 0; i < 9; i++) {
+  cloudVeils.push({
+    x: -10 + Math.random() * 20, y: 2.0 + Math.random() * 3.2,
+    w: 1.0 + Math.random() * 2.7, h: .08 + Math.random() * .22,
+    speed: .006 + Math.random() * .014, rot: (Math.random() - .5) * .08
+  });
+}
+const starClusters = [];
+for (let i = 0; i < 18; i++) {
+  starClusters.push({
+    x: -10 + Math.random() * 20, y: 3 + Math.random() * 4,
+    w: .45 + Math.random() * .8, h: .035 + Math.random() * .08,
+    alpha: .025 + Math.random() * .04, rot: (Math.random() - .5) * .3
+  });
+}
+const distantLights = [];
+for (let i = 0; i < 13; i++) {
+  distantLights.push({
+    x: -11 + Math.random() * 22, y: -1.55 + Math.random() * .55,
+    color: i % 4 === 0 ? '#b08d78' : '#83969b', alpha: .18 + Math.random() * .18
+  });
+}
+
+/* isolated tree silhouettes (sway animated) */
+const foregroundTrees = [];
+for (let i = 0; i < 26; i++) {
+  const x = -12 + Math.random() * 24;
+  const h = .25 + Math.random() * .75;
+  foregroundTrees.push({
+    x, h,
+    canopyW: .14 + h * .16, canopyH: .35 + h * .25, canopyRot0: (Math.random() - .5) * .2,
+    phase: Math.random() * 6.28, sway: .025 + Math.random() * .035
+  });
+}
+
+/* ---------------- lush jungle enhancement ---------------- */
+function leafCluster(color, opacity, x, y, scale, rot) {
+  const leaves = [
+    [-.22, .00, .16, .34, -.48], [-.06, .18, .19, .42, -.20], [.14, .06, .22, .38, .25],
+    [.28, -.06, .15, .30, .52], [-.14, -.18, .18, .34, .18], [.05, -.28, .17, .31, -.28]
+  ];
+  for (const [lx, ly, w, h, rz] of leaves) {
+    wrect(x + lx * scale, y + ly * scale, w * scale, h * scale, color, opacity, rz + rot + (Math.random() - .5) * .12);
+  }
+}
+const jungleCanopy = [];
+for (let i = 0; i < 34; i++) {
+  jungleCanopy.push({
+    color: i % 3 === 0 ? "#17362f" : (i % 3 === 1 ? "#123028" : "#0f2928"),
+    x: -12 + Math.random() * 24, y: -.55 + Math.random() * 1.05,
+    scale: .62 + Math.random() * 1.05, alpha: .46 + Math.random() * .25, rot: (Math.random() - .5) * .28
+  });
+}
+const jungleTrunks = [];
+for (let i = 0; i < 18; i++) {
+  const x = -12.2 + Math.random() * 24.4;
+  const h = 1.05 + Math.random() * 2.0;
+  const w = .07 + Math.random() * .10;
+  const foliage = [];
+  for (let j = 0; j < 3; j++) {
+    foliage.push({
+      x: x + (Math.random() - .5) * .34, y: -1.62 + h * .46 - h * .32 + j * .24,
+      scale: .55 + Math.random() * .35, rot: (Math.random() - .5) * .5
+    });
+  }
+  jungleTrunks.push({ x, h, w, rot: (Math.random() - .5) * .045, foliage });
+}
+function palm(x, y, h, lean) {
+  const crownY = y + h * .78;
+  const crown = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    crown.push({ x: x + Math.cos(a) * .28, y: crownY + Math.sin(a) * .16, w: .55 + Math.random() * .45, rot: a + (Math.random() - .5) * .18 });
+  }
+  return { x, y: y + h * .34, h, lean, crownY, crown };
+}
+const palms = [
+  palm(-9.8, -1.55, 2.6, -.08), palm(-5.7, -1.52, 2.15, .06),
+  palm(4.7, -1.55, 2.45, -.07), palm(9.0, -1.55, 2.0, .08)
+];
+const vines = [];
+for (let i = 0; i < 24; i++) {
+  const x = -11.8 + Math.random() * 23.6;
+  vines.push({
+    x, y: .35 + Math.random() * 1.55, len: .25 + Math.random() * .85,
+    w: .018 + Math.random() * .018, alpha: .46 + Math.random() * .18, rot: (Math.random() - .5) * .08
+  });
+}
+const ferns = [];
+for (let i = 0; i < 58; i++) {
+  const x = -12 + Math.random() * 24;
+  const y = -1.84 + Math.random() * .42;
+  const s = .22 + Math.random() * .5;
+  const rot = (Math.random() - .5) * .9;
+  ferns.push({
+    x, y, w1: .035 + s * .30, h1: .14 + s * .20, a1: .48 + Math.random() * .22, rot1: rot,
+    x2: x + (Math.random() - .5) * .12, y2: y + .02, w2: .025 + s * .22, h2: .11 + s * .16, a2: .24 + Math.random() * .15, rot2: rot + .7
+  });
+}
+const mossyHaze = [];
+for (let i = 0; i < 10; i++) {
+  mossyHaze.push({
+    x: -10 + Math.random() * 20, y: -.45 + Math.random() * 1.2,
+    w: 1.3 + Math.random() * 2.4, h: .12 + Math.random() * .18,
+    alpha: .035 + Math.random() * .035, rot: (Math.random() - .5) * .05
+  });
+}
+
+/* ground / road */
+const roadScratches = [];
+for (let i = 0; i < 34; i++) {
+  roadScratches.push({
+    x: -12 + Math.random() * 24, y: -3.3 + Math.random() * 1.25,
+    w: .12 + Math.random() * .55, rot: (Math.random() - .5) * .12
+  });
+}
+
+/* ---------------- pixel ocean foreground ---------------- */
+const oceanBands = [];
+for (let row = 0; row < 9; row++) {
+  const y = -1.98 - row * .25;
+  const count = 18 + Math.floor(Math.random() * 8);
+  for (let i = 0; i < count; i++) {
+    const w = .22 + Math.random() * .58;
+    const h = .025 + Math.random() * .045;
+    oceanBands.push({
+      x: -12.5 + Math.random() * 25, y: y + Math.random() * .12, w, h,
+      color: row % 3 === 0 ? "#31545a" : (row % 3 === 1 ? "#25474e" : "#1d3c43"),
+      speed: .22 + Math.random() * .48, baseY: y, phase: Math.random() * Math.PI * 2
+    });
+  }
+}
+const oceanFoam = [];
+for (let i = 0; i < 34; i++) {
+  const baseY = -1.88 - Math.random() * 2.1;
+  oceanFoam.push({ x: -12 + Math.random() * 24, w: .10 + Math.random() * .32, baseY, speed: .35 + Math.random() * .7, phase: Math.random() * Math.PI * 2 });
+}
+const oceanRipples = [];
+for (let i = 0; i < 26; i++) {
+  oceanRipples.push({ x: -12 + Math.random() * 24, y: -2.0 - Math.random() * 2.0, w: .28 + Math.random() * .7, speed: .16 + Math.random() * .32, phase: Math.random() * Math.PI * 2 });
+}
+
+/* ---------------- animals (pixel sprite sheets, drawn via canvas blit) ---------------- */
+const PAL = {
+  goldDog: { body: "#a96f2d", light: "#d2a05b", shadow: "#7a4a24", dark: "#493122", eye: "#16191b", nose: "#1d1b18" },
+  orangeCat: { body: "#c96320", light: "#efa147", shadow: "#8d421b", dark: "#5a301b", eye: "#17191a", nose: "#2b1b16" },
+  brownDog: { body: "#79503a", light: "#a87552", shadow: "#513224", dark: "#36251e", eye: "#111518", nose: "#151516" },
+  blackCat: { body: "#20272b", light: "#566066", shadow: "#12171a", dark: "#080b0d", eye: "#d0d2c4", nose: "#c5ad91" }
+};
+function pRect(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(x, y, w, h); }
+function drawDog(c, p, frame) {
+  c.clearRect(0, 0, 48, 30);
+  pRect(c, 7, 27, 29, 1, "rgba(0,0,0,.30)");
+  const bob = [0, 0, 1, 1, 0, 0, -1, -1][frame];
+  pRect(c, 4, 16 + bob, 4, 7, p.body);
+  if (frame <= 1) { pRect(c, 2, 13 + bob, 4, 4, p.body); pRect(c, 1, 10 + bob, 3, 4, p.shadow); }
+  else if (frame <= 3) { pRect(c, 2, 16 + bob, 4, 3, p.body); pRect(c, 1, 18 + bob, 3, 3, p.shadow); }
+  else if (frame <= 5) { pRect(c, 2, 13 + bob, 4, 3, p.body); pRect(c, 1, 11 + bob, 3, 3, p.shadow); }
+  else { pRect(c, 2, 15 + bob, 4, 4, p.body); }
+  pRect(c, 9, 12 + bob, 21, 10, p.body);
+  pRect(c, 12, 10 + bob, 13, 4, p.body);
+  pRect(c, 9, 17 + bob, 22, 4, p.body);
+  pRect(c, 12, 19 + bob, 11, 2, p.shadow);
+  pRect(c, 24, 13 + bob, 6, 7, p.light);
+  pRect(c, 10, 13 + bob, 5, 2, "rgba(255,255,255,.10)");
+  pRect(c, 27, 8 + bob, 9, 10, p.body);
+  pRect(c, 30, 7 + bob, 6, 7, p.body);
+  pRect(c, 34, 11 + bob, 6, 6, p.light);
+  pRect(c, 27, 7 + bob, 4, 7, p.dark);
+  pRect(c, 34, 7 + bob, 4, 5, p.shadow);
+  pRect(c, 32, 10 + bob, 1, 2, p.eye);
+  pRect(c, 38, 13 + bob, 2, 2, p.nose);
+  pRect(c, 34, 15 + bob, 3, 1, p.shadow);
+  pRect(c, 27, 15 + bob, 4, 2, p.shadow);
+  const poses = [
+    [[10, 20, 3, 7], [15, 20, 3, 7], [24, 20, 3, 7], [29, 20, 3, 7]],
+    [[10, 20, 3, 5], [16, 22, 3, 5], [24, 20, 3, 7], [30, 22, 3, 5]],
+    [[9, 21, 3, 6], [16, 20, 3, 7], [25, 22, 3, 5], [31, 20, 3, 7]],
+    [[10, 22, 3, 5], [16, 20, 3, 7], [24, 20, 3, 7], [31, 22, 3, 5]],
+    [[11, 20, 3, 7], [16, 22, 3, 5], [25, 20, 3, 7], [30, 22, 3, 5]],
+    [[10, 20, 3, 7], [15, 20, 3, 7], [25, 22, 3, 5], [30, 20, 3, 7]],
+    [[9, 21, 3, 6], [16, 20, 3, 7], [24, 20, 3, 7], [31, 21, 3, 6]],
+    [[10, 20, 3, 7], [16, 22, 3, 5], [24, 20, 3, 7], [30, 22, 3, 5]]
+  ][frame];
+  for (const [x, y, w, h] of poses) pRect(c, x, y + bob, w, h, p.body);
+  pRect(c, 9, 27 + bob, 5, 1, p.shadow); pRect(c, 29, 27 + bob, 5, 1, p.shadow);
+  pRect(c, 10, 26 + bob, 3, 1, p.light); pRect(c, 30, 26 + bob, 3, 1, p.light);
+}
+function drawCat(c, p, frame) {
+  c.clearRect(0, 0, 48, 30);
+  pRect(c, 8, 27, 27, 1, "rgba(0,0,0,.28)");
+  const bob = [0, 0, 1, 1, 0, 0, -1, -1][frame];
+  pRect(c, 4, 14 + bob, 4, 10, p.body);
+  if (frame <= 1) { pRect(c, 2, 11 + bob, 4, 5, p.body); pRect(c, 1, 8 + bob, 3, 5, p.shadow); }
+  else if (frame <= 3) { pRect(c, 2, 15 + bob, 4, 4, p.body); pRect(c, 1, 18 + bob, 3, 3, p.shadow); }
+  else if (frame <= 5) { pRect(c, 2, 11 + bob, 4, 4, p.body); pRect(c, 1, 9 + bob, 3, 4, p.shadow); }
+  else { pRect(c, 2, 14 + bob, 4, 6, p.body); }
+  pRect(c, 9, 12 + bob, 18, 10, p.body);
+  pRect(c, 12, 10 + bob, 11, 4, p.body);
+  pRect(c, 10, 18 + bob, 16, 3, p.shadow);
+  pRect(c, 11, 13 + bob, 5, 2, p.light);
+  pRect(c, 24, 7 + bob, 10, 10, p.body);
+  pRect(c, 25, 4 + bob, 4, 5, p.body);
+  pRect(c, 30, 4 + bob, 4, 5, p.body);
+  pRect(c, 26, 5 + bob, 2, 2, p.dark); pRect(c, 31, 5 + bob, 2, 2, p.dark);
+  pRect(c, 27, 10 + bob, 1, 2, p.eye); pRect(c, 31, 10 + bob, 1, 2, p.eye);
+  pRect(c, 33, 13 + bob, 2, 1, p.nose);
+  pRect(c, 31, 14 + bob, 4, 1, p.light);
+  pRect(c, 35, 12 + bob, 4, 1, p.shadow); pRect(c, 35, 15 + bob, 3, 1, p.shadow);
+  const poses = [
+    [[11, 20, 2, 7], [22, 20, 2, 7]], [[10, 21, 2, 5], [23, 20, 2, 7]],
+    [[11, 20, 2, 7], [22, 22, 2, 5]], [[10, 20, 2, 7], [23, 22, 2, 5]],
+    [[11, 22, 2, 5], [22, 20, 2, 7]], [[10, 20, 2, 7], [23, 21, 2, 5]],
+    [[11, 20, 2, 7], [22, 20, 2, 7]], [[10, 21, 2, 6], [23, 20, 2, 7]]
+  ][frame];
+  for (const [x, y, w, h] of poses) pRect(c, x, y + bob, w, h, p.body);
+  pRect(c, 10, 27 + bob, 4, 1, p.shadow); pRect(c, 22, 27 + bob, 4, 1, p.shadow);
+}
+function sheet(kind) {
+  const frames = [];
+  for (let i = 0; i < 8; i++) {
+    const f = document.createElement("canvas"); f.width = 48; f.height = 30;
+    const fctx = f.getContext("2d");
+    if (kind.includes("Dog")) drawDog(fctx, PAL[kind], i); else drawCat(fctx, PAL[kind], i);
+    frames.push(f);
+  }
+  return frames;
+}
+const animalSheets = { goldDog: sheet("goldDog"), orangeCat: sheet("orangeCat"), brownDog: sheet("brownDog"), blackCat: sheet("blackCat") };
+function makeAnimal(kind, x, scale, speed, phase) {
+  return { kind, x, y: -2.02, baseY: -2.02, scale, speed, t: phase, frame: 0, phase: Math.random() * 6.28, hold: 0 };
+}
+const animals = [
+  makeAnimal("goldDog", -8.3, 1.38, .56, .0),
+  makeAnimal("orangeCat", -5.65, 1.48, .53, .8),
+  makeAnimal("brownDog", -3.0, 1.34, .50, 1.55),
+  makeAnimal("blackCat", -1.02, .84, .66, 2.35)
+];
+function updateAnimal(a, dt, time) {
+  if (a.hold > 0) a.hold -= dt; else a.x += a.speed * dt;
+  if (Math.random() < dt * .045) a.hold = .12 + Math.random() * .26;
+  a.y = a.baseY + Math.sin(time * 6.8 + a.phase) * .008;
+  a.t += dt;
+  if (a.t > .11) { a.t = 0; a.frame = (a.frame + 1) % 8; }
+  if (a.x > 11.4) { a.x = -11.8 - Math.random() * 1.8; a.frame = Math.floor(Math.random() * 8); }
+}
+function drawAnimal(a) {
+  const frame = animalSheets[a.kind][a.frame];
+  const [px, py] = toPx(a.x, a.y);
+  const w = toPxScale(a.scale), h = toPxScale(a.scale * .62);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(frame, px - w / 2, py - h / 2, w, h);
+}
+
+/* ---------------- particles ---------------- */
+const dust = [];
+for (let i = 0; i < 42; i++) {
+  dust.push({ x: -11 + Math.random() * 22, y: -1.2 + Math.random() * 2.2, phase: Math.random() * Math.PI * 2 });
+}
+const fireflies = [];
+for (let i = 0; i < 34; i++) {
+  const size = .018 + Math.random() * .025;
+  fireflies.push({
+    size, x: -10.8 + Math.random() * 21.6, y: -1.35 + Math.random() * 2.25,
+    phase: Math.random() * Math.PI * 2, drift: .12 + Math.random() * .28, rise: .025 + Math.random() * .06,
+    speed: .45 + Math.random() * .9, resetY: -1.35 + Math.random() * .8
+  });
+}
+const ambientMotes = [];
+for (let i = 0; i < 26; i++) {
+  ambientMotes.push({
+    x: -12 + Math.random() * 24, y: -1.0 + Math.random() * 2.7,
+    size: .012 + Math.random() * .018, color: i % 3 === 0 ? "#9fb2b3" : "#77898f",
+    phase: Math.random() * Math.PI * 2
+  });
+}
+
+/* ---------------- loading copy ---------------- */
+const nihilismCycle = [
+  ["MEANING IS NOT GUARANTEED", "EXISTENTIAL", "the day arrives whether it is interpreted or not"],
+  ["THE WORLD DOES NOT EXPLAIN ITSELF", "COSMIC", "distance does not become smaller because we ask"],
+  ["THINGS PASS WITHOUT A CONCLUSION", "IMPERMANENT", "a life may end without resolving anything"],
+  ["NOTHING HERE IS OBLIGED TO MATTER", "VALUE", "importance is something we place, not something we discover"],
+  ["THERE IS NO FINAL WITNESS", "COSMIC", "the sky does not keep a record of what we were"],
+  ["ABSENCE IS ORDINARY", "ABSURD", "silence does not always hide an answer"],
+  ["LIFE CONTINUES WITHOUT A REASON", "NATURAL", "growth does not require a purpose"],
+  ["WE NOTICE; THEN WE MOVE ON", "HUMAN", "attention gives a moment shape, not permanence"],
+  ["THE FOREST KEEPS GROWING", "INDIFFERENT", "it does not need us to continue"],
+  ["NOTHING ENDS UPON UNDERSTANDING IT", "EPISTEMIC", "knowing a thing does not make it meaningful"],
+  ["THE STARS REMAIN DISTANT", "COSMIC", "their indifference is neither cruel nor kind"],
+  ["FOR A WHILE, WE ARE HERE", "TEMPORAL", "that is enough to be observed"]
+];
+let nihilismIndex = 0;
+const NIHILISM_HOLD = 3800;
+let nihilismTimer = 0;
+let lastNihilismIndex = -1;
+function updateNihilism(dt) {
+  nihilismTimer += dt * 1000;
+  if (nihilismTimer >= NIHILISM_HOLD) {
+    nihilismTimer = 0;
+    nihilismIndex = (nihilismIndex + 1) % nihilismCycle.length;
+  }
+  if (nihilismIndex !== lastNihilismIndex) {
+    lastNihilismIndex = nihilismIndex;
+    const s = nihilismCycle[nihilismIndex];
+    statement.textContent = s[0];
+    stage.textContent = s[1];
+    tip.textContent = s[2];
+  }
+}
+
+const states = [
+  { at: 12, variants: [
+    ["THE WORLD CONTINUES", "OBSERVING", "motion persists without asking why"],
+    ["NOTHING HAS BEGUN YET", "WAKING", "the world was already here first"],
+    ["A PLACE EXISTS REGARDLESS", "ARRIVING", "presence does not require permission"]
+  ]},
+  { at: 28, variants: [
+    ["NOTHING WAITS", "TRACING TERRAIN", "the forest makes no distinction"],
+    ["THE GROUND WAS ALREADY HERE", "MAPPING GROUND", "terrain precedes the traveler"],
+    ["NO PATH IS THE CORRECT ONE", "TRACING TERRAIN", "the forest makes no distinction"]
+  ]},
+  { at: 44, variants: [
+    ["THE SKY REMAINS", "READING ATMOSPHERE", "distance does not become smaller"],
+    ["THE HORIZON HOLDS STILL", "READING ATMOSPHERE", "it was never moving toward you"],
+    ["ABOVE IS UNCHANGED", "READING ATMOSPHERE", "weather has no opinion of you"]
+  ]},
+  { at: 61, variants: [
+    ["LIFE CONTINUES", "RECORDING MOTION", "small things still move"],
+    ["SOMETHING IS ALREADY LIVING HERE", "RECORDING MOTION", "it did not wait to start"],
+    ["MOVEMENT NEEDS NO WITNESS", "RECORDING MOTION", "small things still move"]
+  ]},
+  { at: 78, variants: [
+    ["NO ANSWER DETECTED", "LISTENING", "there may be no answer"],
+    ["SILENCE IS NOT A GAP", "LISTENING", "quiet is a condition, not an absence"],
+    ["NOTHING ANSWERS BACK", "LISTENING", "there may be no answer"]
+  ]},
+  { at: 92, variants: [
+    ["YOU ARE HERE", "FINALIZING", "for now"],
+    ["ARRIVAL IS NOT EXPLANATION", "FINALIZING", "you are here; that is all"],
+    ["THIS MUCH IS SETTLED", "FINALIZING", "for now"]
+  ]},
+  { at: 100, variants: [
+    ["READY", "COMPLETE", "it will continue without you"],
+    ["GO ON THEN", "COMPLETE", "it does not need your attention to persist"],
+    ["THE THRESHOLD IS OPEN", "COMPLETE", "it will continue without you"]
+  ]}
+];
+let progress = 0, index = 0;
+const statement = document.getElementById("statement");
+const title = document.getElementById("title");
+const stage = document.getElementById("stage");
+const tip = document.getElementById("tip");
+const pct = document.getElementById("pct");
+const fill = document.getElementById("fill");
+function pickVariant(s) { return s.variants[Math.floor(Math.random() * s.variants.length)]; }
+function applyState(s) { const v = pickVariant(s); statement.textContent = v[0]; title.textContent = v[0]; stage.textContent = v[1]; tip.textContent = v[2]; }
+applyState(states[0]);
+
+/* Real load progress, driven by main.js via postMessage — identical
+   contract to loading-screen.html. Sits at 0 until the first real
+   progress ping arrives instead of climbing on its own clock. */
+let realTarget = 0;
+window.addEventListener('message', (e) => {
+  if (!e.data || e.data.type !== 'silvan-loading-progress') return;
+  realTarget = Math.max(0, Math.min(100, e.data.percent));
+});
+function stateForPercent(p) {
+  let s = states[0];
+  for (const st of states) { if (p >= st.at) s = st; else break; }
+  return s;
+}
+function updateLoading(dt) {
+  progress += (realTarget - progress) * Math.min(1, dt * 6.0);
+  if (Math.abs(realTarget - progress) < 0.05) progress = realTarget;
+  const n = Math.round(progress);
+  fill.style.width = n + "%";
+  pct.textContent = String(n).padStart(2, "0") + "%";
+  const s = stateForPercent(progress);
+  if (s !== states[index]) { index = states.indexOf(s); applyState(s); }
+}
+
+/* ---------------- render ---------------- */
+let lastTime = performance.now();
+function draw(time) {
+  const dt = Math.min((time - lastTime) / 1000, 0.05);
+  lastTime = time;
+  const t = time * 0.001;
+
+  updateLoading(dt);
+  updateNihilism(dt);
+
+  // sky (base + wash + haze collapsed into one gradient, same as the sample)
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, VH);
+  skyGrad.addColorStop(0, '#071018');
+  skyGrad.addColorStop(0.55, '#1a2b39');
+  skyGrad.addColorStop(1, '#233c4b');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, VW, VH);
+
+  // stars
+  for (const s of stars) {
+    const twinkle = 0.5 + 0.5 * Math.sin(t * 1.2 + s.phase);
+    wrect(s.x, s.y, s.r, s.r, '#c7c6b8', s.baseAlpha * (0.6 + twinkle * 0.4));
+  }
+
+  // cloud veils (farther than the moon layer)
+  for (const c of cloudVeils) {
+    c.x += c.speed * dt * 60;
+    if (c.x > 12.5) c.x = -12.5;
+    const alpha = 0.025 + 0.025 * (Math.sin(t * 0.12 + c.y) + 1);
+    wrect(c.x, c.y, c.w, c.h, '#50616a', alpha, c.rot);
+  }
+
+  // distant star clusters
+  for (const s of starClusters) wrect(s.x, s.y, s.w, s.h, '#9ba8ae', s.alpha, s.rot);
+
+  // moon + halo + scars + cosmic smear
+  const moonY = moon.baseY + Math.sin(t * 0.06) * 0.015;
+  wcircle(moon.x, moonY, 1.55, '#b8c7cc', 0.055);
+  wcircle(moon.x, moonY, moon.r, '#d8d4c5', 0.86);
+  wrect(smear.x, smear.y, smear.w, smear.h, '#6b7880', 0.045, smear.rot);
+  for (const [dx, dy, r] of moonScars) wcircle(moon.x + dx, moonY + dy, r, '#a9a79e', 0.08);
+
+  // mountains (two parallax layers)
+  wshape(mountainBack, -1.40, '#0e202b', 0.56);
+  wshape(mountainFront, -1.53, '#0b1a25', 0.72);
+  for (const h of mountainHaze) wrect(h.x, h.y, h.w, h.h, '#6f858b', h.alpha, h.rot);
+
+  // forest ridge (three layers, darkest/closest last)
+  wshape(forestRidges[0], -1.45, '#152834', 0.96);
+  wshape(forestRidges[1], -1.62, '#10232e', 1.0);
+  wshape(forestRidges[2], -1.82, '#0c1c25', 1.0);
+
+  // far ambient motes (drift much more slowly than fireflies)
+  for (const m of ambientMotes) {
+    m.x += Math.sin(t * 0.25 + m.phase) * 0.00035;
+    m.y += Math.cos(t * 0.18 + m.phase) * 0.00018;
+    const alpha = 0.045 + 0.055 * (Math.sin(t * 0.5 + m.phase) + 1);
+    wrect(m.x, m.y, m.size, m.size, m.color, alpha);
+  }
+
+  // palm trunks
+  for (const p of palms) wrect(p.x, p.y, .06, p.h, "#10201e", .82, p.lean);
+
+  // jungle trunks + side foliage
+  for (const jt of jungleTrunks) {
+    wrect(jt.x, -1.62 + jt.h * .46, jt.w, jt.h, "#101f1d", .78, jt.rot);
+    for (const f of jt.foliage) leafCluster("#183d32", .5, f.x, f.y, f.scale, f.rot);
+  }
+
+  // palm crowns
+  for (const p of palms) {
+    for (const c of p.crown) wrect(c.x, p.crownY + (c.y - p.crownY), c.w, .035, "#173b31", .62, c.rot);
+  }
+
+  // jungle canopy (deep, irregular masses)
+  for (const jc of jungleCanopy) leafCluster(jc.color, jc.alpha, jc.x, jc.y, jc.scale, jc.rot);
+
+  // hanging vines
+  for (const v of vines) wrect(v.x, v.y, v.w, v.len, "#1b3d32", v.alpha, v.rot);
+
+  // isolated foreground trees (swaying)
+  for (const tr of foregroundTrees) {
+    const sway = Math.sin(t * 0.35 + tr.phase) * tr.sway;
+    wrect(tr.x, -1.4 + tr.h * .2, .025, tr.h * .7, "#0b1a22", .95, sway);
+    const canopyX = tr.x + Math.sin(t * 0.28 + tr.phase) * .012;
+    wrect(canopyX, -1.0 + tr.h * .3, tr.canopyW, tr.canopyH, "#0b1a22", .95, tr.canopyRot0 + sway * .8);
+  }
+
+  // mossy haze between jungle layers
+  for (const m of mossyHaze) wrect(m.x, m.y, m.w, m.h, "#31504a", m.alpha, m.rot);
+
+  // midground forest: trunks, branches
+  for (const mt of midgroundTrunks) {
+    wrect(mt.x, -1.62 + mt.h * .2, mt.w, mt.h, "#0a1820", .78, mt.rot);
+    for (const b of mt.branches) wrect(mt.x + b.dx, b.y, b.w, .025, "#0b1b22", .72, b.rot);
+  }
+  for (const b of bushes) wrect(b.x, b.y, b.w, b.h, "#10252a", .78, b.rot);
+
+  // tiny distant lights buried in the forest line
+  for (const l of distantLights) wrect(l.x, l.y, .025, .025, l.color, l.alpha);
+
+  // ground bands
+  wrect(0, 0, 40, 1.25, "#0b171d", 1); // base band
+  wrect(0, -1.95, 40, .55, "#26383d", .65); // distant ground
+  wrect(0, -3.05, 40, 2.6, "#172327", 1); // road
+  wrect(0, -1.75, 40, .13, "#58605d", .28); // road edge
+  for (const s of roadScratches) wrect(s.x, s.y, s.w, .02, "#788078", .12, s.rot);
+
+  // ferny / broadleaf ground layer
+  for (const f of ferns) {
+    wrect(f.x, f.y, f.w1, f.h1, "#17372f", f.a1, f.rot1);
+    wrect(f.x2, f.y2, f.w2, f.h2, "#205043", f.a2, f.rot2);
+  }
+
+  // pixel ocean foreground
+  wrect(0, -3.02, 40, 2.55, "#102a31", .98);
+  for (const w of oceanBands) {
+    w.x += w.speed * dt;
+    w.y = w.baseY + Math.sin(t * (.8 + w.speed) + w.phase) * .006;
+    if (w.x > 12.8) w.x = -12.8 - Math.random() * .8;
+    const alpha = .16 + .10 * (Math.sin(t * (.9 + w.speed) + w.phase) + 1);
+    wrect(w.x, w.y, w.w, w.h, w.color, alpha);
+  }
+  for (const f of oceanFoam) {
+    f.x += f.speed * dt;
+    const y = f.baseY + Math.sin(t * 1.1 + f.phase) * .008;
+    if (f.x > 12.7) f.x = -12.7 - Math.random() * .7;
+    const alpha = .10 + .18 * (Math.sin(t * (1.2 + f.speed * .2) + f.phase) + 1);
+    wrect(f.x, y, f.w, .025, "#789090", alpha);
+  }
+  for (const r of oceanRipples) {
+    r.x -= r.speed * dt;
+    const alpha = .08 + .08 * (Math.sin(t * .7 + r.phase) + 1);
+    wrect(r.x, r.y, r.w, .018, "#0b2027", alpha);
+    if (r.x < -12.8) r.x = 12.8 + Math.random() * .8;
+  }
+
+  // animals
+  for (const a of animals) { updateAnimal(a, dt, t); drawAnimal(a); }
+
+  // fireflies (dimmed to a faint ambient touch)
+  for (const f of fireflies) {
+    f.x += Math.sin(t * f.speed + f.phase) * 0.00055 + f.drift * dt * 0.01;
+    f.y += f.rise * dt * 0.035 + Math.sin(t * 0.7 + f.phase) * 0.00055;
+    const pulse = (Math.sin(t * (1.35 + f.speed * 0.35) + f.phase) + 1) * 0.5;
+    const alpha = .10 + pulse * .42;
+    wrect(f.x, f.y, f.size, f.size, "#d9c97d", alpha);
+    if (f.y > 1.2 || f.x > 11.4) { f.x = -11.4 - Math.random() * 1.0; f.y = f.resetY; }
+  }
+
+  // dust
+  for (const d of dust) {
+    d.y += Math.sin(t * 0.32 + d.phase) * 0.00045;
+    const alpha = .04 + .05 * (Math.sin(t * .8 + d.phase) + 1);
+    wrect(d.x, d.y, .018, .018, "#b6ad91", alpha);
+  }
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
