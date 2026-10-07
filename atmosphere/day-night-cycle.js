@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { state, DAY_LENGTH_MS, WEATHER_CHANGE_INTERVAL_MS } from '../core/state.js';
+import { state, DAY_LENGTH_MS, WEATHER_CHANGE_INTERVAL_MS, WATER_LEVEL } from '../core/state.js';
 import { heightAt as getElevation } from '../core/heightmap.js';
+import { updateLightning } from '../fx/lightning.js';
 
 // Cached once instead of getElementById() every frame (Phase 3 #20) — these
 // three never change identity for the life of the page.
@@ -14,6 +15,8 @@ const FOG_DAY = new THREE.Color(0x607080), CLOUD_DAY = new THREE.Color(0x9098a0)
 const FOG_NIGHT = new THREE.Color(0x040810), CLOUD_NIGHT = new THREE.Color(0x111125);
 const RAIN_FOG = new THREE.Color(0x2a3038), RAIN_TOP = new THREE.Color(0x3a4048), RAIN_CLOUD = new THREE.Color(0x2a2a2a);
 const RAIN_COL_DAY = new THREE.Color(0xe6f0fa), RAIN_COL_NIGHT = new THREE.Color(0x334466);
+const TORRENTIAL_THRESHOLD = 0.9;  // currentRainIntensity above this = the new "torrential" weatherKey
+const SURGE_MAX = 3.5;             // world units the effective shoreline rises by at full torrential (WATER_LEVEL itself, the constant, is untouched — see core/state.js's effectiveWaterLevel)
 const _top = new THREE.Color(), _bot = new THREE.Color(), _fog = new THREE.Color(), _cloud = new THREE.Color();
 const _camDir = new THREE.Vector3();
 
@@ -29,18 +32,38 @@ export function updateAtmosphere(delta) {
     state.weatherChangeTimer += delta * state.timeMultiplier;
     if (state.weatherChangeTimer > WEATHER_CHANGE_INTERVAL_MS) { // Change weather periodically (accelerated by resting)
         state.weatherChangeTimer = 0;
-        state.targetRainIntensity = Math.random() > 0.5 ? 0.0 : Math.random(); 
+        // stormForced (Settings -> a "Force Storm" debug toggle, wired in
+        // core/settings.js) keeps re-rolling into the torrential band
+        // instead of letting the normal 50/50 clear-or-random pick happen
+        // — natural torrential weather is only ~5% of rolls (rain half the
+        // time, then only the top ~10% of THAT range), too rare to ever
+        // reliably see without a way to force it.
+        state.targetRainIntensity = state.stormForced
+            ? (0.94 + Math.random() * 0.06)
+            : (Math.random() > 0.5 ? 0.0 : Math.random());
     }
     // Smoothly interpolate rain intensity
     state.currentRainIntensity += (state.targetRainIntensity - state.currentRainIntensity) * 0.0005 * delta;
-    
+
     const isNight = state.gameTime < 0.25 || state.gameTime > 0.79;
-    const weatherKey = state.currentRainIntensity > 0.7 ? 'heavy' : (state.currentRainIntensity > 0.15 ? 'light' : (isNight ? 'clear-night' : 'clear'));
+    const weatherKey = state.currentRainIntensity > TORRENTIAL_THRESHOLD ? 'torrential'
+        : state.currentRainIntensity > 0.7 ? 'heavy'
+        : (state.currentRainIntensity > 0.15 ? 'light' : (isNight ? 'clear-night' : 'clear'));
     if (weatherEl && weatherEl.dataset.weather !== weatherKey) {
         weatherEl.dataset.weather = weatherKey;
-        const label = { heavy: 'heavy rain', light: 'light rain', clear: 'clear skies', 'clear-night': 'clear night' }[weatherKey];
+        const label = { torrential: 'torrential storm', heavy: 'heavy rain', light: 'light rain', clear: 'clear skies', 'clear-night': 'clear night' }[weatherKey];
         weatherTextEl.textContent = label;
     }
+
+    // Storm surge: how far into "torrential" we are, 0..1, used both for
+    // the shoreline rise below and to scale up the rain/lightning effects
+    // further down. Eased (not snapped straight to the target) so the
+    // water visibly creeps up/recedes over a few seconds rather than
+    // jumping the moment the threshold is crossed.
+    const torrentialBlend = Math.max(0, Math.min(1, (state.currentRainIntensity - TORRENTIAL_THRESHOLD) / (1 - TORRENTIAL_THRESHOLD)));
+    const surgeTarget = WATER_LEVEL + torrentialBlend * SURGE_MAX;
+    state.effectiveWaterLevel += (surgeTarget - state.effectiveWaterLevel) * Math.min(1, 0.0008 * delta);
+    if (state.waterMesh) state.waterMesh.position.y = state.effectiveWaterLevel;
 
     state.gameTime += (delta / DAY_LENGTH_MS) * state.timeMultiplier;
     if (state.gameTime >= 1.0) { state.gameTime -= 1.0; state.daysPassed++; if (dayEl) dayEl.textContent = `Day ${state.daysPassed}`; }
@@ -68,6 +91,11 @@ export function updateAtmosphere(delta) {
         state.hemiLight.intensity = THREE.MathUtils.lerp(0.18, 1.15, dayBlend);
     }
 
+    // Lightning — only once hemi/sun intensity are both settled for this
+    // frame, since it adds its flash boost on top of them rather than
+    // replacing them (see fx/lightning.js's header comment for why).
+    updateLightning(performance.now(), state.currentRainIntensity, state.hemiLight, state.sunLight);
+
     // Phase 7 #40: palette constants and working colors live at module
     // scope and are mutated in place — this used to allocate ~15 new
     // THREE.Color objects every frame. Working colors are always .copy()'d
@@ -93,6 +121,9 @@ export function updateAtmosphere(delta) {
     if(state.cloudMat) {
         cloudC.lerp(RAIN_CLOUD, state.currentRainIntensity * 0.8);
         state.cloudMat.uniforms.cloudColor.value.copy(cloudC);
+        // B-30: drives actual cloud COVERAGE (see sky.js) — color alone
+        // only recolored a permanently-full sky, it never thinned out.
+        state.cloudMat.uniforms.uCoverage.value = state.currentRainIntensity;
     }
 
     const ts = performance.now() * 0.001;
@@ -114,7 +145,13 @@ export function updateAtmosphere(delta) {
         state.camera.getWorldDirection(camDir);
         const verticalFacing = Math.abs(camDir.y);
         u.uUvSquash.value = THREE.MathUtils.lerp(1, 0.05, verticalFacing);
-        u.uSize.value = 7 * THREE.MathUtils.lerp(1, 0.7, verticalFacing) * (0.5 + 0.5 * u.uUvSquash.value);
+        // torrentialBlend (0 outside torrential, ramping 0->1 as
+        // currentRainIntensity climbs from 0.9->1.0) pushes drops bigger
+        // and faster on top of the normal size/opacity curve below — the
+        // same particle count reads as noticeably more violent rain
+        // without needing a separate particle system for the top tier.
+        u.uSize.value = 7 * THREE.MathUtils.lerp(1, 0.7, verticalFacing) * (0.5 + 0.5 * u.uUvSquash.value) * (1 + torrentialBlend * 0.55);
+        u.uOverallSpeed.value = 140 * (1 + torrentialBlend * 0.45);
 
         u.uColor.value.copy(RAIN_COL_DAY).lerp(RAIN_COL_NIGHT, 1 - dayBlend);
         u.uOpacity.value = THREE.MathUtils.lerp(0.15, 0.95, Math.min(1.0, state.currentRainIntensity * 1.3));

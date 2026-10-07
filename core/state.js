@@ -5,7 +5,24 @@ import * as THREE from 'three';
 // (Mirrors the state.userData.shader self-reference pattern used in the main
 // Silvan codebase for day-night-cycle.js uniform feeds.)
 
-export const WORLD_SIZE = 1024; // was 800 (terrain v2: bigger island). Kept a multiple of 256/1024 so heightmap.js's bake-to-mesh ratio (k=4) stays exact.
+// World size decision (audit section 11, #3): going straight to 3200, not
+// the 1600 waypoint. Safe to bump directly — elevation-core.js's rawElevation()
+// already expresses island radius as a FRACTION of WORLD_SIZE (dist scales
+// with it) while noise wavelengths are fixed world-unit constants "chosen to
+// reproduce the exact previous look... and simply hold steady if the world
+// is widened later instead of stretching every hill with it" (its own
+// comment, written for exactly this change) — so the island gets bigger and
+// gets MORE terrain detail filling it, not a stretched version of the same
+// detail. POI/_PAD coordinates and TREE_COUNT below already scale off
+// WORLD_SIZE too.
+// NOT free: core/heightmap.js's bake stays at a fixed HM_RES=2049 nodes/side
+// regardless of WORLD_SIZE, so texel spacing goes from ~0.5u (at the old
+// 1024) to ~1.56u at 3200 — a real loss of ground-sample precision (slope/
+// normal/collision/placement all read off that same bake). Left as-is for
+// now (bumping HM_RES to hold spacing would ~10x the worker bake's sample
+// count); flagging as its own follow-up perf item rather than guessing at
+// a resolution bump blind.
+export const WORLD_SIZE = 3200;
 export const WATER_LEVEL = 1.6; // Must match waterMesh.position.y in environment/lake.js createLake()
 export const TREE_COUNT = 620; // was 380, scaled by new/old world area (1.64x) to keep density constant
 // Phase 4 #25: was 90000 (90 real seconds per full day) — a normal
@@ -38,6 +55,7 @@ export const WEATHER_CHANGE_INTERVAL_MS = 300000;
 //   assets/audio/rain.mp3            - rainfall loop
 //   assets/audio/footstep.mp3        - single footstep one-shot
 //   assets/audio/fire-crackle.mp3    - Phase 5 #35: Warm Paw's positional fire loop
+//   assets/audio/thunder.mp3         - one-shot, played per lightning flash (fx/lightning.js) — not loaded yet, same B-16 warn-not-throw path as the other 7
 export const SOUNDS = {
     dayAmbient: './assets/audio/day-ambient.mp3',
     nightAmbient: './assets/audio/night-ambient.mp3',
@@ -45,7 +63,8 @@ export const SOUNDS = {
     water: './assets/audio/water.mp3',
     rain: './assets/audio/rain.mp3',
     footstep: './assets/audio/footstep.mp3',
-    fire: './assets/audio/fire-crackle.mp3'
+    fire: './assets/audio/fire-crackle.mp3',
+    thunder: './assets/audio/thunder.mp3'
 };
 
 export const state = {
@@ -60,10 +79,12 @@ export const state = {
     currentRainIntensity: 0.0, // starts clear (was 1.0: first thing a new player saw was a storm clearing)
     targetRainIntensity: 0.0, // Starts transitioning to clear so you can immediately see the shift
     weatherChangeTimer: 0,
+    stormForced: false, // debug/settings override — natural "torrential" (currentRainIntensity>0.9) only comes up on ~5% of weather rolls, too rare to ever actually see/test without this
+    effectiveWaterLevel: WATER_LEVEL, // WATER_LEVEL eased upward during a torrential storm surge (atmosphere/day-night-cycle.js) — player-controller.js and lake.js read this instead of the constant so the shoreline actually floods a little instead of just looking darker
 
     scene: null, camera: null, renderer: null, composer: null, bloomPass: null,
     sunLight: null, moonLight: null, hemiLight: null, skyMat: null,
-    dayAmbientAudio: null, nightAmbientAudio: null, windAudio: null, waterAudio: null, rainAudio: null, stepAudio: null, fireAudio: null,
+    dayAmbientAudio: null, nightAmbientAudio: null, windAudio: null, waterAudio: null, rainAudio: null, stepAudio: null, fireAudio: null, thunderAudio: null,
     rainMesh: null, rainMaterial: null, rainAnchor: null,
     rainSplashMesh: null, rainSplashMat: null,
     fireflyMesh: null, fireflyMat: null,
@@ -77,6 +98,15 @@ export const state = {
     flowerStemMesh: null,
     globalTextures: null,
     interactors: [], // B-5.6: NPC/animal THREE.Vector3 positions (beyond the player) that bend grass away; populated by whatever system owns them
+
+    // The Serpent's Coil quest (environment/serpents-coil.js). Phase itself
+    // is NOT stored here — it's derived purely from state.daysPassed/
+    // gameTime every frame, so it naturally replays correctly after a
+    // Regain with no save-schema change needed. inCave/caveReturn ARE
+    // session-only UI/physics state (not persisted — see that file's
+    // header for why a mid-cave quit just resumes on the surface).
+    inCave: false,        // true while player-controller.js should use the cave's flat-room movement instead of heightmap ground-follow
+    caveReturn: null,     // {x, y, z, yaw} surface position to restore on exit — set the moment the cutscene commits to entering
 
     player: {
 position: new THREE.Vector3(0, 0, 0),

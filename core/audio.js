@@ -24,6 +24,9 @@ export function initAudio() {
     state.waterAudio = new Howl(loud({ src: [SOUNDS.water], loop: true, volume: 0 }));
     state.rainAudio = new Howl(loud({ src: [SOUNDS.rain], loop: true, volume: 0 }));
     state.stepAudio = new Howl(loud({ src: [SOUNDS.footstep], volume: 0.25, rate: 1.1, pool: 5 }));
+    // One-shot, triggered per flash by fx/lightning.js — pool:2 so a flash
+    // that fires again before the last clap finishes doesn't cut it off.
+    state.thunderAudio = new Howl(loud({ src: [SOUNDS.thunder], volume: 0.6, pool: 2 }));
 
     // Phase 5 #35: positional fire audio at Warm Paw via Howler's 3D
     // panner, mirroring FIRE_RANGE=15 from poi-warm-paw.js so the audio

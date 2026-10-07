@@ -4,6 +4,7 @@ import { triggerJump } from './player-controller.js';
 import { renderObjectives } from './journal.js';
 import { startTutorial } from './tutorial.js';
 import { POIS } from '../environment/pois.js';
+import { writeLocalSave, listSaveSlots, setActiveSlot } from './save-system.js';
 
 // Split out of what used to be one setupInput() so the Remember click can
 // kick off the loading-screen/init() flow (main.js's startGame()) without
@@ -37,37 +38,91 @@ export function lockPointer() {
 
 const POINTER_LOCK_FALLBACK_MS = 1000;
 
-export function wireTitleScreen(onStart) {
-    document.getElementById('title-remember-btn').addEventListener('click', () => {
-        // Phase 6 #36: pointer lock is a desktop mouse-look concept — on
-        // touch devices requestPointerLock() either no-ops or is refused
-        // outright, and 'pointerlockchange' never fires true. Skipping it
-        // entirely for touch avoids relying on the fallback timer below
-        // (which only ever hid #ui-layer, never actually entered gameplay
-        // state — see showGameplayUI() for the touch-driven equivalent,
-        // called directly from main.js once init() finishes on touch).
-        if (shouldShowTouchControls()) { onStart(); return; }
+// Shared commit path for actually entering the game, once a slot has been
+// picked — same pointer-lock/touch handling Remember/Regain always used.
+// Guarded so a double-click (or a stray second slot click) can't start the
+// world twice in one page life.
+let entryStarted = false;
+function commitEntry(callback) {
+    if (entryStarted || !callback) return;
+    entryStarted = true;
+    // Phase 6 #36: pointer lock is a desktop mouse-look concept — on touch
+    // devices requestPointerLock() either no-ops or is refused outright, and
+    // 'pointerlockchange' never fires true. Skipping it entirely for touch
+    // avoids relying on the fallback timer below (which only ever hid
+    // #ui-layer, never actually entered gameplay state — see
+    // showGameplayUI() for the touch-driven equivalent, called directly from
+    // main.js once init() finishes on touch).
+    if (shouldShowTouchControls()) { callback(); return; }
 
-        lockPointer();
-        onStart();
+    lockPointer();
+    callback();
 
-        // requestPointerLock() can be silently refused — blocked by
-        // browser/embedding policy, a prior lock exit still in its cooldown,
-        // etc — with no error and no 'pointerlockchange' event ever firing.
-        // Without this, #ui-layer only ever hides from inside that handler
-        // (see setupInput() below), so a refusal leaves the title screen
-        // permanently stuck on top of the loading screen/game underneath.
-        // If lock hasn't actually landed shortly after the click, hide the
-        // UI layer directly so the player isn't stranded (mouse-look just
-        // won't work until they manage to lock some other way, e.g.
-        // clicking the canvas, which is better than being unable to play
-        // at all).
-        setTimeout(() => {
-            if (state.isLocked) return; // real lock landed in time — nothing to do
-            const ui = document.getElementById('ui-layer');
-            if (ui) ui.classList.add('hidden');
-        }, POINTER_LOCK_FALLBACK_MS);
-    }, { once: true });
+    // requestPointerLock() can be silently refused — blocked by
+    // browser/embedding policy, a prior lock exit still in its cooldown,
+    // etc — with no error and no 'pointerlockchange' event ever firing.
+    // Without this, #ui-layer only ever hides from inside that handler
+    // (see setupInput() below), so a refusal leaves the title screen
+    // permanently stuck on top of the loading screen/game underneath.
+    // If lock hasn't actually landed shortly after the click, hide the
+    // UI layer directly so the player isn't stranded (mouse-look just
+    // won't work until they manage to lock some other way, e.g.
+    // clicking the canvas, which is better than being unable to play
+    // at all).
+    setTimeout(() => {
+        if (state.isLocked) return; // real lock landed in time — nothing to do
+        const ui = document.getElementById('ui-layer');
+        if (ui) ui.classList.add('hidden');
+    }, POINTER_LOCK_FALLBACK_MS);
+}
+
+// Remember/Regain (B-18, now 3 slots): both buttons open the SAME
+// #title-slot-panel instead of starting immediately — Remember in 'new'
+// mode (any slot pickable; picking one that already has a save just
+// overwrites it on the next autosave, same documented behavior single-slot
+// had), Regain in 'continue' mode (only slots that actually have a save
+// are clickable). Picking a slot calls setActiveSlot() — so every
+// writeLocalSave()/startAutosaveTimer() call for the rest of this session
+// targets that slot — then runs the exact same commitEntry() flow the old
+// single-slot buttons used directly.
+export function wireTitleScreen(onStart, onContinue) {
+    const slotPanel = document.getElementById('title-slot-panel');
+    const heading = document.getElementById('title-slot-heading');
+    const backBtn = document.getElementById('title-slot-back-btn');
+    let mode = 'new';
+
+    function openSlotPanel(m) {
+        mode = m;
+        if (heading) heading.textContent = m === 'new' ? 'Begin in which slot?' : 'Continue which slot?';
+        for (const { slot, exists, summary } of listSaveSlots()) {
+            const btn = document.getElementById(`title-slot-${slot}-btn`);
+            const info = document.getElementById(`title-slot-${slot}-info`);
+            if (!btn) continue;
+            const usable = m === 'new' || exists;
+            btn.disabled = !usable;
+            btn.classList.toggle('disabled', !usable);
+            if (info) info.textContent = exists ? summary : 'Empty';
+        }
+        if (slotPanel) slotPanel.classList.add('open');
+    }
+    function closeSlotPanel() { if (slotPanel) slotPanel.classList.remove('open'); }
+
+    const rememberBtn = document.getElementById('title-remember-btn');
+    const regainBtn = document.getElementById('title-regain-btn');
+    if (rememberBtn) rememberBtn.addEventListener('click', () => openSlotPanel('new'));
+    if (regainBtn) regainBtn.addEventListener('click', () => openSlotPanel('continue'));
+    if (backBtn) backBtn.addEventListener('click', closeSlotPanel);
+
+    for (let slot = 1; slot <= 3; slot++) {
+        const btn = document.getElementById(`title-slot-${slot}-btn`);
+        if (!btn) continue;
+        btn.addEventListener('click', () => {
+            if (btn.disabled) return;
+            setActiveSlot(slot);
+            closeSlotPanel();
+            commitEntry(mode === 'new' ? onStart : onContinue);
+        }, { once: true }); // each slot button commits at most once per page life, same guarantee entryStarted gives the pair as a whole
+    }
 }
 
 // Ambient audio has looser user-gesture rules than pointer lock and is fine
@@ -227,7 +282,7 @@ export function wirePauseMenu() {
         if (shouldShowTouchControls()) showGameplayUI();
         else lockPointer();
     });
-    if (quitBtn) quitBtn.addEventListener('click', () => location.reload());
+    if (quitBtn) quitBtn.addEventListener('click', () => { writeLocalSave(); location.reload(); });
 
     // Accordion: opening one panel closes the others.
     const PANELS = ['pause-objectives', 'pause-controls', 'pause-settings'];

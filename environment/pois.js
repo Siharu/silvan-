@@ -6,6 +6,7 @@ import { state, WORLD_SIZE } from '../core/state.js';
 import { heightAt as getElevation } from '../core/heightmap.js';
 import { markDiscovered, showDiscoveryToast } from '../core/journal.js';
 import { playBlip } from '../core/blip.js';
+import { writeLocalSave } from '../core/save-system.js';
 import { createRuinedCabin } from './poi-ruined-cabin.js';
 import { createChrysalis } from './poi-chrysalis.js';
 import { createObsidianWing } from './poi-obsidian-wing.js';
@@ -192,7 +193,7 @@ export function updatePOIInteraction(delta) {
                 captionText.textContent = '';
                 captionText.classList.add('typing');
                 caption.classList.add('visible');
-                if (markDiscovered(nearest)) showDiscoveryToast(nearest, POIS.length);
+                if (markDiscovered(nearest)) { showDiscoveryToast(nearest, POIS.length); writeLocalSave(); } // B-18: autosave on discovery
             }
         }
     } else {

@@ -92,7 +92,19 @@ export function createRainSystem() {
                 uv.x = 0.5 + (uv.x - 0.5) * uUvSquash;
 
                 vec4 tex = texture2D(uTexture, uv);
-                gl_FragColor = vec4(uColor, tex.a * uOpacity * surfaceFade);
+                // Unverified (no WebGL here) — reasoning only: inspected
+                // public/assets/rain-drop.png directly (not rendered) and
+                // its alpha channel never exceeds ~0.4 anywhere on the
+                // 512x512 canvas. Every drop was therefore capped under
+                // half-strength before uOpacity (max 0.95) or surfaceFade
+                // even touched it — "heavy rain" at 45k particles still
+                // read as a faint haze because no individual drop could
+                // ever get bright enough to read as a drop. Re-expose the
+                // texture's own alpha range up to full strength instead of
+                // regenerating the asset; the droplet SHAPE in the texture
+                // is unaffected, only how opaque its brightest point gets.
+                float dropAlpha = clamp(tex.a * 2.6, 0.0, 1.0);
+                gl_FragColor = vec4(uColor, dropAlpha * uOpacity * surfaceFade);
             }
         `,
         depthWrite: false,

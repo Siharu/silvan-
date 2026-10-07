@@ -215,7 +215,7 @@ export function writeLocalSave(slot = getActiveSlot()) {
 // see state.js), so this is both safe and immune to any future terrain
 // tweak leaving an old save's Y buried or floating.
 //
-// B-24 fix: groundY is now clamped to WATER_LEVEL, the same clamp
+// B-26 fix: groundY is now clamped to WATER_LEVEL, the same clamp
 // player-controller.js's own per-frame Y update already applies
 // (`Math.max(getElevation(...), WATER_LEVEL)`). Without it, a save written
 // while standing in the shallows — reachable since B-20 made the ocean a
@@ -224,7 +224,7 @@ export function writeLocalSave(slot = getActiveSlot()) {
 // gameplay guarantees everywhere else.
 export function applySave(payload) {
     if (!payload) return false;
-    const groundY = Math.max(heightAt(payload.player.x, payload.player.z), WATER_LEVEL);
+    const groundY = Math.max(heightAt(payload.player.x, payload.player.z), state.effectiveWaterLevel);
     state.player.position.set(payload.player.x, groundY + state.player.height, payload.player.z);
     state.player.rotation.y = payload.player.yaw;
     state.player.verticalVelocity = 0;

@@ -128,10 +128,15 @@ All 9 POIs are now ported. Remaining work:
    `PointsMaterial` particle pattern (see fx/fireflies.js), rather than
    the mockups' bespoke shaders — dropped during porting, see the POI
    table above.
-6. Deferred indefinitely, not required for playability: Save/Continue
-   (Regain) + autosave indicator, rest/nap mechanic, touch controls, full
-   camera/audio/keybind settings persistence, underwater screen overlay,
-   boundary message.
+6. Save/Continue (Regain) + autosave indicator: DONE (see
+   SILVAN_BETA2_AUDIT.txt Status Update 10, core/save-system.js). Rest/nap
+   mechanic: DONE (Status Update 8, core/rest.js). Touch controls: DONE.
+   Still deferred indefinitely, not required for playability: full
+   camera/audio/keybind settings persistence beyond FOV/sensitivity/
+   invert-Y/volume, underwater screen overlay, boundary message (DONE per
+   Sept 29 small-bug pass below, line left here only because this list
+   wasn't being kept current - see the audit file for what's actually
+   still open).
 
 
 ## Small-bug pass + nyctinastic pine (Sept 29 2026)

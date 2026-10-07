@@ -119,8 +119,22 @@ const FRAG_COLOR = `
         // of smearing the same noise everywhere.
         float sandVis = (1.0 - sp.r) * (1.0 - sp.g) * (1.0 - sp.a) * (1.0 - ashW)
                       * smoothstep(-0.6, 2.0, h) * (1.0 - smoothstep(4.2, 6.5, h));
-        float stipple = tNoise(vWPos.xz * 7.0) - 0.5;
-        col *= 1.0 + stipple * 0.5 * sandVis;
+        // Unverified (no WebGL here, never rendered) — reasoning only:
+        // one grain frequency at ~uniform amplitude reads as noise, not
+        // sand, because real sand has grains at several sizes at once
+        // (fine dust between coarser individual grains) and isn't
+        // perfectly uniform in brightness — some grains catch more light
+        // than others. Two octaves + a sparser "glint" layer for the
+        // occasional bright grain approximates that without a texture.
+        float stippleFine = tNoise(vWPos.xz * 7.0) - 0.5;
+        float stippleCoarse = tNoise(vWPos.xz * 2.2 + 19.0) - 0.5;
+        float grains = stippleFine * 0.65 + stippleCoarse * 0.35;
+        // Sparse bright flecks: only the top of the noise range, so it hits
+        // a minority of fragments instead of every one — individual grains
+        // catching light, not a uniform sheen.
+        float glint = smoothstep(0.78, 0.95, tNoise(vWPos.xz * 11.0 + 7.0));
+        col *= 1.0 + grains * 0.7 * sandVis;
+        col += glint * 0.18 * sandVis;
 
         diffuseColor.rgb *= col;
     }
@@ -141,9 +155,11 @@ const FRAG_NORMAL = `
         float sandVisN = (1.0 - spN.r) * (1.0 - spN.g) * (1.0 - spN.a)
                         * smoothstep(-0.6, 2.0, hN) * (1.0 - smoothstep(4.2, 6.5, hN));
         if (sandVisN > 0.02) {
-            float nb = tNoise(vWPos.xz * 7.0);
+            // Matches FRAG_COLOR's two-octave grain so the bump pattern
+            // lines up with the color pattern instead of fighting it.
+            float nb = tNoise(vWPos.xz * 7.0) * 0.65 + tNoise(vWPos.xz * 2.2 + 19.0) * 0.35;
             vec3 bump = normalize(vec3(dFdx(nb), dFdy(nb), 1.0));
-            normal = normalize(mix(normal, normalize(normal + bump * 0.7), sandVisN));
+            normal = normalize(mix(normal, normalize(normal + bump * 0.9), sandVisN));
         }
     }
 `;

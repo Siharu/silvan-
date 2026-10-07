@@ -23,8 +23,10 @@ import { updateRest } from './rest.js';
 import { bakeHeightmap, heightAt } from './heightmap.js';
 import { bakeSplat } from './splat.js';
 import { applyQuality, noteGrassBuilt, updateShadowFollow, updateAdaptiveRes } from './render-quality.js';
+import { setupViewport } from './viewport.js';
 import { initDebug, debugFrame } from './debug.js';
 import { updateAtmosphere } from '../atmosphere/day-night-cycle.js';
+import { hasAnySave, readLocalSave, applySave, writeLocalSave, startAutosaveTimer, wireSaveButtons } from './save-system.js';
 
 import { createSky } from '../environment/sky.js';
 import { createTerrainChunks, updateTerrainChunks } from '../environment/terrain.js';
@@ -40,6 +42,7 @@ import { createRainSystem, createRainSplashes } from '../fx/rain.js';
 import { createFireflies } from '../fx/fireflies.js';
 import { createDustParticles } from '../fx/dust.js';
 import { POIS, createPOIs, updatePOIInteraction, updatePOIs } from '../environment/pois.js';
+import { createSerpentsCoilEvent, updateSerpentsCoilEvent } from '../environment/serpents-coil.js';
 
 // Yields one real animation frame — used between init()'s heavy steps below
 // so the loading-screen progress bar actually gets a chance to repaint
@@ -108,7 +111,7 @@ function stallWatchdog(ms) {
 // let alone the loading screen meant to cover it. Now it only runs once
 // startGame() (below) is invoked from the Remember click, with the loading
 // screen already up and a real per-step progress readout.
-async function init() {
+async function init(continueSave) {
     loadQuality(); // must run before createGrass() reads state.quality.bladeCount
     state.scene = new THREE.Scene();
     state.scene.fog = new THREE.FogExp2(0x111625, 0.007);
@@ -218,6 +221,7 @@ async function init() {
 
     setLoadingProgress(98, 'placing the sanctuaries');
     await createPOIs(); // async: broken_shell.glb loads over the network
+    createSerpentsCoilEvent(); // after POIS exists — reads the serpents_coil entry's (x,z) for placement
     await nextFrame();
 
     applyQuality(state.qualityKey); // tier: pixel ratio, shadows, bloom, particle budgets
@@ -227,6 +231,17 @@ async function init() {
     // The Serpent's Coil massif under the island terrain.
     state.player.position.set(200, heightAt(200, 0) + state.player.height, 0);
 
+    // B-18: Regain overrides the fresh-game spawn above, not the other way
+    // round — so a missing/corrupt save (readLocalSave() returns null;
+    // save-system.js already falls back to its own backup slot first)
+    // silently falls through to the normal new-game spawn instead of
+    // leaving the player stuck or crashing init().
+    if (continueSave) {
+        const payload = readLocalSave();
+        if (payload) applySave(payload);
+        else console.warn('[init] Regain clicked but no valid save found — starting fresh instead.');
+    }
+
     initAudio();
     setLoadingProgress(100, 'the hearth is still');
 
@@ -235,7 +250,7 @@ async function init() {
     requestAnimationFrame(animate);
 }
 
-async function startGame() {
+async function startGame(continueSave = false) {
     const loadingScreen = document.getElementById('loading-screen');
     loadingScreen.classList.remove('hidden');
 
@@ -249,7 +264,7 @@ async function startGame() {
 
     const watchdog = stallWatchdog(INIT_STALL_MS);
     try {
-        await Promise.race([init(), watchdog.promise]);
+        await Promise.race([init(continueSave), watchdog.promise]);
         watchdog.cancel();
     } catch (err) {
         watchdog.cancel();
@@ -268,6 +283,7 @@ async function startGame() {
     // handler for why losing pointer lock only opens the pause overlay
     // (rather than falling back to the title screen) once this is true.
     state.hasStarted = true;
+    startAutosaveTimer(); // B-18: 60s interval, gated on state.isPlaying/isResting inside
     startTutorial(); // no-op if already completed
     // Phase 6 #36: touch never gets a real pointer lock, so the
     // pointerlockchange handler that normally hides the title UI, shows
@@ -290,6 +306,7 @@ function animate(time) {
         updateGrandBlueCanopy(delta / 1000);
         updatePines(delta / 1000);
         updatePOIs(delta / 1000);
+        updateSerpentsCoilEvent(delta / 1000);
         updateTutorial(delta / 1000);
         updateRest(delta / 1000);
     }
@@ -316,11 +333,36 @@ function animate(time) {
 // it can't wait until after init() finishes.
 setupInput();
 window.addEventListener('DOMContentLoaded', () => {
-    wireTitleScreen(startGame);
+    setupViewport(); // data-device/data-orientation/data-compact-h on <html> — must run before the title screen paints so it isn't classified wrong for one frame
+    wireTitleScreen(() => startGame(false), () => startGame(true));
+    // B-18: "Regain" only makes sense, and only appears, once a save
+    // actually exists in ANY of the 3 slots — showing it earlier would be
+    // a button that lies about what it does (see the HTML comment on
+    // title-regain-btn). Which specific slot(s) have saves is decided
+    // inside the slot picker wireTitleScreen() opens, not here.
+    if (hasAnySave()) {
+        const regainBtn = document.getElementById('title-regain-btn');
+        if (regainBtn) regainBtn.classList.remove('hidden');
+    }
     wireTitleMenu();
     wireSettingsButtons();
     wireCameraAudioSettings();
+    wireSaveButtons();
     wirePauseMenu();
     initTouchControls();
     initDebug();
+});
+
+// B-18 / section 0 "refresh never loses more than a minute": the 60s
+// interval timer alone leaves up to a minute on the table on an actual tab
+// close. These three catch the gaps without duplicating the interval:
+// losing visibility (tab switch / app backgrounded — pauseGame() already
+// freezes the world at this point via core/input.js) and the page actually
+// unloading. All no-op safely if the world was never built (state.hasStarted
+// false) since writeLocalSave() just serializes whatever's in `state`.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state.hasStarted) writeLocalSave();
+});
+window.addEventListener('beforeunload', () => {
+    if (state.hasStarted) writeLocalSave();
 });

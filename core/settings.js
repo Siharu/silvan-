@@ -140,6 +140,23 @@ export function wireCameraAudioSettings() {
         });
     });
 
+    // Debug/testing toggle — natural torrential weather (lightning +
+    // storm-surge flooding, see atmosphere/day-night-cycle.js) is only
+    // ~5% of weather rolls, which makes it impractical to ever actually
+    // see or test without a way to force it. Session-only (not persisted
+    // to localStorage) since it's a testing aid, not a real preference —
+    // unchecked on every fresh load.
+    const stormBoxes = [document.getElementById('title-storm-forced-checkbox'), document.getElementById('pause-storm-forced-checkbox')];
+    stormBoxes.forEach((cb) => {
+        if (!cb) return;
+        cb.checked = false;
+        cb.addEventListener('change', () => {
+            stormBoxes.forEach((other) => { if (other && other !== cb) other.checked = cb.checked; });
+            state.stormForced = cb.checked;
+            if (cb.checked) state.weatherChangeTimer = Infinity; // force the next tick in updateAtmosphere() to re-roll immediately instead of waiting out whatever's left of the current interval
+        });
+    });
+
     const volSliders = [document.getElementById('title-volume-slider'), document.getElementById('pause-volume-slider')];
     volSliders.forEach((s) => {
         if (!s) return;

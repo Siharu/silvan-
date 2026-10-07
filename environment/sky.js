@@ -41,7 +41,24 @@ export function createSky() {
         uniforms: {
             uTime: { value: 0 },
             cloudColor: { value: new THREE.Color(0xffffff) },
-            opacity: { value: 1.0 }
+            opacity: { value: 1.0 },
+            // B-30 fix: cloud COLOR was tracking weather (tints grey as
+            // currentRainIntensity rises, see day-night-cycle.js) but
+            // cloud COVERAGE never did — the fbm density threshold below
+            // was a fixed smoothstep(0.2, 0.8, n) regardless of weather,
+            // so "clear skies" rendered the exact same full sky-covering
+            // cloud layer as "heavy rain", just recolored lighter. That's
+            // why it always read as overcast/rainy even when the HUD said
+            // clear. uCoverage (0 = clear, 1 = storm) is now driven by
+            // state.currentRainIntensity every frame and widens/narrows
+            // the noise band that counts as "cloud" — clear skies keep
+            // only the noise peaks (sparse, gappy puffs), storms keep
+            // almost the whole band (solid overcast).
+            uCoverage: { value: 0.0 },
+            // Lightning flash brightness, 0..1, driven per-frame by
+            // fx/lightning.js — lets the clouds themselves flash white
+            // from within rather than only a screen overlay doing it.
+            uFlash: { value: 0.0 }
         },
         transparent: true,
         depthWrite: false,
@@ -58,6 +75,8 @@ export function createSky() {
             uniform float uTime;
             uniform vec3 cloudColor;
             uniform float opacity;
+            uniform float uCoverage;
+            uniform float uFlash;
             varying vec3 vWorldPosition;
 
             float hash(vec3 p) {
@@ -89,9 +108,25 @@ export function createSky() {
                 vec3 dir = normalize(vWorldPosition);
                 if (dir.y < -0.1) discard; 
                 float n = fbm(dir * 5.0 + vec3(uTime * 0.01, 0.0, uTime * 0.008));
-                float density = smoothstep(0.2, 0.8, n);
+                // Clear (uCoverage=0): only the top ~20% of the noise range
+                // counts as cloud — a few sparse, gappy puffs, mostly open
+                // sky. Storm (uCoverage=1): almost the whole range counts —
+                // solid overcast with barely any gaps.
+                float edge0 = mix(0.68, 0.05, uCoverage);
+                float edge1 = mix(0.92, 0.55, uCoverage);
+                float density = smoothstep(edge0, edge1, n);
                 density *= smoothstep(-0.1, 0.2, dir.y);
-                gl_FragColor = vec4(cloudColor, density * opacity * 0.9);
+                // Clear-sky puffs also read thinner/wispier, not just
+                // sparser — a solid-alpha sparse cloud still looks like a
+                // storm cloud that's merely small. Storms stay near-opaque.
+                float alphaMul = mix(0.5, 0.92, uCoverage);
+                // Lightning: the cloud mass itself lights up white from
+                // within, and briefly becomes more opaque/solid-reading —
+                // a dark storm cloud lit by a strike doesn't just get
+                // brighter, it briefly reads as a bright silhouette.
+                vec3 litColor = mix(cloudColor, vec3(1.0), uFlash * 0.9);
+                float litAlpha = mix(density * opacity * alphaMul, max(density, 0.6), uFlash);
+                gl_FragColor = vec4(litColor, litAlpha);
             }
         `
     });

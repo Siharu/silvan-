@@ -16,6 +16,7 @@ import { triggerJump } from './player-controller.js';
 const JOYSTICK_MAX_RADIUS = 45; // px the knob can travel from center before clamping
 const JOYSTICK_DEADZONE = 0.25; // fraction of max radius before a direction registers at all
 const IDLE_TIMEOUT_MS = 10000;
+const LAYOUT_KEY = 'silvan-touch-layout';
 
 let joystickTouchId = null;
 let joystickBaseRect = null;
@@ -170,6 +171,123 @@ function startIdleWatcher(root) {
     }, 1000);
 }
 
+// --- Customizable layout ---------------------------------------------
+// The joystick and action-button cluster were fixed at one bottom-left/
+// bottom-right position each, sized for one hand-span assumption. Thumb
+// reach varies a lot by hand size, grip (how the phone's held) and
+// handedness, and there was no way to adjust it. This lets the player
+// drag each cluster anywhere on screen; the offset is stored as a CSS
+// --layout-dx/--layout-dy custom property on the element (see index.html,
+// `transform: translate(var(--layout-dx,0px), var(--layout-dy,0px))`),
+// so it composes with the element's own base position instead of
+// replacing it, and persisted so it survives a reload.
+function loadLayout() {
+    try {
+        const raw = localStorage.getItem(LAYOUT_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+}
+
+function saveLayout(layout) {
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch (e) { /* quota/private mode — layout just won't persist */ }
+}
+
+function applyOffset(el, dx, dy) {
+    el.style.setProperty('--layout-dx', dx + 'px');
+    el.style.setProperty('--layout-dy', dy + 'px');
+}
+
+// Keeps the dragged element fully on-screen (using its OWN current rect,
+// so this works regardless of which corner it's anchored to in CSS)
+// rather than letting a customization drag park a control half off the
+// edge of the display where it's unreachable afterward.
+function clampOffset(el, dx, dy) {
+    const rect = el.getBoundingClientRect();
+    // rect already includes the in-flight transform, so recover the
+    // untransformed box to clamp against actual viewport bounds.
+    const left = rect.left, top = rect.top;
+    const minDx = dx - Math.max(0, left - 4);
+    const maxDx = dx + Math.max(0, window.innerWidth - rect.right - 4);
+    const minDy = dy - Math.max(0, top - 4);
+    const maxDy = dy + Math.max(0, window.innerHeight - rect.bottom - 4);
+    return { dx: Math.min(Math.max(dx, minDx), maxDx), dy: Math.min(Math.max(dy, minDy), maxDy) };
+}
+
+function makeDraggable(el, key, layout) {
+    let dragId = null;
+    let startX = 0, startY = 0;
+    let baseDx = 0, baseDy = 0;
+
+    el.addEventListener('touchstart', (e) => {
+        if (!el.closest('.touch-controls').classList.contains('edit-mode')) return;
+        if (dragId !== null) return;
+        const t = e.changedTouches[0];
+        dragId = t.identifier;
+        startX = t.clientX; startY = t.clientY;
+        const saved = layout[key] || { dx: 0, dy: 0 };
+        baseDx = saved.dx; baseDy = saved.dy;
+        e.preventDefault();
+    }, { passive: false });
+
+    el.addEventListener('touchmove', (e) => {
+        const t = Array.from(e.changedTouches).find((t) => t.identifier === dragId);
+        if (!t) return;
+        const { dx, dy } = clampOffset(el, baseDx + (t.clientX - startX), baseDy + (t.clientY - startY));
+        applyOffset(el, dx, dy);
+        e.preventDefault();
+    }, { passive: false });
+
+    function release(e) {
+        const t = Array.from(e.changedTouches).find((t) => t.identifier === dragId);
+        if (!t) return;
+        dragId = null;
+        const style = getComputedStyle(el);
+        layout[key] = {
+            dx: parseFloat(style.getPropertyValue('--layout-dx')) || 0,
+            dy: parseFloat(style.getPropertyValue('--layout-dy')) || 0,
+        };
+        saveLayout(layout);
+    }
+    el.addEventListener('touchend', release);
+    el.addEventListener('touchcancel', release);
+}
+
+function wireTouchLayoutSettings() {
+    const layout = loadLayout();
+    const base = document.getElementById('touch-joystick-base');
+    const actions = document.getElementById('touch-action-buttons');
+    const root = document.getElementById('touch-controls');
+    if (!base || !actions || !root) return;
+
+    if (layout.joystick) applyOffset(base, layout.joystick.dx, layout.joystick.dy);
+    if (layout.actions) applyOffset(actions, layout.actions.dx, layout.actions.dy);
+    makeDraggable(base, 'joystick', layout);
+    makeDraggable(actions, 'actions', layout);
+
+    function wireEditToggle(btnId) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            const on = root.classList.toggle('edit-mode');
+            btn.classList.toggle('active', on);
+            btn.textContent = on ? 'Done' : 'Customize';
+        });
+    }
+    function wireReset(btnId) {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            applyOffset(base, 0, 0);
+            applyOffset(actions, 0, 0);
+            layout.joystick = { dx: 0, dy: 0 };
+            layout.actions = { dx: 0, dy: 0 };
+            saveLayout(layout);
+        });
+    }
+    ['title-touch-edit-btn', 'pause-touch-edit-btn'].forEach(wireEditToggle);
+    ['title-touch-reset-btn', 'pause-touch-reset-btn'].forEach(wireReset);
+}
+
 export function initTouchControls() {
     if (!shouldShowTouchControls()) return;
     const root = document.getElementById('touch-controls');
@@ -186,5 +304,6 @@ export function initTouchControls() {
     wireHoldButton('touch-interact-btn', 'e');
     wireJumpButton();
     wirePauseButton();
+    wireTouchLayoutSettings();
     startIdleWatcher(root);
 }

@@ -22,8 +22,15 @@ let centerX = 0, centerZ = 0;      // current world-space centre (where the plan
 function recomputeDepths(geo) {
     const pos = geo.attributes.position;
     const depthAttr = geo.getAttribute('aDepth');
+    // state.effectiveWaterLevel (not the WATER_LEVEL constant) so a storm
+    // surge's depth/shoreline-foam grading tracks the raised waterline —
+    // only on recenter (every RECENTER_DIST, not every frame), so during a
+    // fast-rising surge this lags a few seconds behind the mesh's own Y
+    // position (set every frame in atmosphere/day-night-cycle.js). Known
+    // soft spot, not worth a per-frame full depth-buffer rebuild to fix.
+    const waterY = state.effectiveWaterLevel;
     for (let i = 0; i < pos.count; i++) {
-        const depth = Math.max(0, WATER_LEVEL - getElevation(localX[i] + centerX, localZ[i] + centerZ));
+        const depth = Math.max(0, waterY - getElevation(localX[i] + centerX, localZ[i] + centerZ));
         depthAttr.setX(i, Math.min(depth / 20.0, 1.0));
     }
     depthAttr.needsUpdate = true;
@@ -83,12 +90,23 @@ export function createLake() {
 
             // height(x,z) and its analytic slope, so the surface actually has a
             // normal that responds to the swell instead of staying flat.
+            // Unverified (no WebGL here) — reasoning only: two waves at
+            // fixed axis-aligned directions (pure X, pure Z) repeat in an
+            // obviously grid-like way and never produce a peak, which is
+            // the single biggest "this is fake water" tell. A third,
+            // smaller-amplitude wave at an oblique angle and a different
+            // speed breaks that axis-aligned symmetry and lets crests
+            // actually combine into short-lived peaks instead of a simple
+            // diagonal lattice.
             float ax = 0.05, az = 0.04, aSp = 0.6, bSp = 0.45;
             float ampA = 0.12, ampB = 0.10;
+            float cx = 0.085, cz = 0.065, cSp = 0.82, ampC = 0.05;
+            float wC = position.x * cx + position.z * cz + uTime * cSp;
             transformed.y += sin(position.x * ax + uTime * aSp) * ampA
-                            + cos(position.z * az - uTime * bSp) * ampB;
-            float dHdx = ampA * ax * cos(position.x * ax + uTime * aSp);
-            float dHdz = -ampB * az * sin(position.z * az - uTime * bSp);
+                            + cos(position.z * az - uTime * bSp) * ampB
+                            + sin(wC) * ampC;
+            float dHdx = ampA * ax * cos(position.x * ax + uTime * aSp) + ampC * cx * cos(wC);
+            float dHdz = -ampB * az * sin(position.z * az - uTime * bSp) + ampC * cz * cos(wC);
             vWaveNormal = normalize(vec3(-dHdx, 1.0, -dHdz));
         `);
 
@@ -122,12 +140,17 @@ export function createLake() {
             // Fresnel: near-grazing views (far shore, horizon) read as reflective sky,
             // straight-down views read as deep tinted water. This fakes a mirror
             // without an actual reflection pass.
-            float fresnel = pow(1.0 - clamp(dot(waterNormal, viewDirN), 0.0, 1.0), 4.0);
-            baseCol = mix(baseCol, uSkyColor, fresnel * 0.8);
+            float fresnel = pow(1.0 - clamp(dot(waterNormal, viewDirN), 0.0, 1.0), 3.0);
+            baseCol = mix(baseCol, uSkyColor, fresnel * 0.75);
 
-            // Thin foam line right at the shore, where depth is near zero.
-            float foam = 1.0 - smoothstep(0.0, 0.025, vDepth);
-            baseCol = mix(baseCol, vec3(0.82, 0.9, 0.86), foam * 0.5);
+            // Thin foam line right at the shore, where depth is near zero,
+            // with a little noise on its width/opacity so it reads as foam
+            // breaking unevenly rather than a ruled line parallel to the
+            // shore (a dead giveaway of a depth-threshold effect).
+            float foamNoise = fract(sin(dot(vWorldPos.xz, vec2(12.9898, 78.233))) * 43758.5453);
+            float foamEdge = 0.02 + foamNoise * 0.025;
+            float foam = 1.0 - smoothstep(0.0, foamEdge, vDepth);
+            baseCol = mix(baseCol, vec3(0.86, 0.93, 0.9), foam * (0.4 + foamNoise * 0.25));
 
             // Sun/moon glint: tight specular highlight along the reflected view,
             // now catching the wave's actual slope instead of a flat plane.
@@ -142,7 +165,7 @@ export function createLake() {
         );
     };
     state.waterMesh = new THREE.Mesh(geo, state.waterMaterial);
-    state.waterMesh.position.set(centerX, 1.6, centerZ); // Water surface level
+    state.waterMesh.position.set(centerX, state.effectiveWaterLevel, centerZ); // Water surface level — day-night-cycle.js updates this Y every frame afterward (storm surge)
     state.waterMesh.receiveShadow = true;
     state.scene.add(state.waterMesh);
     // Lily pads dropped here — this is now open ocean around The Hearth's

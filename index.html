@@ -116,8 +116,14 @@
         .hud-weather[data-weather="clear"] .wi-sun,
         .hud-weather[data-weather="clear-night"] .wi-moon,
         .hud-weather[data-weather="light"] .wi-rain,
-        .hud-weather[data-weather="heavy"] .wi-rain { display: block; }
+        .hud-weather[data-weather="heavy"] .wi-rain,
+        .hud-weather[data-weather="torrential"] .wi-rain { display: block; }
         .hud-weather[data-weather="heavy"] { color: var(--dusk); }
+        .hud-weather[data-weather="torrential"] {
+            color: #e0695c;
+            animation: hud-storm-pulse 1.6s ease-in-out infinite;
+        }
+        @keyframes hud-storm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
         .hud-hints {
             display: flex;
             flex-direction: column;
@@ -257,6 +263,45 @@
         .touch-active .boundary-message {
             bottom: 30%;
         }
+        /* .touch-active shrinking the HUD to 0.68rem was tuned for a
+           phone; applied uniformly it also shrinks it on a tablet, which
+           has the screen real estate to keep the normal size readable.
+           Restore it there — tablet still gets the other touch-active
+           rules above (no crosshair, rest/pause hints hidden, prompt
+           cleared of the joystick). */
+        html[data-device="tablet"].touch-active .hud-layer {
+            font-size: 0.9rem;
+            gap: 0.75rem;
+        }
+        /* Short viewports (landscape phones, small windows): the HUD
+           plaque's own column (kicker + 2.1rem clock + weather row + hint
+           lines) and the tutorial card stacked below it can run past the
+           bottom of a ~360-430px-tall screen. Tighten the column and pull
+           the tutorial card up to compensate. */
+        html[data-compact-h] .hud-layer {
+            gap: 0.4rem;
+            top: 0.7rem;
+            left: 0.7rem;
+        }
+        html[data-compact-h] .hud-plaque { padding: 0.3rem 0.6rem 0.35rem; min-width: 6.5rem; }
+        html[data-compact-h] .hud-time { font-size: 1.5rem; margin: 0.05rem 0 0.15rem; }
+        html[data-compact-h] .tutorial-card { top: 0.7rem; width: min(22rem, 86vw); padding: 0.5rem 0.8rem 0.45rem; }
+        html[data-compact-h] .tut-text { font-size: 1.1rem; }
+        /* Phone landscape's taller joystick zone (68% of screen height,
+           set above) clears more of the lower half than portrait's 55%
+           default — the interact prompt's touch-active 32% offset was
+           tuned for portrait and sits inside that taller zone's footprint
+           here, so push it up further to clear it. */
+        html[data-device="phone"][data-orientation="landscape"] .touch-active .interact-prompt {
+            bottom: 42%;
+        }
+        html[data-device="phone"][data-orientation="landscape"] .touch-active .boundary-message {
+            bottom: 40%;
+        }
+        /* Safe-area for the HUD plaque itself, same reasoning as the touch
+           chrome's safe-area padding further down — it sits at the
+           top-left corner, under a notch/rounded corner on some phones. */
+        .hud-layer { padding-left: env(safe-area-inset-left, 0px); padding-top: env(safe-area-inset-top, 0px); }
 
         @media (max-width: 640px) {
             .pause-panel {
@@ -317,9 +362,20 @@
             width: 8.5rem;
             height: 8.5rem;
             border-radius: 50%;
-            background: rgba(20, 24, 32, 0.35);
-            border: 1px solid rgba(255,255,255,0.18);
-            backdrop-filter: blur(2px);
+            /* Was a single flat rgba fill + a 1px border — reads as a dim
+               circle sitting ON the screen rather than a physical pad.
+               A radial gradient (brighter rim catching light, darker
+               centre) plus an inset highlight/shadow pair fakes a bevelled
+               rubber base; the outer drop-shadow lifts it off the HUD
+               behind it instead of looking pasted flat on top. */
+            background:
+                radial-gradient(circle at 50% 38%, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 35%, rgba(10,12,18,0.42) 78%);
+            border: 1px solid rgba(255,255,255,0.22);
+            box-shadow:
+                inset 0 2px 3px rgba(255,255,255,0.12),
+                inset 0 -6px 10px rgba(0,0,0,0.45),
+                0 6px 14px rgba(0,0,0,0.35);
+            backdrop-filter: blur(3px);
         }
         .touch-joystick-knob {
             position: absolute;
@@ -329,12 +385,13 @@
             height: 3.4rem;
             margin: -1.7rem 0 0 -1.7rem;
             border-radius: 50%;
-            background: rgba(238, 241, 246, 0.28);
-            border: 1px solid rgba(255,255,255,0.35);
+            background: radial-gradient(circle at 42% 32%, rgba(255,255,255,0.55), rgba(222,230,242,0.22) 60%, rgba(180,192,212,0.14) 100%);
+            border: 1px solid rgba(255,255,255,0.4);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.5);
             transition: background 0.15s ease;
         }
         .touch-joystick-base.active .touch-joystick-knob {
-            background: rgba(169, 196, 255, 0.4);
+            background: radial-gradient(circle at 42% 32%, rgba(210,226,255,0.75), rgba(169,196,255,0.45) 60%, rgba(140,170,235,0.3) 100%);
         }
         .touch-action-buttons {
             position: absolute;
@@ -349,19 +406,28 @@
             width: 4.2rem;
             height: 4.2rem;
             border-radius: 50%;
-            background: rgba(20, 24, 32, 0.4);
-            border: 1px solid rgba(255,255,255,0.2);
+            background: radial-gradient(circle at 50% 35%, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 40%, rgba(10,12,18,0.48) 85%);
+            border: 1px solid rgba(255,255,255,0.22);
+            box-shadow:
+                inset 0 2px 2px rgba(255,255,255,0.12),
+                inset 0 -5px 8px rgba(0,0,0,0.4),
+                0 5px 12px rgba(0,0,0,0.35);
             color: rgba(255,255,255,0.85);
             font-size: 0.62rem;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            backdrop-filter: blur(2px);
+            backdrop-filter: blur(3px);
             user-select: none;
             touch-action: none;
+            transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.08s ease;
         }
         .touch-action-btn:active, .touch-action-btn.active {
-            background: rgba(169, 196, 255, 0.3);
-            border-color: rgba(210, 225, 255, 0.5);
+            background: radial-gradient(circle at 50% 35%, rgba(210,226,255,0.22) 0%, rgba(169,196,255,0.16) 45%, rgba(60,80,120,0.5) 85%);
+            border-color: rgba(210, 225, 255, 0.55);
+            box-shadow:
+                inset 0 2px 4px rgba(0,0,0,0.35),
+                0 2px 6px rgba(0,0,0,0.3);
+            transform: scale(0.94); /* physical "pressed in" feedback — was only a color swap, no sense of depth changing */
         }
         .touch-action-btn-primary {
             width: 4.8rem;
@@ -374,6 +440,46 @@
             font-size: 0.56rem;
             align-self: flex-start;
             margin-bottom: 0.7rem;
+        }
+        /* Draggable repositioning (core/touch-controls.js's edit mode).
+           JS sets --layout-dx/--layout-dy inline on these two elements from
+           localStorage on load, and live while dragging; transform (not
+           left/bottom) so it composes with the base position instead of
+           replacing it, and so knob-deflection's own transform on the
+           child element is untouched. */
+        .touch-joystick-base, #touch-action-buttons {
+            transform: translate(var(--layout-dx, 0px), var(--layout-dy, 0px));
+        }
+        .touch-controls.edit-mode .touch-joystick-base,
+        .touch-controls.edit-mode #touch-action-buttons {
+            outline: 2px dashed rgba(169, 196, 255, 0.65);
+            outline-offset: 6px;
+            border-radius: 16px;
+            animation: touch-edit-pulse 1.4s ease-in-out infinite;
+        }
+        @keyframes touch-edit-pulse {
+            0%, 100% { outline-color: rgba(169, 196, 255, 0.35); }
+            50% { outline-color: rgba(169, 196, 255, 0.8); }
+        }
+        /* While customizing, the big invisible hit-zones underneath would
+           otherwise eat the drag as a joystick/look input — dim and
+           disable them instead so a drag unambiguously moves the control,
+           and dim the OTHER cluster slightly so it's clear only the one
+           being dragged is live. */
+        .touch-controls.edit-mode .touch-joystick-zone,
+        .touch-controls.edit-mode .touch-look-zone {
+            pointer-events: none;
+            background: rgba(169, 196, 255, 0.05);
+        }
+        .touch-controls.edit-mode .touch-pause-btn {
+            opacity: 0.3;
+            pointer-events: none;
+        }
+        /* The buttons inside the action cluster would otherwise eat the
+           drag as their own tap (Jump, Rest, ...) — only the container
+           itself should respond to touches while customizing. */
+        .touch-controls.edit-mode #touch-action-buttons > * {
+            pointer-events: none;
         }
         .touch-pause-btn {
             position: absolute;
@@ -500,6 +606,69 @@
                 letter-spacing: 0.18em;
             }
         }
+
+        /* Device/shape-driven responsive rules — see core/viewport.js for
+           how data-device/data-orientation/data-compact-h get set on
+           <html>. The 640px/420px width breakpoints above only ever
+           caught "narrow portrait phone"; these cover the cases that
+           slipped through: a phone turned sideways (landscape, short
+           viewport — how most people actually hold a phone to play),
+           and tablets, which have plenty of width but still get a mouse-
+           sized layout today because nothing distinguished them from
+           desktop. */
+
+        /* Not enough vertical room for the full title stack (kicker + logo
+           + rule + desc + 5-item menu) or the pause/settings panel's tab
+           content at normal spacing — true for landscape phones and small
+           windows alike, regardless of width. Shrink the vertical rhythm
+           instead of letting it clip or force scroll on a screen that
+           can't scroll (fixed-position .title-content). */
+        html[data-compact-h] .title-content { padding: 0.75rem 2rem; }
+        html[data-compact-h] .title-kicker { margin-bottom: 0.4rem; }
+        html[data-compact-h] .title-desc { display: none; } /* flavor text, first to go when space is tight */
+        html[data-compact-h] .title-rule { margin: 0.5rem 0; }
+        html[data-compact-h] .title-menu { margin-top: 0; }
+        html[data-compact-h] .menu-item { margin: 2px 0; font-size: 1.3rem; }
+        html[data-compact-h] #title-logo-text { font-size: 2.4rem; }
+        html[data-compact-h] .title-panel { max-height: 94vh; max-height: calc(var(--app-vh, 1vh) * 94); padding: 0.8rem 1.2rem; }
+
+        /* Phone in landscape specifically: the title menu and the touch
+           joystick/look-zone now share the same short, wide screen (they
+           never did on a portrait phone, where the menu is a title-screen-
+           only state and gameplay touch controls only show up after
+           Remember is pressed) — keep the title column from spanning the
+           full height so Settings/Credits panels opened from it don't
+           fight the touch zones under them. */
+        html[data-device="phone"][data-orientation="landscape"] .title-content {
+            justify-content: center;
+        }
+        html[data-device="phone"][data-orientation="landscape"] .touch-joystick-zone {
+            width: 38%;
+            height: 68%;
+        }
+        html[data-device="phone"][data-orientation="landscape"] .touch-look-zone {
+            width: 60%;
+        }
+
+        /* Tablets: coarse pointer like a phone, but with the width budget
+           of desktop — scale touch targets and panel widths up from the
+           phone sizing above instead of inheriting either extreme. */
+        html[data-device="tablet"] .touch-joystick-base { width: 10rem; height: 10rem; }
+        html[data-device="tablet"] .touch-joystick-knob { width: 4rem; height: 4rem; margin: -2rem 0 0 -2rem; }
+        html[data-device="tablet"] .touch-action-btn { width: 5rem; height: 5rem; font-size: 0.72rem; }
+        html[data-device="tablet"] .touch-action-btn-primary { width: 5.6rem; height: 5.6rem; }
+        html[data-device="tablet"] .title-panel,
+        html[data-device="tablet"] .tabs-panel { min-width: min(28rem, 86vw); }
+
+        /* Safe-area padding — viewport-fit=cover (meta tag above) lets the
+           page draw under notches/home-indicators/rounded corners, but
+           nothing was pulling content back in from under them. Applied to
+           the fixed-position touch chrome and the title content, which are
+           the elements that actually sit at the screen edges. */
+        .touch-pause-btn { top: calc(1.6rem + env(safe-area-inset-top, 0px)); right: calc(1.6rem + env(safe-area-inset-right, 0px)); }
+        .touch-joystick-base { left: calc(2.2rem + env(safe-area-inset-left, 0px)); bottom: calc(2.2rem + env(safe-area-inset-bottom, 0px)); }
+        .touch-action-buttons { right: calc(1.5rem + env(safe-area-inset-right, 0px)); bottom: calc(2.2rem + env(safe-area-inset-bottom, 0px)); }
+        .title-content { padding-top: calc(2rem + env(safe-area-inset-top, 0px)); padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px)); }
         .water-overlay {
             position: fixed;
             inset: 0;
@@ -515,6 +684,26 @@
                 radial-gradient(ellipse at center, rgba(20, 60, 90, 0.05) 0%, rgba(8, 30, 55, 0.4) 100%),
                 repeating-linear-gradient(0deg, rgba(120, 190, 220, 0.03) 0px, rgba(120, 190, 220, 0.03) 2px, transparent 2px, transparent 6px);
             mix-blend-mode: multiply;
+        }
+
+        /* fx/lightning.js drives opacity directly every frame (a hand-
+           rolled rise/decay curve, see its header comment) rather than a
+           CSS transition — a transition would smooth across unrelated
+           frame-to-frame jumps (e.g. a double-pulse's second strike
+           starting before the first has decayed) instead of following the
+           curve lightning.js already computed. z-index above the water
+           overlay (5) and HUD (10) — a flash should read on the whole
+           screen including UI, same as real lightning does — but below
+           the pause/settings panels (z-index 20) so it can't obscure a
+           menu the player has open. */
+        .lightning-flash {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 15;
+            opacity: 0;
+            background: #fff;
+            mix-blend-mode: screen;
         }
 
         /* Loading screen — inline now, not an iframe. The iframe version
@@ -715,6 +904,31 @@
             margin-top: 0.3rem;
         }
         .save-status.error { color: #d19a9a; }
+        .save-tab-row { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
+        /* 3-slot picker (title-slot-panel) and the matching slot-select row
+           added to the Save tab in both the title and pause Settings panels —
+           same quality-toggle-btn chrome as Graphics' High/Medium/Low row,
+           just with an "active"/"disabled" state layered on. */
+        .slot-select-btn.active-slot { border-color: rgba(210, 225, 255, 0.7); color: #e8edf6; }
+        .slot-picker-row { display: flex; flex-direction: column; gap: 0.5rem; width: 100%; }
+        .slot-pick-btn .menu-subtext { font-size: 0.7rem; opacity: 0.75; }
+        .slot-pick-btn.disabled, .slot-pick-btn:disabled { opacity: 0.35; pointer-events: none; }
+        .save-tab-textarea {
+            width: 100%;
+            min-height: 4.5rem;
+            margin-top: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(210, 225, 255, 0.15);
+            border-radius: 2px;
+            color: #cfd8e8;
+            font-family: monospace;
+            font-size: 0.6rem;
+            line-height: 1.4;
+            padding: 0.5rem;
+            resize: vertical;
+        }
+        .save-tab-textarea:focus { outline: none; border-color: rgba(210, 225, 255, 0.4); }
+        .save-tab-hint { font-size: 0.65rem; color: #76859c; margin-top: 0.2rem; }
 
         .boundary-message {
             position: fixed;
@@ -759,6 +973,44 @@
             opacity: 1;
             pointer-events: all;
         }
+        /* Serpent's Coil cutscene — same fixed/inset/z-index convention as
+           rest-fade-overlay above, one layer higher (60 vs 50) since it can
+           fire independently of a rest and should always win if somehow
+           both are visible at once. */
+        .coil-cutscene-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease;
+        }
+        .coil-cutscene-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+        .coil-cutscene-video {
+            max-width: 100%;
+            max-height: 100%;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+        .coil-cutscene-video.active { opacity: 1; }
+        .coil-cutscene-placeholder {
+            display: none;
+            font-family: 'VT323', monospace;
+            font-size: 1.3rem;
+            color: #d94f3a;
+            text-align: center;
+            text-shadow: 0 0 18px rgba(217, 79, 58, 0.6);
+            letter-spacing: 0.02em;
+            padding: 0 2rem;
+        }
+        .coil-cutscene-placeholder.active { display: block; }
         /* Wake-up flutter, used only by triggerKatNap() (not the plain
            dawn-skip startRest()) — a few blinks before fully opening
            instead of one flat fade back in. Each dip is shallower than
@@ -1436,6 +1688,24 @@
             .title-settings { position: static; margin-top: 1.5rem; }
         }
 
+        /* Touch-layout settings row — only makes sense on a device actually
+           showing the touch controls (core/touch-controls.js adds
+           body.touch-active once it confirms touch capability); hidden
+           otherwise rather than showing dead controls to a mouse user. */
+        .touch-layout-settings { display: none; }
+        .touch-active .touch-layout-settings { display: block; }
+        .touch-layout-hint {
+            font-size: 0.72rem;
+            color: #7f8ba3;
+            margin-top: 0.4rem;
+            line-height: 1.4;
+        }
+        #title-touch-edit-btn.active, #pause-touch-edit-btn.active {
+            background: rgba(169, 196, 255, 0.25);
+            border-color: rgba(210, 225, 255, 0.6);
+            color: #fff;
+        }
+
         /* --- Title menu (ported from titlescreenn.html's UI/UX) ---
            Same menu-item/menu-subtext language as that file almost verbatim
            — vertical list, uppercase Cinzel labels, calm scale+glow hover,
@@ -1582,7 +1852,7 @@
             pointer-events: none;
             transition: opacity 0.2s ease;
         }
-        #ui-layer:has(#title-settings-panel.open, #title-credits-panel.open) #title-panel-backdrop {
+        #ui-layer:has(#title-settings-panel.open, #title-credits-panel.open, #title-slot-panel.open) #title-panel-backdrop {
             opacity: 1;
             pointer-events: auto;
         }
@@ -1810,6 +2080,7 @@
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
+                    <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
                 <div class="tab-panel active" data-tab-panel="graphics">
@@ -1837,6 +2108,30 @@
                         <input type="checkbox" id="title-invert-y-checkbox">
                         Invert Y Axis
                     </label>
+
+                    <!-- Debug aid, not a real preference — see
+                         core/settings.js's wiring comment. Natural
+                         torrential weather (lightning + a shoreline storm
+                         surge) is too rare to ever reliably see otherwise. -->
+                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
+                        <input type="checkbox" id="title-storm-forced-checkbox">
+                        Force Torrential Storm (debug)
+                    </label>
+
+                    <!-- Only meaningful on a touch device — hidden until
+                         core/touch-controls.js adds body.touch-active (see
+                         the .touch-active gate in <style> below). Lets the
+                         player drag the joystick and action-button cluster
+                         to wherever their thumbs actually rest instead of
+                         being stuck with one fixed layout. -->
+                    <div class="touch-layout-settings">
+                        <label style="margin-top: 0.7rem;">Touch Layout</label>
+                        <div class="save-tab-row">
+                            <button id="title-touch-edit-btn" class="quality-toggle-btn" type="button">Customize</button>
+                            <button id="title-touch-reset-btn" class="quality-toggle-btn" type="button">Reset</button>
+                        </div>
+                        <p class="touch-layout-hint">Drag the joystick or the action buttons anywhere on screen while customizing.</p>
+                    </div>
                 </div>
 
                 <div class="tab-panel" data-tab-panel="audio">
@@ -1844,10 +2139,53 @@
                     <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
                 </div>
 
-                <!-- Save tab removed — no save-system.js exists anywhere in
-                     this build, so Export/Import here were dead buttons
-                     with no click handler at all. Re-add once an actual
-                     save system is built rather than leaving an inert tab. -->
+                <!-- B-18: wired by core/save-system.js's wireSaveButtons().
+                     Save Now/Export are disabled until state.hasStarted —
+                     there's nothing to save from the title screen before
+                     Remember/Regain has actually built the world. -->
+                <div class="tab-panel" data-tab-panel="save">
+                    <label style="margin-top: 0;">Save</label>
+                    <div class="save-tab-row">
+                        <button id="title-slot-select-1-btn" class="quality-toggle-btn slot-select-btn" type="button">Slot 1</button>
+                        <button id="title-slot-select-2-btn" class="quality-toggle-btn slot-select-btn" type="button">Slot 2</button>
+                        <button id="title-slot-select-3-btn" class="quality-toggle-btn slot-select-btn" type="button">Slot 3</button>
+                    </div>
+                    <div class="save-tab-row">
+                        <button id="title-save-now-btn" class="quality-toggle-btn" type="button">Save now</button>
+                        <button id="title-export-save-btn" class="quality-toggle-btn" type="button">Export</button>
+                    </div>
+                    <textarea id="title-save-textarea" class="save-tab-textarea" placeholder="Paste a save string here to import, or Export to see yours" spellcheck="false"></textarea>
+                    <div class="save-tab-row">
+                        <button id="title-import-save-btn" class="quality-toggle-btn" type="button">Import</button>
+                    </div>
+                    <div id="title-save-status" class="save-status"></div>
+                    <div class="save-tab-hint">3 slots. Save now/Export act on the selected slot above (Save now only writes your current session's slot). Autosaves on rest, on finding a place, and every minute while playing.</div>
+                </div>
+            </div>
+
+            <!-- B-18 3-slot picker: opened by Remember ('new' mode, every
+                 slot pickable) or Regain ('continue' mode, only slots that
+                 already have a save are enabled) — see core/input.js's
+                 wireTitleScreen(). Picking a slot calls setActiveSlot() and
+                 immediately starts/continues; "Back" just closes this panel,
+                 same .open/backdrop mechanism as Settings/Credits above. -->
+            <div class="title-panel" id="title-slot-panel">
+                <label style="margin-top: 0;" id="title-slot-heading">Choose a slot</label>
+                <div class="slot-picker-row">
+                    <button id="title-slot-1-btn" class="menu-item group slot-pick-btn" type="button">
+                        Slot 1
+                        <span class="menu-subtext" id="title-slot-1-info">Empty</span>
+                    </button>
+                    <button id="title-slot-2-btn" class="menu-item group slot-pick-btn" type="button">
+                        Slot 2
+                        <span class="menu-subtext" id="title-slot-2-info">Empty</span>
+                    </button>
+                    <button id="title-slot-3-btn" class="menu-item group slot-pick-btn" type="button">
+                        Slot 3
+                        <span class="menu-subtext" id="title-slot-3-info">Empty</span>
+                    </button>
+                </div>
+                <button id="title-slot-back-btn" class="menu-item group quiet-entry" type="button" style="margin-top: 0.4rem;">Back</button>
             </div>
 
             <div class="title-panel" id="title-credits-panel">
@@ -1906,7 +2244,7 @@
                 <div id="touch-joystick-knob" class="touch-joystick-knob"></div>
             </div>
         </div>
-        <div class="touch-action-buttons">
+        <div id="touch-action-buttons" class="touch-action-buttons">
             <button id="touch-rest-btn" class="touch-action-btn touch-action-btn-small" type="button">Rest</button>
             <button id="touch-jump-btn" class="touch-action-btn touch-action-btn-small" type="button">Jump</button>
             <button id="touch-sprint-btn" class="touch-action-btn" type="button">Sprint</button>
@@ -1945,10 +2283,25 @@
     <div id="crosshair" class="crosshair hidden"></div>
 
     <div id="water-overlay" class="water-overlay"></div>
+    <div id="lightning-flash" class="lightning-flash"></div>
 
     <div id="boundary-message-forest" class="boundary-message">The forest grows stranger past this point — no need to go there yet</div>
     <div id="rest-fade-overlay" class="rest-fade-overlay"></div>
     <div id="rest-fade-text" class="rest-fade-text">Resting...</div>
+
+    <!-- Serpent's Coil cutscene (environment/serpents-coil.js, audit
+         section 11 decision #4). #coil-cutscene-video has no <source> on
+         purpose — drop a file at ./assets/video/coil-vision.mp4 (same
+         self-hosted-asset convention as assets/audio/*) and it plays
+         automatically; until then #coil-cutscene-placeholder shows
+         instead for a few seconds so entering the cave never hangs or
+         silently does nothing. -->
+    <div id="coil-cutscene-overlay" class="coil-cutscene-overlay">
+        <video id="coil-cutscene-video" class="coil-cutscene-video" playsinline>
+            <!-- <source src="./assets/video/coil-vision.mp4" type="video/mp4"> -->
+        </video>
+        <div id="coil-cutscene-placeholder" class="coil-cutscene-placeholder">A vision from somewhere past the fifth dimension —<br>(video not added yet)</div>
+    </div>
     <!-- Weathered clock — hands spin during the nap's gameTime jump;
          static face otherwise (no animation classes applied until
          core/rest.js's triggerKatNap() adds .active). Flat dark face +
@@ -2046,6 +2399,7 @@
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
+                    <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
                 <div class="tab-panel active" data-tab-panel="graphics">
@@ -2070,11 +2424,46 @@
                         <input type="checkbox" id="pause-invert-y-checkbox">
                         Invert Y Axis
                     </label>
+
+                    <label class="settings-checkbox-row" style="margin-top: 0.4rem;">
+                        <input type="checkbox" id="pause-storm-forced-checkbox">
+                        Force Torrential Storm (debug)
+                    </label>
+
+                    <div class="touch-layout-settings">
+                        <label style="margin-top: 0.7rem;">Touch Layout</label>
+                        <div class="save-tab-row">
+                            <button id="pause-touch-edit-btn" class="quality-toggle-btn" type="button">Customize</button>
+                            <button id="pause-touch-reset-btn" class="quality-toggle-btn" type="button">Reset</button>
+                        </div>
+                        <p class="touch-layout-hint">Drag the joystick or the action buttons anywhere on screen while customizing.</p>
+                    </div>
                 </div>
 
                 <div class="tab-panel" data-tab-panel="audio">
                     <label style="margin-top: 0;" for="pause-volume-slider">Master Volume</label>
                     <input type="range" id="pause-volume-slider" min="0" max="1" step="0.01" value="1">
+                </div>
+
+                <!-- B-18: wired by core/save-system.js's wireSaveButtons() —
+                     same id-prefix convention as the title screen's Save tab. -->
+                <div class="tab-panel" data-tab-panel="save">
+                    <label style="margin-top: 0;">Save</label>
+                    <div class="save-tab-row">
+                        <button id="pause-slot-select-1-btn" class="quality-toggle-btn slot-select-btn" type="button">Slot 1</button>
+                        <button id="pause-slot-select-2-btn" class="quality-toggle-btn slot-select-btn" type="button">Slot 2</button>
+                        <button id="pause-slot-select-3-btn" class="quality-toggle-btn slot-select-btn" type="button">Slot 3</button>
+                    </div>
+                    <div class="save-tab-row">
+                        <button id="pause-save-now-btn" class="quality-toggle-btn" type="button">Save now</button>
+                        <button id="pause-export-save-btn" class="quality-toggle-btn" type="button">Export</button>
+                    </div>
+                    <textarea id="pause-save-textarea" class="save-tab-textarea" placeholder="Paste a save string here to import, or Export to see yours" spellcheck="false"></textarea>
+                    <div class="save-tab-row">
+                        <button id="pause-import-save-btn" class="quality-toggle-btn" type="button">Import</button>
+                    </div>
+                    <div id="pause-save-status" class="save-status"></div>
+                    <div class="save-tab-hint">3 slots. Save now/Export act on the selected slot above (Save now only writes your current session's slot). Autosaves on rest, on finding a place, and every minute while playing. Importing here applies next time you Regain that slot from the title (Quit to Title first).</div>
                 </div>
 
             </div>

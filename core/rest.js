@@ -1,4 +1,5 @@
 import { state } from './state.js';
+import { writeLocalSave } from './save-system.js';
 
 // B-17: "Hold to rest" was just `timeMultiplier = keys.g ? 50 : 1` anywhere,
 // with no feedback — fast-forwarding also fast-forwarded weather/rain with
@@ -57,6 +58,7 @@ export function startRest() {
     textEl.classList.add('active');
     setTimeout(() => {
         advanceToNextDawn();
+        writeLocalSave(); // B-18: autosave while the screen is still black, not after fade-in
         overlay.classList.remove('active');
         textEl.classList.remove('active');
         setTimeout(() => { active = false; state.isResting = false; }, FADE_MS);
@@ -79,6 +81,7 @@ export function triggerKatNap() {
     clockEl.classList.add('active');
     setTimeout(() => {
         const hoursSlept = advanceToNextDawn();
+        writeLocalSave(); // B-18: same autosave point as startRest(), screen still black
         hourHand.style.transform = `rotate(${hoursSlept * 30}deg)`;
         minuteHand.style.transform = `rotate(${hoursSlept * 360}deg)`;
         setTimeout(() => {

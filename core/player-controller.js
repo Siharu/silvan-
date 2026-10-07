@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { state, WORLD_SIZE, WATER_LEVEL } from './state.js';
 import { heightAt as getElevation } from './heightmap.js';
 import { collidersNear } from './colliders.js';
+import { exitCave, CAVE_BOUNDS } from '../environment/serpents-coil.js';
 
 const SPRINT_MULTIPLIER = 1.6;
 const JUMP_SPEED = 6.5;
@@ -42,6 +43,7 @@ export function updatePlayer(delta) {
     if (!state.isPlaying) return;
     if (state.debugTour) { state.camera.position.copy(state.player.position); return; } // perf tour drives the camera
     if (state.isResting) return; // B-17: frozen during the rest fade/skip/fade-back sequence
+    if (state.inCave) { updateCaveMovement(delta); return; } // Serpent's Coil cave room — flat floor, rectangular bounds, no heightmap/current/slope logic at all
     if (boundaryT > 0) boundaryT -= delta;
     touchBoundary(delta);
     if (state.debugNoclip) {   // debug free-cam (core/debug.js): fly along the view direction, ignore ground/colliders
@@ -93,8 +95,13 @@ export function updatePlayer(delta) {
         // the player drifts to a dead stop in the shallows instead of being
         // stopped outright. CURRENT_STRENGTH (26) > speed*SPRINT_MULTIPLIER
         // (12*1.6=19.2) is what guarantees that.
+        // state.effectiveWaterLevel instead of the WATER_LEVEL constant —
+        // during a torrential storm's surge (atmosphere/day-night-cycle.js)
+        // this is eased above WATER_LEVEL, so the current/shallows line
+        // actually creeps inland with the flood instead of staying pinned
+        // to the normal shoreline while only the visible water mesh rises.
         let pushX = 0, pushZ = 0;
-        const depthX = WATER_LEVEL - hX, depthZ = WATER_LEVEL - hZ;
+        const depthX = state.effectiveWaterLevel - hX, depthZ = state.effectiveWaterLevel - hZ;
         if (depthX > 0) { pushX = -Math.sign(nX || 1) * Math.min(1, depthX / 6) * CURRENT_STRENGTH * delta; boundaryT = 1.6; }
         if (depthZ > 0) { pushZ = -Math.sign(nZ || 1) * Math.min(1, depthZ / 6) * CURRENT_STRENGTH * delta; boundaryT = 1.6; }
         // Slope limiter: block only the uphill component, so you slide along steep walls instead of climbing them.
@@ -110,7 +117,7 @@ export function updatePlayer(delta) {
             state.stepAudio.play(); state.stepTimer = performance.now();
         }
     }
-    const gY = Math.max(getElevation(state.player.position.x, state.player.position.z), WATER_LEVEL);
+    const gY = Math.max(getElevation(state.player.position.x, state.player.position.z), state.effectiveWaterLevel);
     if (state.player.isGrounded) {
         const b = state.player.velocity.lengthSq() > 0 ? Math.sin(performance.now()*0.012*(state.keys.shift ? 1.35 : 1))*(state.keys.shift ? 0.15 : 0.1) : 0;
         const easing = state.player.velocity.lengthSq() > 0 ? 12.0 : 8.0;
@@ -137,4 +144,40 @@ export function updatePlayer(delta) {
     landDip *= Math.exp(-9.0 * delta);
     state.camera.position.copy(state.player.position);
     state.camera.position.y -= landDip;
+}
+
+// Serpent's Coil cave room (environment/serpents-coil.js): deliberately NOT
+// the same movement model as the surface. The surface's Y every frame comes
+// from heightAt() — a single-valued heightfield, which by construction
+// can't represent a room sitting under its own terrain (see that file's
+// header). Rather than fight the heightmap for an underground space, the
+// cave is a separate, tiny, flat-floored box the player teleports into,
+// with its own trivial movement: 8-directional WASD relative to look yaw,
+// clamped to the room's rectangle, fixed floor height, no gravity/jump/
+// slope/current/collider logic at all (none of it applies in a single
+// empty room). Walking back up to the exit marker calls exitCave(), which
+// restores the surface position/rotation saved the moment the cutscene
+// committed to entering.
+const _caveDir = new THREE.Vector3();
+export function updateCaveMovement(delta) {
+    const b = CAVE_BOUNDS;
+    state.camera.getWorldDirection(_caveDir); _caveDir.y = 0; _caveDir.normalize();
+    const right = _right.crossVectors(_caveDir, state.camera.up).normalize();
+    const move = _dir.set(0, 0, 0);
+    if (state.keys.w) move.add(_caveDir); if (state.keys.s) move.sub(_caveDir);
+    if (state.keys.d) move.add(right); if (state.keys.a) move.sub(right);
+    if (move.lengthSq() > 0) {
+        move.normalize().multiplyScalar(state.player.speed * (state.keys.shift ? SPRINT_MULTIPLIER : 1) * delta);
+        const nX = THREE.MathUtils.clamp(state.player.position.x + move.x, b.center.x - b.halfW + 1, b.center.x + b.halfW - 1);
+        const nZ = THREE.MathUtils.clamp(state.player.position.z + move.z, b.center.z - b.halfD + 1, b.center.z + b.halfD - 1);
+        state.player.position.x = nX;
+        state.player.position.z = nZ;
+    }
+    state.player.position.y = b.center.y + state.player.height;
+    state.player.verticalVelocity = 0;
+    state.player.isGrounded = true;
+    state.camera.position.copy(state.player.position);
+
+    const dx = state.player.position.x - b.exitTrigger.x, dz = state.player.position.z - b.exitTrigger.z;
+    if (Math.hypot(dx, dz) < 3) exitCave();
 }
