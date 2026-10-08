@@ -64,7 +64,8 @@ export const SOUNDS = {
     rain: './assets/audio/rain.mp3',
     footstep: './assets/audio/footstep.mp3',
     fire: './assets/audio/fire-crackle.mp3',
-    thunder: './assets/audio/thunder.mp3'
+    thunder: './assets/audio/thunder.mp3',
+    dogBark: './assets/audio/dog-bark.mp3' // environment/npc-dog.js's First Dog (Act I Scene 1-2) — not loaded yet, same warn-not-throw path
 };
 
 export const state = {
@@ -84,7 +85,7 @@ export const state = {
 
     scene: null, camera: null, renderer: null, composer: null, bloomPass: null,
     sunLight: null, moonLight: null, hemiLight: null, skyMat: null,
-    dayAmbientAudio: null, nightAmbientAudio: null, windAudio: null, waterAudio: null, rainAudio: null, stepAudio: null, fireAudio: null, thunderAudio: null,
+    dayAmbientAudio: null, nightAmbientAudio: null, windAudio: null, waterAudio: null, rainAudio: null, stepAudio: null, fireAudio: null, thunderAudio: null, dogBarkAudio: null,
     rainMesh: null, rainMaterial: null, rainAnchor: null,
     rainSplashMesh: null, rainSplashMat: null,
     fireflyMesh: null, fireflyMat: null,

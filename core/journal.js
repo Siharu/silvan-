@@ -26,6 +26,22 @@ export function markDiscovered(poi) {
     return true;
 }
 
+// Story-beat variant of the same toast box — a single line ("You found a
+// familiar cloth.") instead of the "X of Y places found" framing, for
+// narrative props (environment/scene-shore.js) that aren't one of the 9
+// real landmark POIs. Separate DOM element/timer so it can't collide with
+// a landmark toast firing in the same stretch of gameplay.
+let narrativeToastTimer = null;
+export function showNarrativeToast(text) {
+    const el = document.getElementById('narrative-toast');
+    const textEl = document.getElementById('narrative-toast-text');
+    if (!el || !textEl) return;
+    textEl.textContent = text;
+    el.classList.add('visible');
+    clearTimeout(narrativeToastTimer);
+    narrativeToastTimer = setTimeout(() => el.classList.remove('visible'), 4200);
+}
+
 let toastTimer = null;
 export function showDiscoveryToast(poi, total) {
     const el = document.getElementById('discovery-toast');
@@ -39,8 +55,13 @@ export function showDiscoveryToast(poi, total) {
 
 export function renderObjectives(pois) {
     initJournal();
-    const found = state.discovered.size;
-    const total = pois.length;
+    // Narrative props (environment/scene-shore.js's cloth/stick — flagged
+    // `narrative: true` in pois.js) aren't landmarks; counting them here
+    // would turn "9 of 9 places found" into a number that depends on
+    // whether you've examined a stick, which isn't what that line means.
+    const landmarks = pois.filter((p) => !p.narrative);
+    const found = landmarks.filter((p) => state.discovered.has(p.id)).length;
+    const total = landmarks.length;
     const textEl = document.getElementById('objective-current-text');
     const listEl = document.getElementById('objective-party-list');
     if (textEl) {
@@ -52,7 +73,7 @@ export function renderObjectives(pois) {
     }
     if (listEl) {
         listEl.innerHTML = '';
-        for (const poi of pois) {
+        for (const poi of landmarks) {
             const li = document.createElement('li');
             const seen = state.discovered.has(poi.id);
             li.textContent = seen ? poi.name : 'somewhere unexplored';

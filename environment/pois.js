@@ -4,7 +4,7 @@
 // not a prop, built into environment/terrain.js's crater + magma blend.
 import { state, WORLD_SIZE } from '../core/state.js';
 import { heightAt as getElevation } from '../core/heightmap.js';
-import { markDiscovered, showDiscoveryToast } from '../core/journal.js';
+import { markDiscovered, showDiscoveryToast, showNarrativeToast } from '../core/journal.js';
 import { playBlip } from '../core/blip.js';
 import { writeLocalSave } from '../core/save-system.js';
 import { createRuinedCabin } from './poi-ruined-cabin.js';
@@ -193,7 +193,19 @@ export function updatePOIInteraction(delta) {
                 captionText.textContent = '';
                 captionText.classList.add('typing');
                 caption.classList.add('visible');
-                if (markDiscovered(nearest)) { showDiscoveryToast(nearest, POIS.length); writeLocalSave(); } // B-18: autosave on discovery
+                if (markDiscovered(nearest)) {
+                    // Narrative story props (shore_cloth/shore_stick, spliced in by
+                    // environment/scene-shore.js) aren't landmarks — same filter as
+                    // journal.js's renderObjectives, so this toast's "X of Y found"
+                    // count and the pause-menu count never disagree.
+                    if (nearest.narrative) {
+                        showNarrativeToast(nearest.desc);
+                    } else {
+                        const landmarkTotal = POIS.filter((p) => !p.narrative).length;
+                        showDiscoveryToast(nearest, landmarkTotal);
+                    }
+                    writeLocalSave();
+                } // B-18: autosave on discovery
             }
         }
     } else {

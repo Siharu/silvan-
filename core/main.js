@@ -42,6 +42,7 @@ import { createRainSystem, createRainSplashes } from '../fx/rain.js';
 import { createFireflies } from '../fx/fireflies.js';
 import { createDustParticles } from '../fx/dust.js';
 import { POIS, createPOIs, updatePOIInteraction, updatePOIs } from '../environment/pois.js';
+import { createShoreNarrativeProps, initShoreDog, updateShoreScene } from '../environment/scene-shore.js';
 import { createSerpentsCoilEvent, updateSerpentsCoilEvent } from '../environment/serpents-coil.js';
 
 // Yields one real animation frame — used between init()'s heavy steps below
@@ -220,6 +221,13 @@ async function init(continueSave) {
     await nextFrame();
 
     setLoadingProgress(98, 'placing the sanctuaries');
+    // Act I Scene 1's two narrative props (a cloth, a stick) spliced into
+    // the shared POIS array BEFORE createPOIs() builds it, so they get
+    // picked up by the existing build loop and the existing
+    // updatePOIInteraction() prompt/caption system for free — see
+    // scene-shore.js's header comment for why this reuses pois.js instead
+    // of a second system. (200, 0) matches the player spawn set below.
+    POIS.push(...createShoreNarrativeProps(200, 0));
     await createPOIs(); // async: broken_shell.glb loads over the network
     createSerpentsCoilEvent(); // after POIS exists — reads the serpents_coil entry's (x,z) for placement
     await nextFrame();
@@ -230,6 +238,15 @@ async function init(continueSave) {
     // and the surrounding ocean — world origin (0,0) is now partway up
     // The Serpent's Coil massif under the island terrain.
     state.player.position.set(200, heightAt(200, 0) + state.player.height, 0);
+
+    // First Dog (Act I Scene 1-2, environment/npc-dog.js) — spawns near the
+    // shore wake-up point, leads toward the Ruined Cabin POI's own
+    // coordinates so this never drifts out of sync if that POI is ever
+    // repositioned.
+    {
+        const cabinPOI = POIS.find((p) => p.id === 'ruined_cabin');
+        if (cabinPOI) initShoreDog(200, 0, cabinPOI.x, cabinPOI.z);
+    }
 
     // B-18: Regain overrides the fresh-game spawn above, not the other way
     // round — so a missing/corrupt save (readLocalSave() returns null;
@@ -306,6 +323,7 @@ function animate(time) {
         updateGrandBlueCanopy(delta / 1000);
         updatePines(delta / 1000);
         updatePOIs(delta / 1000);
+        updateShoreScene(delta / 1000); // Act I Scene 1's dog state machine
         updateSerpentsCoilEvent(delta / 1000);
         updateTutorial(delta / 1000);
         updateRest(delta / 1000);

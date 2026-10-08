@@ -124,6 +124,24 @@
             animation: hud-storm-pulse 1.6s ease-in-out infinite;
         }
         @keyframes hud-storm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        /* Current story beat (environment/scene-shore.js, "Follow the
+           dog" etc.) — stays hidden entirely until the first scene sets
+           it, so a player who hasn't triggered anything yet sees the
+           plain clock, not an empty row. Narrative style per the design
+           doc's UI notes ("not gamey") — a short italic line, not a boxed
+           quest-tracker widget. */
+        .hud-objective {
+            margin: 0.5rem 0 0;
+            padding-top: 0.45rem;
+            border-top: 1px solid rgba(230, 220, 198, 0.18);
+            font-family: var(--font-body);
+            font-style: italic;
+            font-size: 1rem;
+            line-height: 1.3;
+            color: var(--ash);
+            max-width: 14rem;
+        }
+        .hud-objective.hidden { display: none; }
         .hud-hints {
             display: flex;
             flex-direction: column;
@@ -2211,6 +2229,7 @@
                 <svg class="wi-rain" viewBox="0 0 8 8"><path fill="#b3a78f" d="M2 1h4v1h1v2H1V2h1z"/><path fill="#7ea2c9" d="M2 5h1v2H2zM4 5h1v2H4zM6 5h1v1H6z"/></svg>
                 <span id="weather-text">clear skies</span>
             </div>
+            <p id="hud-objective" class="hud-objective hidden"></p>
         </div>
         <div class="hud-hints">
             <div id="hud-pause-hint"><span class="keycap">Esc</span>pause</div>
@@ -2228,6 +2247,15 @@
         <div class="toast-kicker">new place found</div>
         <div id="toast-name" class="toast-name"></div>
         <div id="toast-count" class="toast-count"></div>
+    </div>
+
+    <!-- Narrative-beat variant of the same toast box (environment/scene-
+         shore.js's showNarrativeToast, core/journal.js) — a single line of
+         story text ("You found a familiar cloth.") instead of the
+         place-count framing above, for moments that aren't a landmark
+         discovery. Same positioning/animation, swapped content. -->
+    <div id="narrative-toast" class="discovery-toast narrative-toast">
+        <div id="narrative-toast-text" class="toast-name"></div>
     </div>
 
     <!-- Mobile touch controls — core/touch-controls.js unhides this block on
