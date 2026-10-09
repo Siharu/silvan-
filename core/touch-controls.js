@@ -300,6 +300,13 @@ export function setTouchControlsVisible(visible) {
     const root = document.getElementById('touch-controls');
     if (!root) return;
     root.classList.toggle('hidden', !visible);
+    // B-30: the idle-fade watcher starts at init(), while the controls are
+    // still hidden behind the title screen, so by the time gameplay starts
+    // 10s+ had already elapsed and the controls appeared pre-faded to 12%
+    // opacity (found in a headless phone run: class was already
+    // "touch-controls idle" on first show). Restart the idle clock each time
+    // they're shown.
+    if (visible) { root.classList.remove('idle'); lastInputTime = performance.now(); }
 }
 
 export function initTouchControls() {

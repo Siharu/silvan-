@@ -138,7 +138,16 @@ export function createShoreDog(spawnX, spawnZ, cabinX, cabinZ, callbacks) {
         dog.position.set(cabinX, 0, cabinZ);
         dogState = 'arrived';
     } else {
-        dog.position.set(spawnX + 6, 0, spawnZ + 2);
+        // B-31: used to spawn at (spawn + 6, +2) = ~6.3u from the player,
+        // inside APPROACH_RANGE (7), so the greeting fired on the very first
+        // frame and "Follow the dog." was already on screen at game start —
+        // the doc's "dog appears at a distance, must be approached" beat
+        // never happened (seen in a headless run's first screenshot). Place
+        // it well outside that range, on the inland side toward the cabin
+        // (away from the water the player wakes up next to).
+        const toCabinX = cabinX - spawnX, toCabinZ = cabinZ - spawnZ;
+        const toCabinLen = Math.hypot(toCabinX, toCabinZ) || 1;
+        dog.position.set(spawnX + (toCabinX / toCabinLen) * 20, 0, spawnZ + (toCabinZ / toCabinLen) * 20);
         wanderTarget.set(dog.position.x, 0, dog.position.z);
     }
     settleY(dog);

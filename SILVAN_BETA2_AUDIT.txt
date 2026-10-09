@@ -1156,6 +1156,39 @@ B-26  [MINOR] [FIXED]  Save/load could restore the player sunk under the
   forest-triangle-count bug above; renumbered to B-26 here and in the
   save-system.js comment.)
 
+B-27  [MAJOR] [FIXED]  Page sized with height:100% instead of the real
+  visible height on mobile. With the address bar showing, the layout
+  viewport is taller than what is visible, so the page extended below the
+  screen. html/body/#canvas-container now use calc(var(--app-vh) * 100)
+  (core/viewport.js already measured --app-vh; nothing applied it).
+
+B-28  [MAJOR] [FIXED]  Touch controls far too large on portrait phones.
+  Only landscape-phone and tablet had size overrides; a portrait phone got
+  the base 8.5rem joystick, which is ~170px at this game's 20px root font.
+  Added data-device="phone" sizing (joystick 6rem, buttons 3-3.4rem) that
+  keeps the safe-area-inset padding.
+
+B-29  [MAJOR] [FIXED]  Title screen wider than a phone. Found by loading the
+  page in headless Chromium at 412px: .title-content measured 567px,
+  scrollWidth 490, scrollHeight 848 vs 780. Tailwind's text-7xl is 90px at
+  the 20px root, so "SILVAN" alone is ~487px, and the earlier
+  max-width:420px shrink rule never won. Fixed with a max-width:560px block
+  (!important clamp() sizes, container capped at 100%) plus a contained,
+  scrollable .ui-layer. After the fix scrollWidth == innerWidth and the
+  document no longer scrolls at 412x780, 360x640, 390x844 and 780x360.
+
+B-30  [MINOR] [FIXED]  Touch controls appeared already faded. The 10s idle
+  watcher starts at init() while the controls are hidden behind the title
+  screen, so on first show they had the idle class (12% opacity).
+  setTouchControlsVisible(true) now restarts the idle clock. Also: the
+  controls used to be shown on the title screen at all (unhidden at init);
+  they now show only during gameplay.
+
+B-31  [MINOR] [FIXED]  Dog greeted the player on frame one. It spawned ~6.3u
+  away, inside APPROACH_RANGE (7), so "Follow the dog." was on screen at game
+  start and the approach beat never happened. Now spawns 20u away toward the
+  cabin.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------
