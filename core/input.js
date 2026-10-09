@@ -1,5 +1,6 @@
 import { state } from './state.js';
 import { shouldShowTouchControls } from './utils.js';
+import { setTouchControlsVisible } from './touch-controls.js';
 import { triggerJump } from './player-controller.js';
 import { renderObjectives } from './journal.js';
 import { startTutorial } from './tutorial.js';
@@ -163,6 +164,7 @@ export function showGameplayUI() {
     // noise sitting over the joystick/action buttons.
     if (shouldShowTouchControls()) cross.classList.add('hidden'); else cross.classList.remove('hidden');
     pauseLayer.classList.remove('visible');
+    setTouchControlsVisible(true); // joystick/action buttons only ever show once gameplay is actually live — never on the title screen
     // Only true once startGame() has actually finished building the world
     // and called enterGame() itself (see main.js) — without this guard,
     // the very first lock (fired mid-loading-screen, before
@@ -178,6 +180,7 @@ export function pauseGame() {
     state.isPlaying = false; hud.classList.add('hidden'); cross.classList.add('hidden');
     // Release held inputs so nothing (sprint, a joystick direction) stays stuck while paused.
     for (const k in state.keys) state.keys[k] = false;
+    setTouchControlsVisible(false); // pause overlay/title screen both get the menu back — the gameplay joystick/buttons shouldn't float on top of either
     renderObjectives(POIS);
     if (state.dayAmbientAudio) state.dayAmbientAudio.pause();
     if (state.nightAmbientAudio) state.nightAmbientAudio.pause();

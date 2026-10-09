@@ -288,13 +288,28 @@ function wireTouchLayoutSettings() {
     ['title-touch-reset-btn', 'pause-touch-reset-btn'].forEach(wireReset);
 }
 
+// Bug: this used to unhide #touch-controls unconditionally the moment
+// init() ran — meaning the joystick/action-button cluster sat on top of
+// the TITLE SCREEN itself (overlapping "Settings"/"Credits"), not just
+// in gameplay, since nothing ever re-hid it. Fixed by keeping the root
+// hidden here (listeners still wire up fine against a hidden element) and
+// only showing/hiding it from input.js's showGameplayUI()/pauseGame(),
+// which already know whether we're actually playing vs. back at a menu.
+export function setTouchControlsVisible(visible) {
+    if (!shouldShowTouchControls()) return;
+    const root = document.getElementById('touch-controls');
+    if (!root) return;
+    root.classList.toggle('hidden', !visible);
+}
+
 export function initTouchControls() {
     if (!shouldShowTouchControls()) return;
     const root = document.getElementById('touch-controls');
     if (!root) return;
-    root.classList.remove('hidden');
     // index.html's .touch-active CSS (hides crosshair/pause hint, moves the
-    // interact prompt clear of the joystick) keys off this body class.
+    // interact prompt clear of the joystick) keys off this body class —
+    // this is independent of whether the controls are visible right now,
+    // so it's fine to set once up front.
     document.body.classList.add('touch-active');
 
     wireJoystick(document.getElementById('touch-joystick-zone'));

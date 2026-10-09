@@ -47,7 +47,21 @@
             margin: 0;
             padding: 0;
             width: 100%;
+            /* B-27 fix: 100% height here tracks the LAYOUT viewport, which on
+               mobile Chrome/Safari is taller than what's actually visible
+               while the address bar is showing — so the page (and the fixed
+               touch-controls/title layers sized off it) extended below the
+               real visible area, reading as "the game is sticking out /
+               not full screen" and letting a one-finger swipe shift the
+               whole page rather than scrolling nothing. --app-vh (set by
+               core/viewport.js's classify(), re-measured on resize/
+               orientationchange/visualViewport changes) is 1% of the REAL
+               current visible height, so this tracks the address bar
+               showing/hiding instead of the stale layout-viewport value.
+               100% is kept as the pre-JS fallback for the one frame before
+               classify() has run. */
             height: 100%;
+            height: calc(var(--app-vh, 1vh) * 100);
             overflow: hidden;
             background-color: #000;
             font-family: var(--font-body); font-size: 20px;
@@ -59,6 +73,7 @@
             left: 0;
             width: 100%;
             height: 100%;
+            height: calc(var(--app-vh, 1vh) * 100);
             z-index: 1;
         }
         .ui-layer {
@@ -667,6 +682,27 @@
         html[data-device="phone"][data-orientation="landscape"] .touch-look-zone {
             width: 60%;
         }
+
+        /* B-28 fix: the joystick/button base sizes above (8.5rem/4.2rem/
+           4.8rem) were never actually tuned for a phone — only the
+           landscape-phone and tablet overrides below them touch size at
+           all, so a portrait phone (the default, most common way this is
+           played) inherited sizing that reads as "the joystick is huge" on
+           a ~360-430px-wide screen with a 20px root font-size (8.5rem =
+           170px — nearly half the width of a small phone). Shrink the
+           whole cluster down for any phone that ISN'T already caught by
+           the landscape-specific rule above. */
+        /* left/bottom/right repeat the safe-area-inset calc() from the rule
+           further below rather than just a bare rem value — this selector
+           is more specific (attribute + class vs. plain class) so it would
+           otherwise win the cascade and silently drop notch/home-indicator
+           padding on phones specifically. */
+        html[data-device="phone"] .touch-joystick-base { width: 6rem; height: 6rem; left: calc(1.4rem + env(safe-area-inset-left, 0px)); bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px)); }
+        html[data-device="phone"] .touch-joystick-knob { width: 2.5rem; height: 2.5rem; margin: -1.25rem 0 0 -1.25rem; }
+        html[data-device="phone"] .touch-action-buttons { right: calc(1.1rem + env(safe-area-inset-right, 0px)); bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px)); gap: 0.6rem; }
+        html[data-device="phone"] .touch-action-btn { width: 3rem; height: 3rem; font-size: 0.5rem; }
+        html[data-device="phone"] .touch-action-btn-primary { width: 3.4rem; height: 3.4rem; font-size: 0.56rem; }
+        html[data-device="phone"] .touch-action-btn-small { width: 2.4rem; height: 2.4rem; font-size: 0.46rem; margin-bottom: 0.5rem; }
 
         /* Tablets: coarse pointer like a phone, but with the width budget
            of desktop — scale touch targets and panel widths up from the

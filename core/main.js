@@ -31,6 +31,7 @@ import { hasAnySave, readLocalSave, applySave, writeLocalSave, startAutosaveTime
 import { createSky } from '../environment/sky.js';
 import { createTerrainChunks, updateTerrainChunks } from '../environment/terrain.js';
 import { createPuddles } from '../environment/puddles.js';
+import { createAlgae } from '../environment/algae.js';
 import { createGrass, updateGrass } from '../environment/grass.js';
 import { createGrassMidRing, updateGrassMidRing } from '../environment/grass-midring.js';
 import { createLake, updateLake } from '../environment/lake.js';
@@ -205,6 +206,7 @@ async function init(continueSave) {
     setLoadingProgress(75, 'settling the stones');
     createRocks();
     createPuddles();
+    createAlgae();
     await nextFrame();
 
     setLoadingProgress(88, 'planting the forest');
