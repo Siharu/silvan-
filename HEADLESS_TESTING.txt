@@ -1,0 +1,102 @@
+HEADLESS TESTING - READ THIS BEFORE SAYING "I CAN'T RUN THE GAME"
+==================================================================
+
+For any Claude session working on this repo:
+
+YOU CAN RUN AND TEST THIS GAME. Earlier sessions wrongly told the owner for
+weeks that there was "no WebGL / no display here, build-verified only", so
+the owner had to find every bug by hand on a phone. That was false. The
+cloud container has headless Chromium and Playwright preinstalled, and
+Chromium renders WebGL in software (SwiftShader). It is slow, but it works.
+It loaded the world, rendered the HUD, took screenshots and accepted
+simulated touch input. It found 5 real bugs in about 20 minutes that
+reading the code had missed (see B-27..B-31 in SILVAN_BETA2_AUDIT.txt).
+
+Do not claim something works because "vite build succeeded". A clean build
+only proves the imports resolve. Run it.
+
+
+WHAT'S INSTALLED (check, don't assume - paths can change)
+---------------------------------------------------------
+  Chromium     /opt/pw-browsers/chromium-*/chrome-linux/chrome
+  Playwright   /opt/npm-tools/node_modules/playwright   (import by absolute path)
+  Do NOT run "playwright install" (no network for it, and not needed).
+
+
+QUICK START
+-----------
+  npm install --silent --no-audit --no-fund
+  npx vite build
+  (npx vite preview --port 4173 --host 127.0.0.1 &)       # serve dist/
+  node tools/e2e/phone-test.mjs                           # drives it
+
+  Env vars for the script: URL, W, H (viewport), OUT (screenshot dir).
+  Keep scripts and screenshots OUTSIDE the repo working tree when you can
+  (e.g. your scratchpad) so you don't commit them; tools/e2e/ is the one
+  deliberate exception, it holds the reusable script.
+  Kill the preview server and delete node_modules/ and dist/ when done.
+
+
+GOTCHAS (each one cost time already)
+------------------------------------
+1. Launch flags that make WebGL work headless:
+     --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader
+     --ignore-gpu-blocklist --no-sandbox
+2. Software GL is SLOW. Use deviceScaleFactor: 1 (2 made page.screenshot
+   time out at 30s). Pass { timeout: 150000 } to page.screenshot() in-game.
+   The main thread stalls for seconds per frame, so page.evaluate() calls
+   can be delayed; don't read timing-sensitive state right after a screenshot.
+3. page.tap() / locator.tap() time out with "element is not stable": the
+   title block has an endless CSS float animation. Tap by coordinates:
+     const bb = await el.boundingBox();
+     await page.touchscreen.tap(bb.x + bb.width/2, bb.y + bb.height/2);
+4. Phone emulation: newContext({ viewport:{width:412,height:780},
+   isMobile:true, hasTouch:true }). Without isMobile/hasTouch, the game's
+   shouldShowTouchControls() is false and no touch UI exists.
+5. Starting the game: tap #title-remember-btn, then a slot button inside
+   #title-slot-panel.open (.slot-pick-btn). Gameplay has started when
+   #hud-layer loses its "hidden" class. Allow up to ~2 minutes in software GL.
+6. Dragging the joystick needs raw touch events, page.touchscreen only has
+   tap. Use CDP:
+     const cdp = await ctx.newCDPSession(page);
+     cdp.send('Input.dispatchTouchEvent', {type:'touchStart', touchPoints:[{x,y,id:1}]})
+     ... 'touchMove' ... then 'touchEnd' with touchPoints: []
+   Check #touch-joystick-knob's style.transform to see it respond.
+7. Console errors named ERR_TUNNEL_CONNECTION_FAILED are Google Fonts being
+   blocked by the sandbox. Ignore them. The page then uses fallback fonts,
+   so text widths in screenshots differ slightly from a real phone.
+8. The shared game state is not on window, so you can't read the player
+   position or the dog's state directly. To test those, add a temporary
+   debug hook (e.g. window.__state = state in main.js), test, then REMOVE it.
+9. A class or style change you want to time (like the touch-controls "idle"
+   fade) is best captured with a MutationObserver injected via
+   page.addInitScript, logging [performance.now(), className]. Reading it
+   after the fact from page.evaluate is unreliable under the slow renderer.
+10. Layout bugs: measure instead of eyeballing. documentElement.scrollWidth
+    and scrollHeight vs innerWidth/innerHeight, getBoundingClientRect() of
+    the suspects, getComputedStyle() for the real winning value. That is how
+    the 567px-wide title block was found in minutes.
+
+
+WHAT IS STILL NOT TESTABLE FROM THE CONTAINER
+---------------------------------------------
+  - How it FEELS: joystick sensitivity, camera look speed, frame rate on a
+    real phone GPU. The owner has to judge that.
+  - Real fonts (Google Fonts blocked) and real audio (no audio files exist
+    in the repo at all; every sound slot warns and stays silent).
+  - Anything that needs sustained play over time (a full day/night cycle).
+  Say so plainly when you hand something over; don't imply it was tested
+  if it was only built.
+
+
+WHAT TO CHECK AFTER ANY UI / LAYOUT CHANGE
+------------------------------------------
+  Viewports: 412x780, 360x640, 390x844 (portrait phones), 780x360 (landscape).
+  1. Title screen: scrollWidth == innerWidth and scrollHeight == innerHeight
+     (no overflow), nothing clipped at the sides.
+  2. #touch-controls has class "hidden" on the title screen.
+  3. After Remember + slot: HUD visible, #touch-controls not hidden and not
+     already "idle", no overlap between joystick, action buttons, HUD, pause.
+  4. Joystick drag moves the knob and releasing resets it.
+  5. Zero page errors (filter out the ERR_TUNNEL font noise).
+  6. Look at the screenshots, not just the numbers.
