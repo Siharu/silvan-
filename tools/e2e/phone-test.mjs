@@ -56,6 +56,49 @@ if (playing) {
   console.log('  joystick', JSON.stringify(joy), 'actions', JSON.stringify(await rect('touch-action-buttons')), 'pause', JSON.stringify(await rect('touch-pause-btn')), 'hud', JSON.stringify(await rect('hud-layer')));
   console.log(g.scrollH > g.innerH ? '  FAIL: in-game page scrolls' : '  ok: in-game no overflow');
 
+  // Overlap check: compare every pair of on-screen UI rects instead of eyeballing
+  // printed numbers (an 18px joystick/Rest overlap went unnoticed that way).
+  // Give the tutorial card a chance to appear first; it's the largest HUD box.
+  for (let i = 0; i < 20; i++) {
+    if (await page.evaluate(() => document.getElementById('tutorial-card')?.classList.contains('visible'))) break;
+    await page.waitForTimeout(1000);
+  }
+  // If the real tutorial hasn't started (it runs on its own schedule), fill the
+  // card with the longest real step text so its LAYOUT can still be checked.
+  const forced = await page.evaluate(() => {
+    const c = document.getElementById('tutorial-card');
+    if (!c || c.classList.contains('visible')) return false;
+    document.getElementById('tut-step').textContent = 'step 6 of 7';
+    document.getElementById('tut-text').textContent = 'Find a place on the island and walk up close. When its name appears, tap Interact to examine it.';
+    const g = document.getElementById('tut-guide'); g.style.display = 'flex'; document.getElementById('tut-guide-text').textContent = "The Serpent's Coil, 55 m away";
+    document.getElementById('tut-skip').textContent = 'skip';
+    c.classList.add('visible'); c.style.setProperty('transition', 'none', 'important'); c.style.setProperty('opacity', '1', 'important'); return true; // pinned: the tutorial module re-hides it on its next frame; transition off because software GL produces so few frames the fade never finishes
+  });
+  if (forced) console.log('  (tutorial card was not showing, filled it with sample text to test layout)');
+  await page.waitForTimeout(500);
+  console.log('  card state before screenshot:', JSON.stringify(await page.evaluate(() => { const c = document.getElementById('tutorial-card'); const cs = getComputedStyle(c); const r = c.getBoundingClientRect(); return { cls: c.className, opacity: cs.opacity, display: cs.display, vis: cs.visibility, z: cs.zIndex, top: Math.round(r.top), h: Math.round(r.height), parent: c.parentElement.tagName + '#' + c.parentElement.id }; })));
+  await page.screenshot({ path: OUT + `ingame-ui-${W}x${H}.png`, timeout: 150000 });
+  const boxes = await page.evaluate(() => {
+    const items = { joystick: '#touch-joystick-base', rest: '#touch-rest-btn', jump: '#touch-jump-btn', sprint: '#touch-sprint-btn', interact: '#touch-interact-btn',
+      pause: '#touch-pause-btn', fullscreen: '#fullscreen-btn', hudPlaque: '.hud-plaque', tutorial: '#tutorial-card.visible', discoveryToast: '#discovery-toast.visible' };
+    const out = {};
+    for (const [k, sel] of Object.entries(items)) {
+      const el = document.querySelector(sel); if (!el) continue;
+      const r = el.getBoundingClientRect(); if (!r.width) continue;
+      out[k] = { l: r.left, t: r.top, r: r.right, b: r.bottom };
+    }
+    return out;
+  });
+  const names = Object.keys(boxes); let overlaps = 0;
+  for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+    const a = boxes[names[i]], b = boxes[names[j]];
+    if (a.l < b.r - 1 && b.l < a.r - 1 && a.t < b.b - 1 && b.t < a.b - 1) { overlaps++; console.log(`  FAIL: ${names[i]} overlaps ${names[j]}`); }
+  }
+  const offscreen = names.filter(n => boxes[n].l < -1 || boxes[n].t < -1 || boxes[n].r > W + 1 || boxes[n].b > H + 1);
+  offscreen.forEach(n => console.log(`  FAIL: ${n} is partly off-screen`));
+  console.log(overlaps || offscreen.length ? '' : `  ok: no overlaps among ${names.length} UI boxes (${names.join(', ')})`);
+  console.log('  tutorial card visible:', !!boxes.tutorial, boxes.tutorial ? `(${Math.round(boxes.tutorial.r - boxes.tutorial.l)}x${Math.round(boxes.tutorial.b - boxes.tutorial.t)}px)` : '');
+
   const cdp = await ctx.newCDPSession(page);
   const cx = joy.x + joy.w / 2, cy = joy.y + joy.h / 2;
   const knob = () => page.evaluate(() => document.getElementById('touch-joystick-knob').style.transform);

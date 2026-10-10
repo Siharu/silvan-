@@ -736,10 +736,40 @@
            padding on phones specifically. */
         html[data-device="phone"] .touch-joystick-base { width: 6rem; height: 6rem; left: calc(1.4rem + env(safe-area-inset-left, 0px)); bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px)); }
         html[data-device="phone"] .touch-joystick-knob { width: 2.5rem; height: 2.5rem; margin: -1.25rem 0 0 -1.25rem; }
-        html[data-device="phone"] .touch-action-buttons { right: calc(1.1rem + env(safe-area-inset-right, 0px)); bottom: calc(1.6rem + env(safe-area-inset-bottom, 0px)); gap: 0.6rem; }
-        html[data-device="phone"] .touch-action-btn { width: 3rem; height: 3rem; font-size: 0.5rem; }
-        html[data-device="phone"] .touch-action-btn-primary { width: 3.4rem; height: 3.4rem; font-size: 0.56rem; }
-        html[data-device="phone"] .touch-action-btn-small { width: 2.4rem; height: 2.4rem; font-size: 0.46rem; margin-bottom: 0.5rem; }
+        /* B-32: PPSSPP-style diamond for the action buttons on phones. The
+           flex row made the cluster ~260px wide, so on a 412px screen its
+           left edge (x=130) ran into the joystick (x=28..148) and Rest sat
+           ON TOP of the stick - the headless run printed those rects and
+           nobody compared them. Now a fixed-size box with the four buttons
+           absolutely placed in an arc under the right thumb: Interact (the
+           main one) bottom-right, Jump above it, Sprint to its left, Rest
+           (rarely used, hold) up-left. Sizes are in px on purpose: the 20px
+           root font made rem sizing here unpredictable. The box is 136x128
+           so it can't reach the joystick even on a 320px-wide phone. */
+        html[data-device="phone"] .touch-action-buttons {
+            display: block; width: 136px; height: 128px;
+            right: calc(14px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+        }
+        html[data-device="phone"] .touch-action-btn { position: absolute; margin: 0; align-self: auto; font-size: 10px; letter-spacing: 0.04em; padding: 0; }
+        html[data-device="phone"] #touch-interact-btn { width: 64px; height: 64px; right: 0; bottom: 0; font-size: 11px; }
+        html[data-device="phone"] #touch-jump-btn     { width: 52px; height: 52px; right: 6px; bottom: 76px; }
+        html[data-device="phone"] #touch-sprint-btn   { width: 52px; height: 52px; right: 82px; bottom: 8px; }
+        html[data-device="phone"] #touch-rest-btn     { width: 40px; height: 40px; right: 92px; bottom: 74px; font-size: 9px; }
+
+        /* B-33: tutorial card was far too big on phones (28px text in a 27rem
+           card = ~60% of the screen height) and its top sat BEHIND the
+           day/time plaque (top:6.4rem vs a plaque that runs to ~150-200px),
+           hiding the "step N of 7" line. Smaller type, and placed below the
+           plaque in portrait / to the right of it in landscape. */
+        html[data-device="phone"] .tutorial-card { top: 11rem; width: min(15rem, 82vw); padding: 0.4rem 0.6rem 0.35rem; }
+        html[data-device="phone"] .tut-step { font-size: 0.6rem; margin-bottom: 0.1rem; }
+        html[data-device="phone"] .tut-text { font-size: 0.85rem; line-height: 1.15; }
+        html[data-device="phone"] .tut-guide { font-size: 0.72rem; margin-top: 0.3rem; gap: 0.4rem; }
+        html[data-device="phone"] .tut-arrow { border-left-width: 6px; border-right-width: 6px; border-bottom-width: 12px; }
+        html[data-device="phone"] .tut-foot { margin-top: 0.3rem; }
+        html[data-device="phone"] .tut-pips i { width: 7px; height: 7px; }
+        html[data-device="phone"] .tut-skip { font-size: 0.8rem; }
+        html[data-device="phone"][data-orientation="landscape"] .tutorial-card { top: 0.7rem; left: 52%; width: min(15rem, 44vw); }
 
         /* Tablets: coarse pointer like a phone, but with the width budget
            of desktop — scale touch targets and panel widths up from the

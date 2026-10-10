@@ -1189,6 +1189,20 @@ B-31  [MINOR] [FIXED]  Dog greeted the player on frame one. It spawned ~6.3u
   start and the approach beat never happened. Now spawns 20u away toward the
   cabin.
 
+B-32  [MAJOR] [FIXED]  Phone action buttons overlapped the joystick. The flex
+  row was ~260px wide, so on a 412px screen its left edge (x=130) ran into
+  the joystick (x=28..148) and Rest sat on top of the stick. Reported by the
+  owner from a real phone; the headless run had printed both rects but never
+  compared them. Rebuilt as a PPSSPP-style 136x128px diamond (Interact
+  bottom-right, Jump above, Sprint left, Rest up-left). tools/e2e/
+  phone-test.mjs now checks every pair of UI boxes for overlap/off-screen.
+
+B-33  [MINOR] [FIXED]  Tutorial card too big on phones and covered by the
+  day/time plaque. 28px text in a 27rem card filled ~60% of the screen and its
+  top (top:6.4rem) sat behind the plaque, hiding "step N of 7". Now 15rem
+  wide with smaller type, placed below the plaque (portrait) or beside it
+  (landscape).
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------
