@@ -29,7 +29,7 @@ export function createFireflies() {
                 m[3][0] += sin(t * 1.4) * 1.6;
                 m[3][1] += cos(t * 1.1) * 1.2;
                 m[3][2] += sin(t * 1.7) * 1.6;
-                m[3][1] = max(m[3][1], ${(WATER_LEVEL + 0.35).toFixed(2)}); // Never bob below the water surface
+                m[3][1] = max(m[3][1], 0.3); // mesh sits on the ground under the player (updateFireflies), so this is a local floor
                 mvPosition = modelViewMatrix * vec4(m[3][0], m[3][1], m[3][2], 1.0);
                 mvPosition.xy += transformed.xy;
             #else
@@ -42,11 +42,20 @@ export function createFireflies() {
     state.fireflyMesh = new THREE.InstancedMesh(geo, state.fireflyMat, count);
     const dummy = new THREE.Object3D();
     for (let i = 0; i < count; i++) {
-        const r = 10 + rand() * 220; const th = rand() * Math.PI * 2;
-        const x = Math.cos(th)*r; const z = Math.sin(th)*r;
-        dummy.position.set(x, getElevation(x,z) + 0.6 + rand()*3, z);
+        // B-39: offsets are RELATIVE to the player (the mesh follows them, see updateFireflies). They used to be
+        // world positions around the origin, which after the 4x scale-up is ~1200u from where you spawn: no fireflies at all.
+        const r = 4 + rand() * 70; const th = rand() * Math.PI * 2;
+        dummy.position.set(Math.cos(th)*r, 0.6 + rand()*3, Math.sin(th)*r);
         dummy.updateMatrix(); state.fireflyMesh.setMatrixAt(i, dummy.matrix);
     }
     state.scene.add(state.fireflyMesh);
 }
 
+
+// Keep the swarm around the player, standing on the ground there (B-39).
+export function updateFireflies() {
+    if (!state.fireflyMesh || !state.camera) return;
+    const p = state.camera.position;
+    state.fireflyMesh.position.set(p.x, getElevation(p.x, p.z), p.z);
+    state.fireflyMesh.frustumCulled = false;
+}

@@ -42,7 +42,8 @@ import { generateFractalForest } from '../environment/forest.js';
 import { createRocks, updateRockLOD } from '../environment/rocks.js';
 import { createGrandBlueTrees, createLeaningPalms, updateLeaningPalms, updateGrandBlueGlow, updateGrandBlueCanopy } from '../environment/landmark-trees.js';
 import { createRainSystem, createRainSplashes } from '../fx/rain.js';
-import { createFireflies } from '../fx/fireflies.js';
+import { createFireflies, updateFireflies } from '../fx/fireflies.js';
+import { createAmbientLife, updateAmbientLife } from '../fx/ambient-life.js';
 import { createDustParticles } from '../fx/dust.js';
 import { POIS, createPOIs, updatePOIInteraction, updatePOIs } from '../environment/pois.js';
 import { createShoreNarrativeProps, initShoreDog, updateShoreScene } from '../environment/scene-shore.js';
@@ -227,6 +228,7 @@ async function init(continueSave) {
     createRainSystem();
     createRainSplashes();
     createFireflies();
+    createAmbientLife(); // smoke columns, bird flocks, butterflies (Version 0.0.05)
     createDustParticles();
     await nextFrame();
 
@@ -332,6 +334,8 @@ function animate(time) {
         updateGrandBlueGlow(delta / 1000);
         updateGrandBlueCanopy(delta / 1000);
         updatePines(delta / 1000);
+        updateFireflies();
+        updateAmbientLife(delta / 1000);
         updatePOIs(delta / 1000);
         updateShoreScene(delta / 1000); // Act I Scene 1's dog state machine
         updateSerpentsCoilEvent(delta / 1000);

@@ -1284,6 +1284,21 @@ B-38  [MAJOR] [FIXED]  Empty world: dense forest, coast-only palms, farther view
   the volcano slope; load restores that, so such a save will not see the sea.
   A fresh slot starts on the beach.
 
+B-39  [MINOR] [ADDED, branch Version-0.0.05]  "World feels empty": ambient life + landmarks.
+  New fx/ambient-life.js (all GPU/stateless, a handful of draw calls):
+  - Smoke columns (~90u tall) over the Ruined Cabin and the Warm Paw campfire:
+    visible over the treeline from the spawn beach, a breadcrumb toward the Act I
+    destination (BotW principle: landmarks readable from afar).
+  - 14 bird flocks (7 each) circling high over the island, 3 of them near the
+    spawn/cabin side; daytime only, hidden in rain.
+  - 70 butterflies that follow the player over the grass in dry daytime.
+  - Fireflies were pinned to world-origin coordinates (~1200u from the spawn after
+    the 4x scale-up), so the player never saw one. They now follow the player.
+  Headless: smoke column, birds and fireflies seen; butterflies and the Warm Paw
+  smoke NOT specifically inspected. Not verified: frame rate on a phone, feel.
+  Not built yet (from the research): glowing/lit far landmarks, terrain that
+  hides and reveals points of interest, animals on the ground, wind in the trees.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------
