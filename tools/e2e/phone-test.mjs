@@ -17,6 +17,15 @@ const executablePath = `${base}${dir}/chrome-linux/chrome`;
 const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
+// Real pixel fonts: Google Fonts is blocked in the sandbox, so text widths in screenshots are wrong (the
+// fallback monospace is ~50% wider than VT323). If FONTS_DIR points at a folder with
+// node_modules/@fontsource/{vt323,silkscreen,pixelify-sans} (npm i those; npm works here), serve them locally.
+if (process.env.FONTS_DIR) {
+  const { readFileSync } = await import('node:fs');
+  const face = (family, pkg, file) => `@font-face{font-family:'${family}';font-weight:400 600;src:url(data:font/woff2;base64,${readFileSync(`${process.env.FONTS_DIR}/node_modules/@fontsource/${pkg}/files/${file}`).toString('base64')}) format('woff2');}`;
+  const css = face('VT323', 'vt323', 'vt323-latin-400-normal.woff2') + face('Silkscreen', 'silkscreen', 'silkscreen-latin-400-normal.woff2') + face('Pixelify Sans', 'pixelify-sans', 'pixelify-sans-latin-400-normal.woff2');
+  await page.route(/fonts\.googleapis\.com\/css2.*(VT323|Silkscreen)/, r => r.fulfill({ status: 200, contentType: 'text/css', body: css }));
+}
 const errors = [];
 page.on('pageerror', e => errors.push('PAGEERROR ' + e.message.slice(0, 300)));
 page.on('console', m => { if (m.type() === 'error' && !/ERR_TUNNEL|Failed to load resource/.test(m.text())) errors.push('CONSOLE ' + m.text().slice(0, 300)); });
@@ -75,16 +84,24 @@ if (playing) {
     c.classList.add('visible'); c.style.setProperty('transition', 'none', 'important'); c.style.setProperty('opacity', '1', 'important'); return true; // pinned: the tutorial module re-hides it on its next frame; transition off because software GL produces so few frames the fade never finishes
   });
   if (forced) console.log('  (tutorial card was not showing, filled it with sample text to test layout)');
+  // B-36: force the dialogue box visible with the longest real description to check its size/placement
+  await page.evaluate(() => {
+    const c = document.getElementById('cutscene-caption'); if (!c) return;
+    document.getElementById('cutscene-speaker').textContent = 'A Familiar Cloth';
+    document.getElementById('cutscene-text').textContent = 'A scrap of cloth snagged on driftwood, sun-bleached and salt-stiff. It smells faintly of woodsmoke, as if someone wore it not long ago.';
+    c.classList.add('visible'); c.style.setProperty('transition', 'none', 'important'); c.style.setProperty('opacity', '1', 'important');
+    const t = document.getElementById('tutorial-card'); if (t) { t.style.removeProperty('opacity'); t.style.setProperty('transition', 'none', 'important'); } // phones hide the tutorial card while the dialogue box is open (CSS :has)
+  });
   await page.waitForTimeout(500);
   console.log('  card state before screenshot:', JSON.stringify(await page.evaluate(() => { const c = document.getElementById('tutorial-card'); const cs = getComputedStyle(c); const r = c.getBoundingClientRect(); return { cls: c.className, opacity: cs.opacity, display: cs.display, vis: cs.visibility, z: cs.zIndex, top: Math.round(r.top), h: Math.round(r.height), parent: c.parentElement.tagName + '#' + c.parentElement.id }; })));
   await page.screenshot({ path: OUT + `ingame-ui-${W}x${H}.png`, timeout: 150000 });
   const boxes = await page.evaluate(() => {
     const items = { joystick: '#touch-joystick-base', rest: '#touch-rest-btn', jump: '#touch-jump-btn', sprint: '#touch-sprint-btn', interact: '#touch-interact-btn',
-      pause: '#touch-pause-btn', fullscreen: '#fullscreen-btn', hudPlaque: '.hud-plaque', tutorial: '#tutorial-card.visible', discoveryToast: '#discovery-toast.visible' };
+      pause: '#touch-pause-btn', fullscreen: '#fullscreen-btn', hudPlaque: '.hud-plaque', tutorial: '#tutorial-card.visible', discoveryToast: '#discovery-toast.visible', dialogue: '#cutscene-caption.visible' };
     const out = {};
     for (const [k, sel] of Object.entries(items)) {
       const el = document.querySelector(sel); if (!el) continue;
-      const r = el.getBoundingClientRect(); if (!r.width) continue;
+      const r = el.getBoundingClientRect(); if (!r.width || getComputedStyle(el).opacity < 0.05) continue;
       out[k] = { l: r.left, t: r.top, r: r.right, b: r.bottom };
     }
     return out;
@@ -97,6 +114,7 @@ if (playing) {
   const offscreen = names.filter(n => boxes[n].l < -1 || boxes[n].t < -1 || boxes[n].r > W + 1 || boxes[n].b > H + 1);
   offscreen.forEach(n => console.log(`  FAIL: ${n} is partly off-screen`));
   console.log(overlaps || offscreen.length ? '' : `  ok: no overlaps among ${names.length} UI boxes (${names.join(', ')})`);
+  if (boxes.dialogue) console.log(`  dialogue box: ${Math.round(boxes.dialogue.r - boxes.dialogue.l)}x${Math.round(boxes.dialogue.b - boxes.dialogue.t)}px = ${Math.round((boxes.dialogue.b - boxes.dialogue.t) / H * 100)}% of screen height`);
   console.log('  tutorial card visible:', !!boxes.tutorial, boxes.tutorial ? `(${Math.round(boxes.tutorial.r - boxes.tutorial.l)}x${Math.round(boxes.tutorial.b - boxes.tutorial.t)}px)` : '');
 
   const cdp = await ctx.newCDPSession(page);

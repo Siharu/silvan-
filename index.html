@@ -771,6 +771,20 @@
         html[data-device="phone"] .tut-skip { font-size: 0.8rem; }
         html[data-device="phone"][data-orientation="landscape"] .tutorial-card { top: 0.7rem; left: 52%; width: min(15rem, 44vw); }
 
+        /* B-36 phone: keep the VN box clear of the touch controls. Portrait: sit
+           just above the joystick / button row (their tops are ~150px from the
+           bottom). Landscape (short screen): squeeze between the joystick and
+           the button diamond. Smaller type, still >= ~18px effective in VT323. */
+        html[data-device="phone"] .cutscene-caption { bottom: calc(8.4rem + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 1rem); padding: 0.8rem 0.8rem 1rem; }
+        html[data-device="phone"] .cutscene-caption .cutscene-text { font-size: 1.05rem; min-height: 3.9rem; }
+        html[data-device="phone"][data-orientation="landscape"] .cutscene-caption { bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); width: calc(100vw - 15rem); padding: 0.55rem 0.8rem 0.7rem; }
+        html[data-device="phone"][data-orientation="landscape"] .cutscene-caption .cutscene-text { font-size: 0.9rem; line-height: 1.3; min-height: 3.5rem; }
+
+        /* B-36: one text box at a time on phones (VN rule). While the dialogue box
+           is open, hide the tutorial card instead of stacking two boxes: on a
+           360x640 screen they overlapped. */
+        html[data-device="phone"] .tutorial-card:has(~ #cutscene-caption.visible) { opacity: 0 !important; pointer-events: none !important; }
+
         /* Tablets: coarse pointer like a phone, but with the width budget
            of desktop — scale touch targets and panel widths up from the
            phone sizing above instead of inheriting either extreme. */
@@ -1235,21 +1249,29 @@
         .interact-prompt.visible {
             opacity: 1;
         }
+        /* B-36: VN-style dialogue box. Was 30px text in a centred 38rem box with a
+           1.15 line-height: on a phone it was ~12 characters wide per line and a
+           huge slab. Visual-novel convention (Ren'Py defaults, UI guides): a
+           wide, low box anchored to the BOTTOM, 15-30% of screen height, ~60
+           characters per line, 1.4-1.6 line-height, a small name tab on the top
+           edge, translucent so the scene shows through, and a small blinking
+           advance marker. Pixel-border style kept to match the rest of the UI. */
         .cutscene-caption {
             position: fixed;
-            bottom: 8%;
+            bottom: calc(1.2rem + env(safe-area-inset-bottom, 0px));
             left: 50%;
             transform: translateX(-50%);
             z-index: 8;
             pointer-events: none;
-            width: min(38rem, 90vw);
-            padding: 1.3rem 1.5rem 0.9rem;
-            background: var(--ink);
+            width: min(44rem, calc(100vw - 1.4rem));
+            box-sizing: border-box;
+            padding: 0.95rem 1.2rem 1.1rem;
+            background: rgba(26, 20, 15, 0.86);
             color: var(--ash);
             font-family: var(--font-body);
-            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
-                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
-                        0 0 0 6px rgba(0,0,0,0.5);
+            box-shadow: 0 -2px 0 0 var(--bark-edge), 0 2px 0 0 var(--bark-edge),
+                        -2px 0 0 0 var(--bark-edge), 2px 0 0 0 var(--bark-edge),
+                        0 0 0 5px rgba(0,0,0,0.45);
             opacity: 0;
             transition: opacity 0.25s steps(4);
         }
@@ -1266,18 +1288,18 @@
            applies unchanged. */
         .cutscene-caption .cutscene-speaker {
             position: absolute;
-            top: -1.05rem;
-            left: 1.1rem;
-            padding: 0.1rem 0.7rem 0.15rem;
+            top: -0.95rem;
+            left: 1rem;
+            padding: 0.05rem 0.7rem 0.1rem;
             background: var(--ember);
             color: var(--ink);
             font-family: var(--font-display);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
         }
         .cutscene-caption .cutscene-text {
-            font-size: 1.5rem;
-            line-height: 1.15;
-            min-height: 3.4rem;
+            font-size: 1.15rem;
+            line-height: 1.4;
+            min-height: 4.2rem; /* 3 lines reserved so the box doesn't jump while typing */
         }
         .cutscene-caption .cutscene-text.typing::after {
             content: '';
@@ -1312,12 +1334,16 @@
             border-color: rgba(255, 220, 150, 0.5);
         }
         .cutscene-caption .cutscene-continue-hint {
-            margin-top: 0.6rem;
-            font-size: 0.7rem;
-            letter-spacing: 0.15em;
+            position: absolute;
+            right: 0.8rem;
+            bottom: 0.25rem;
+            margin: 0;
+            font-size: 0.65rem;
+            letter-spacing: 0.12em;
             color: var(--ash-dim);
             opacity: 0.85;
         }
+        .cutscene-caption .cutscene-continue-hint::after { content: ' \25BC'; color: var(--ember); animation: caret 0.8s steps(1) infinite; }
 
         /* Pause menu — a soft, misty, "floaty" panel rather than a flat
            dialog box. Cloudy = leans on the same fog/mist visual language

@@ -1237,6 +1237,21 @@ B-35  [MAJOR] [FIXED]  After the 4x scale-up: black sky, no visible ocean, empty
   NOT verified: frame rate on a phone, how rain/sea look on the real GPU,
   the ground colour at the beach (dark brown in headless, not obviously sand).
 
+B-36  [MINOR] [FIXED]  Dialogue/text boxes huge and not visual-novel style. The
+  POI dialogue box was 30px text, line-height 1.15, in a centred 38rem box
+  (~12 characters per line on a phone). The top narrative toast also repeated
+  the full description. Now a VN bar: bottom-anchored, translucent, name tab
+  on the top edge, 1.05rem text at line-height 1.4 (3 lines reserved so it
+  doesn't jump while typing), blinking advance marker; ~22% of screen height
+  in portrait, ~31% in landscape (VN guides: 15-30%, never above 35%).
+  On phones it sits above the touch controls (portrait) or between joystick
+  and buttons (landscape), and the tutorial card hides while it is open (one
+  text box at a time; the two overlapped at 360x640). The toast now shows only
+  the find's name. Checked headless at 412x780, 360x640, 780x360 with the REAL
+  VT323 / Pixelify / Silkscreen fonts (phone-test.mjs FONTS_DIR, see
+  HEADLESS_TESTING.txt). NOT verified: how it reads/feels on your phone, the
+  discovery toast (unchanged) and tutorial card styling.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

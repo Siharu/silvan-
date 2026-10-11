@@ -63,8 +63,12 @@ GOTCHAS (each one cost time already)
      ... 'touchMove' ... then 'touchEnd' with touchPoints: []
    Check #touch-joystick-knob's style.transform to see it respond.
 7. Console errors named ERR_TUNNEL_CONNECTION_FAILED are Google Fonts being
-   blocked by the sandbox. Ignore them. The page then uses fallback fonts,
-   so text widths in screenshots differ slightly from a real phone.
+   blocked by the sandbox. WITHOUT the real fonts the fallback monospace is
+   ~50% wider than VT323, so text boxes look far bigger than on a phone.
+   FIX: npm works here, so in a scratch dir run
+     npm i @fontsource/vt323 @fontsource/pixelify-sans @fontsource/silkscreen
+   and run tools/e2e/phone-test.mjs with FONTS_DIR=<that dir>; it serves the
+   fonts locally. Use this for any text-size or layout judgement.
 8. With ?debug=1 the state IS on window.silvanDebug.state (position, rain,
    gameTime, camera, waterMesh, scene...). tools/e2e/live-views.mjs uses it to
    force sea/inland views and rain, and to count scene triangles.

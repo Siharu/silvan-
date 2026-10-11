@@ -199,7 +199,7 @@ export function updatePOIInteraction(delta) {
                     // journal.js's renderObjectives, so this toast's "X of Y found"
                     // count and the pause-menu count never disagree.
                     if (nearest.narrative) {
-                        showNarrativeToast(nearest.desc);
+                        showNarrativeToast(nearest.name); // B-36: the full desc is already in the dialogue box; the toast just names the find
                     } else {
                         const landmarkTotal = POIS.filter((p) => !p.narrative).length;
                         showDiscoveryToast(nearest, landmarkTotal);
