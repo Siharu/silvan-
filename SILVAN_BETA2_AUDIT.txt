@@ -1252,6 +1252,15 @@ B-36  [MINOR] [FIXED]  Dialogue/text boxes huge and not visual-novel style. The
   HEADLESS_TESTING.txt). NOT verified: how it reads/feels on your phone, the
   discovery toast (unchanged) and tutorial card styling.
 
+B-37  [MINOR] [PARTLY FIXED]  Beach read as dark brown mud. The wet-to-dry-sand
+  colour ramp (height 1.6..4.4) was tuned for the old gentle coast; after the
+  B-35 steepener the beach is only a few units tall, so it stayed wet-sand
+  colour. Ramp now 1.7..3.2 and dry sand lightened (0x8d8262 -> 0xa89c76).
+  Headless result: modestly lighter, still dark and olive-brown. The wide
+  brown strip inland of the spawn is the spawn->cabin trail (path colour
+  0x74613f, smeared by the 3.1u splat texels: SPLAT_RES 1024 over 3200u).
+  STILL OPEN: SPLAT_RES / trail width, crater constants, overall brightness.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

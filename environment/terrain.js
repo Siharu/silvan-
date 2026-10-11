@@ -32,7 +32,7 @@ import { getSplatTexture, CRATER } from '../core/splat.js';
 const PALETTE = {
     oceanBed:   0x1b2a33,
     wetSand:    0x5b5240,
-    drySand:    0x8d8262,
+    drySand:    0xa89c76,
     grassA:     0x3f5f2c,
     grassB:     0x59703a,
     rockA:      0x5d5f60,
@@ -81,7 +81,7 @@ const FRAG_COLOR = `
 
         // base ground by height: seabed -> wet sand -> dry sand
         vec3 col = mix(uCOcean, uCWet, smoothstep(-0.6, 1.4, h));
-        col = mix(col, uCSand, smoothstep(1.6, 4.4, h));
+        col = mix(col, uCSand, smoothstep(1.7, 3.2, h)); // B-37: was 1.6..4.4, authored for the gentle pre-steepener coast; the beach is now narrow so it must turn sand-coloured sooner
         col *= 1.0 + grain * 0.22;
 
         // grass ground colour (the "ground-colour trick": blades only add parallax on top)
