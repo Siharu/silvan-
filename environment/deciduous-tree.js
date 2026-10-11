@@ -49,25 +49,29 @@ const LEAF_GEO = new THREE.PlaneGeometry(1.4, 1.4);
 
 // ---- geometry accumulation (position/normal/color, non-indexed) ----------
 class Acc {
-    constructor() { this.p = []; this.n = []; this.c = []; }
+    constructor() { this.p = []; this.n = []; this.c = []; this.uv = []; }
     build() {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
         g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
         g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+        // B-38: the UVs were dropped here, so every leaf quad sampled texel (0,0) of the alpha-tested leaf
+        // texture (transparent) and all leaves were discarded: the "bare trees" that got this LOD system reverted.
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
         g.computeBoundingSphere();
         return g;
     }
 }
 const _v = new THREE.Vector3(), _n = new THREE.Vector3();
 function addGeo(acc, geo, matrix, color) {
-    const pos = geo.attributes.position, nor = geo.attributes.normal, idx = geo.index;
+    const pos = geo.attributes.position, nor = geo.attributes.normal, uvs = geo.attributes.uv, idx = geo.index;
     const normalMat = new THREE.Matrix3().getNormalMatrix(matrix);
     const emit = (i) => {
         _v.fromBufferAttribute(pos, i).applyMatrix4(matrix);
         _n.fromBufferAttribute(nor, i).applyMatrix3(normalMat).normalize();
         acc.p.push(_v.x, _v.y, _v.z); acc.n.push(_n.x, _n.y, _n.z);
         acc.c.push(color.r, color.g, color.b);
+        if (uvs) acc.uv.push(uvs.getX(i), uvs.getY(i)); else acc.uv.push(0, 0);
     };
     if (idx) for (let i = 0; i < idx.count; i++) emit(idx.getX(i));
     else for (let i = 0; i < pos.count; i++) emit(i);
@@ -115,8 +119,9 @@ function buildVariant(seed) {
 }
 
 // ---- LOD (mirrors pine-tree.js's updatePineLOD) ---------------------------
-const NEAR_RADIUS_DECID = 70;
-const LOD_HYSTERESIS_DECID = 12;
+const NEAR_RADIUS_DECID = 65;
+const FAR_RADIUS_DECID = 520;   // beyond this the fog has swallowed the tree: draw nothing
+const LOD_HYSTERESIS_DECID = 10;
 
 function buildImpostorGeometry() {
     const trunk = new THREE.CylinderGeometry(0.5, 0.9, 5.5, 5, 1);
@@ -216,9 +221,9 @@ export function finishDeciduous(leafTexture) {
             state.scene.add(im);
             return im;
         };
-        nearWood.push(make(variants[v].wood, trunkMat, true, false));
+        const w = make(variants[v].wood, trunkMat, true, false); w.count = 0; nearWood.push(w);
         // leaf shadows disabled: same overdraw reasoning as the old forest.js leaf mesh (overlapping transparent shadows x thousands of instances)
-        nearLeaves.push(make(variants[v].leaves, leafMat, false, true));
+        const lf = make(variants[v].leaves, leafMat, false, true); lf.count = 0; nearLeaves.push(lf);
     }
 
     impostorCapacity = buckets.reduce((s, b) => s + b.m.length, 0);
@@ -229,6 +234,7 @@ export function finishDeciduous(leafTexture) {
         impostorMesh.count = 0;
         impostorMesh.castShadow = false;
         impostorMesh.receiveShadow = true;
+        lodLastPx = null;
         impostorMesh.frustumCulled = false; // buffer contents keep changing as the player moves; see pine-tree.js's identical note
         state.scene.add(impostorMesh);
     }
@@ -242,7 +248,7 @@ export function updateDeciduousLOD(px, pz) {
     }
     lodLastPx = px; lodLastPz = pz;
 
-    const r2 = NEAR_RADIUS_DECID * NEAR_RADIUS_DECID;
+    const r2 = NEAR_RADIUS_DECID * NEAR_RADIUS_DECID, f2 = FAR_RADIUS_DECID * FAR_RADIUS_DECID;
     let farI = 0;
     for (let v = 0; v < DECID_VARIANTS; v++) {
         const b = buckets[v];
@@ -257,7 +263,7 @@ export function updateDeciduousLOD(px, pz) {
                 leaf.setMatrixAt(nearI, m);
                 leaf.instanceColor.setXYZ(nearI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
                 nearI++;
-            } else {
+            } else if (dx * dx + dz * dz <= f2) {
                 impostorMesh.setMatrixAt(farI, m);
                 impostorMesh.instanceColor.setXYZ(farI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
                 farI++;

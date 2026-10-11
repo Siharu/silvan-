@@ -214,6 +214,54 @@ function addTuft(acc, tuft, matrix, pivot, fold) {
 
 // ---- public API -------------------------------------------------------------
 let variants = null;
+const nearWood = [], nearNeedles = [];
+let impostor = null, impostorCap = 0, lodLastPx = null, lodLastPz = null;
+export const PINE_NEAR_RADIUS = 65, PINE_FAR_RADIUS = 520, PINE_LOD_HYSTERESIS = 10;
+function buildPineImpostor() {
+    const parts = [];
+    const add = (g, y, col) => { g.translate(0, y, 0); const n = g.attributes.position.count; const c = new Float32Array(n * 3); for (let i = 0; i < n; i++) c.set([col.r, col.g, col.b], i * 3); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); parts.push(g.toNonIndexed()); };
+    add(new THREE.CylinderGeometry(0.7, 1.15, 9, 5, 1), 4.5, new THREE.Color(0x3a2e22));
+    add(new THREE.ConeGeometry(6.5, 13, 7, 1), 12, new THREE.Color(1, 1, 1));
+    add(new THREE.ConeGeometry(4.5, 11, 7, 1), 19, new THREE.Color(1, 1, 1));
+    let total = 0; for (const g of parts) total += g.attributes.position.count;
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+    let o = 0; for (const g of parts) { pos.set(g.attributes.position.array, o); nor.set(g.attributes.normal.array, o); col.set(g.attributes.color.array, o); o += g.attributes.position.array.length; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return g;
+}
+
+// Re-partition every pine into near (full mesh) / far (impostor) / culled (beyond fog) around the
+// player. Cheap: one pass over the matrices, only after the player has moved PINE_LOD_HYSTERESIS.
+export function updatePineLOD(px, pz) {
+    if (!impostor) return;
+    if (lodLastPx !== null && Math.hypot(px - lodLastPx, pz - lodLastPz) < PINE_LOD_HYSTERESIS) return;
+    lodLastPx = px; lodLastPz = pz;
+    const n2 = PINE_NEAR_RADIUS * PINE_NEAR_RADIUS, f2 = PINE_FAR_RADIUS * PINE_FAR_RADIUS;
+    let farI = 0;
+    for (let v = 0; v < PINE_VARIANTS; v++) {
+        const b = buckets[v], wood = nearWood[v], ndl = nearNeedles[v];
+        if (!wood) continue;
+        let nearI = 0;
+        for (let i = 0; i < b.m.length; i++) {
+            const m = b.m[i];
+            const dx = m.elements[12] - px, dz = m.elements[14] - pz, d2 = dx * dx + dz * dz;
+            if (d2 <= n2) {
+                wood.setMatrixAt(nearI, m); ndl.setMatrixAt(nearI, m);
+                ndl.instanceColor.setXYZ(nearI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
+                nearI++;
+            } else if (d2 <= f2) {
+                impostor.setMatrixAt(farI, m);
+                impostor.instanceColor.setXYZ(farI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
+                farI++;
+            }
+        }
+        wood.count = nearI; ndl.count = nearI;
+        wood.instanceMatrix.needsUpdate = true; ndl.instanceMatrix.needsUpdate = true; ndl.instanceColor.needsUpdate = true;
+    }
+    impostor.count = farI;
+    impostor.instanceMatrix.needsUpdate = true; impostor.instanceColor.needsUpdate = true;
+}
 const buckets = [];          // per variant: { m: Matrix4[], c: number[] }
 const NEEDLE_BASE = new THREE.Color(0x3b7f5c);
 
@@ -267,10 +315,21 @@ export function finishPines() {
         // tier where shadows are actually on (medium/high; potato disables
         // shadows outright, which is why it never showed there). Needles still
         // receive shadow from the trunk/branches/terrain; they just don't cast.
-        make(variants[v].wood, woodMat, false, true);
-        make(variants[v].needles, needleMat, true, false);
+        nearWood[v] = make(variants[v].wood, woodMat, false, true);
+        nearNeedles[v] = make(variants[v].needles, needleMat, true, false);
+        nearWood[v].count = 0; nearNeedles[v].count = 0; // filled by updatePineLOD() (B-38)
         tris += b.m.length * (variants[v].wood.attributes.position.count + variants[v].needles.attributes.position.count) / 3;
     }
+    // B-38: far pines draw as one cheap shared impostor (trunk + 2 cones, ~50 tris vs ~6300).
+    impostorCap = buckets.reduce((n, b) => n + b.m.length, 0);
+    if (impostorCap > 0) {
+        const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+        impostor = new THREE.InstancedMesh(buildPineImpostor(), mat, impostorCap);
+        impostor.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(impostorCap * 3), 3);
+        impostor.count = 0; impostor.castShadow = false; impostor.receiveShadow = true; impostor.frustumCulled = false;
+        state.scene.add(impostor);
+    }
+    lodLastPx = null;
     state.pineStats = { trees: buckets.reduce((s, b) => s + b.m.length, 0), instancedTris: Math.round(tris) };
 }
 

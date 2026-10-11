@@ -1261,6 +1261,29 @@ B-37  [MINOR] [PARTLY FIXED]  Beach read as dark brown mud. The wet-to-dry-sand
   0x74613f, smeared by the 3.1u splat texels: SPLAT_RES 1024 over 3200u).
   STILL OPEN: SPLAT_RES / trail width, crater constants, overall brightness.
 
+B-38  [MAJOR] [FIXED]  Empty world: dense forest, coast-only palms, farther view.
+  a) Forest rebuilt on the existing seeded-variant systems (pine-tree.js,
+     deciduous-tree.js; the latter had been reverted earlier as "bare trees").
+     The bare-tree bug was found: deciduous-tree.js's geometry accumulator dropped
+     the UVs, so every leaf quad sampled texel (0,0) of the alpha-tested leaf
+     texture (transparent) and all leaves were discarded. Fixed.
+  b) Both tree systems now LOD around the player: full mesh within 65u, a ~50-
+     triangle impostor to 520u, nothing beyond (fog hides it). A pine is ~6300
+     tris and a deciduous ~5600, so cost now follows what is near the camera, not
+     the island size. 14,000 trees placed (4.5k pines / 9.5k deciduous), min
+     spacing 7.5u, meadows from low-frequency noise, none on beach/rock/cliffs/
+     POIs/trails/spawn. Old inline growBranch forest (3.7M scene tris) removed.
+  c) Palms (landmark-trees.js): 10 -> 60 and ONLY in the beach/dune band
+     (elevation 2.4..4.8), on the coastal ring; they used to sit inland.
+  d) Fog density 0.007 -> 0.0045 so the sea and far trees read from further away
+     (terrain draw radius is 6 chunks = 384u, fogged ~95% at the edge).
+  Headless: no errors; dense mixed woods, palms on the sand, sea visible from the
+  spawn beach. NOT verified: frame rate on a phone (near-LOD is ~65u of dense
+  forest: roughly 150 full trees on screen), real-GPU look.
+  NOTE: a save slot made before B-34 stores the old (200,0) position, which is on
+  the volcano slope; load restores that, so such a save will not see the sea.
+  A fresh slot starts on the beach.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

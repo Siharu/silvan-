@@ -453,7 +453,7 @@ const BURROW_SECONDS = 8;                        // full sink/rise duration
 const FROND_FOLDED_PITCH = 0.1;                  // ~straight up = closed bundle
 
 export function createLeaningPalms() {
-    const COUNT = 10;
+    const COUNT = 60; // B-38: coast-only now, so there are more of them
 
     // Deterministic curve (no randomness in the path itself, matching the
     // prototype) — one geometry is reused for every instance via InstancedMesh.
@@ -506,13 +506,13 @@ export function createLeaningPalms() {
     const dummy = new THREE.Object3D(), leafDummy = new THREE.Object3D();
     const colliders = [];
     let placed = 0, attempts = 0;
-    while (placed < COUNT && attempts < COUNT * 40) {
+    while (placed < COUNT && attempts < COUNT * 600) {
         attempts++;
-        const r = Math.sqrt(rand()) * (WORLD_SIZE * 0.44);
+        const r = (0.2 + 0.26 * rand()) * WORLD_SIZE; // the coastal ring only
         const th = rand() * Math.PI * 2;
         const x = Math.cos(th) * r, z = Math.sin(th) * r;
         const y = getElevation(x, z);
-        if (y < 4.0 || y > 8.0) continue;        // just above the beach line only
+        if (y < 2.4 || y > 4.8) continue;        // B-38: the beach / dune band only (palms live by the water, not inland)
         if (slopeAt(x, z) > 20) continue;
 
         dummy.position.set(x, y, z);
@@ -549,6 +549,8 @@ export function createLeaningPalms() {
         });
         placed++;
     }
+    trunkMesh.count = placed; crownMesh.count = placed; frondMesh.count = placed * FRONDS_PER_TREE; // fewer than COUNT found a spot: don't draw identity-matrix ghosts at the origin
+    console.info(`[palms] ${placed} coastal palms`);
     // Instance matrices get rewritten at runtime by updateLeaningPalms.
     trunkMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     crownMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

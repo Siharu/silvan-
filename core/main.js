@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { updatePines } from '../environment/pine-tree.js';
+import { updatePines, updatePineLOD } from '../environment/pine-tree.js';
+import { updateDeciduousLOD, updateDeciduousSway } from '../environment/deciduous-tree.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
@@ -117,7 +118,7 @@ function stallWatchdog(ms) {
 async function init(continueSave) {
     loadQuality(); // must run before createGrass() reads state.quality.bladeCount
     state.scene = new THREE.Scene();
-    state.scene.fog = new THREE.FogExp2(0x111625, 0.007);
+    state.scene.fog = new THREE.FogExp2(0x111625, 0.0045);
 
     state.globalTextures = createProceduralTextures();
 
@@ -338,6 +339,9 @@ function animate(time) {
         updateRest(delta / 1000);
     }
     updatePlayer(delta / 1000);
+    // B-38: tree LOD around the player (full mesh near, impostor far, nothing past the fog)
+    if (state.camera) { updatePineLOD(state.camera.position.x, state.camera.position.z); updateDeciduousLOD(state.camera.position.x, state.camera.position.z); }
+    updateDeciduousSway(delta / 1000);
     updateShadowFollow(); // after atmosphere: re-centres the sun's shadow rig on the player
     updateTerrainChunks(state.player.position.x, state.player.position.z);
     updateLake(state.player.position.x, state.player.position.z);
