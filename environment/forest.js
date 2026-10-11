@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { state, WORLD_SIZE, TREE_COUNT } from '../core/state.js';
+import { getSpawn } from '../core/spawn.js';
 import { noise } from '../core/utils.js';
 import { heightAt as getElevation, slopeAt } from '../core/heightmap.js';
 import { POIS } from './pois.js';
@@ -51,8 +52,12 @@ export function generateFractalForest() {
     // Placement: area-uniform sampling (the old uniform-radius draw crowded the mountain and thinned
     // the coast), a low-frequency density field for groves and clearings, and a minimum spacing via
     // a hash grid so trees never stack on each other (audit 6.3). Stops at the old surviving count.
-    const TARGET_TREES = Math.round(TREE_COUNT * 0.55);
-    const CELL = 7, MIN_DIST = 6.5, grid = new Map();
+    // B-35: was TREE_COUNT*0.55 = ~340 trees over a 3200u world (sparse, empty). Now ~590,
+    // packed into groves and weighted toward the player's side of the island (the
+    // whole-scene triangle budget was ~2.5M at ~340 trees, so this is a deliberate +70%, not 5x).
+    const TARGET_TREES = Math.round(TREE_COUNT * 0.95);
+    const SP = getSpawn();
+    const CELL = 7, MIN_DIST = 5.5, grid = new Map();
     const tooClose = (x, z) => {
         const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
         for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
@@ -63,7 +68,7 @@ export function generateFractalForest() {
     };
     let placedTrees = 0;
     const R0 = 25, R1 = WORLD_SIZE / 2 - 50;
-    for (let i = 0; i < TREE_COUNT * 8 && placedTrees < TARGET_TREES; i++) {
+    for (let i = 0; i < TREE_COUNT * 60 && placedTrees < TARGET_TREES; i++) {
         const r = Math.sqrt(R0 * R0 + rand() * (R1 * R1 - R0 * R0));
         const theta = rand() * Math.PI * 2;
         const x = Math.cos(theta) * r;
@@ -79,7 +84,9 @@ export function generateFractalForest() {
         if (GRAND_BLUE_SPOTS.some((g) => Math.hypot(x - g.x, z - g.z) < GRAND_BLUE_CLEAR_R * g.scale)) continue; // roots + shade of the landmark trees
         // groves and clearings: ~half the land is thin or open, the rest is forest
         const dens = noise(x * 0.011 + 13.7, z * 0.011 - 5.3);
-        if (rand() > THREE.MathUtils.smoothstep(dens, 0.32, 0.62) * 0.92 + 0.04) continue;
+        // tighter groves (thin 0.30 -> full 0.48) and a bias toward the spawn/cabin side
+        const near = 1 - THREE.MathUtils.smoothstep(Math.hypot(x - SP.x, z - SP.z), 250, 1100);
+        if (rand() > (THREE.MathUtils.smoothstep(dens, 0.30, 0.48) * 0.96 + 0.02) * (0.3 + 0.7 * near)) continue;
         if (tooClose(x, z)) continue;
         const key = Math.floor(x / CELL) + ',' + Math.floor(z / CELL);
         if (!grid.has(key)) grid.set(key, []);

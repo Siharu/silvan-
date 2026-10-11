@@ -16,7 +16,7 @@ export function createSky() {
             varying vec3 vWorldPosition;
             void main() {
                 vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
-                vWorldPosition = worldPosition.xyz;
+                vWorldPosition = position; // B-35: LOCAL direction, the dome now follows the camera (was world pos: black sky 1200u from origin)
                 gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
             }
         `,
@@ -34,7 +34,8 @@ export function createSky() {
         side: THREE.BackSide,
         depthWrite: false
     });
-    state.scene.add(new THREE.Mesh(skyGeo, state.skyMat));
+    state.skyMesh = new THREE.Mesh(skyGeo, state.skyMat);
+    state.scene.add(state.skyMesh);
 
     const cloudGeo = new THREE.SphereGeometry(1100, 64, 32);
     state.cloudMat = new THREE.ShaderMaterial({
@@ -67,7 +68,7 @@ export function createSky() {
             varying vec3 vWorldPosition;
             void main() {
                 vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-                vWorldPosition = worldPosition.xyz;
+                vWorldPosition = position; // B-35: LOCAL direction, the dome now follows the camera (was world pos: black sky 1200u from origin)
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
             }
         `,

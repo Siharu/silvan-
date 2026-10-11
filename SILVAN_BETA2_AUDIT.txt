@@ -1217,6 +1217,26 @@ B-34  [MAJOR] [FIXED]  Player spawned on the volcano after the 4x world scale-up
   far from shore; crater constants (grass/splat/forest/terrain magma) assume
   the 800 world; SPLAT_RES 1024 = 3.1u/texel so 3.2u trails are sub-texel.
 
+B-35  [MAJOR] [FIXED]  After the 4x scale-up: black sky, no visible ocean, empty
+  world (found by a headless run with rain/sea forced on via ?debug=1).
+  a) Sky dome (r=1200), clouds, stars, moon sprite and the sun/moon shadow
+     frustum were all fixed at the world origin; the spawn is ~1200u out, so
+     the player stood at the dome edge: black sky, no sun shadows. They now
+     follow the camera (day-night-cycle.js); sky/cloud shaders use the local
+     direction, not world position.
+  b) The island height curve is normalised by WORLD_SIZE, so the 4x world made
+     the shore ~4x gentler: a flat shelf hundreds of units wide, water far
+     off. elevation-core.js now multiplies the slope through the shoreline
+     band (x4 above water, x8 below, fading out by height 5): water is ~20u
+     from the spawn beach.
+  c) Water plane had 14.6u vertices; the narrower shore made per-vertex depth
+     interpolation paint a pale foam blob. 48 -> 176 segments.
+  d) Trees: ~340 over a 3200u world. Now ~590, tighter groves, weighted toward
+     the spawn/cabin side. Scene triangles 2.46M -> 3.70M (+50%): unmeasured
+     on a real phone GPU. Rain itself worked; it was simply rolling clear.
+  NOT verified: frame rate on a phone, how rain/sea look on the real GPU,
+  the ground colour at the beach (dark brown in headless, not obviously sand).
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

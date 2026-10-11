@@ -173,9 +173,11 @@ async function init(continueSave) {
     state.sunLight.shadow.normalBias = 0.6;
     state.sunLight.shadow.bias = -0.0002;
     state.scene.add(state.sunLight);
+    state.scene.add(state.sunLight.target); // B-35: target follows the camera (day-night-cycle.js)
 
     state.moonLight = new THREE.DirectionalLight(0x7799ff, 0.3);
     state.scene.add(state.moonLight);
+    state.scene.add(state.moonLight.target);
 
     setLoadingProgress(5, 'waking the sky');
     createSky();

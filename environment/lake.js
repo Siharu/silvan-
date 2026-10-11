@@ -12,7 +12,7 @@ import { heightAt as getElevation } from '../core/heightmap.js';
 // regardless of world size — same "cost independent of world size"
 // principle 4.3's terrain chunks already established.
 const PLANE_SIZE = 700;      // covers the ~380u fog/draw radius from any recenter position with margin
-const SEGMENTS = 48;         // unchanged from the old fixed plane — wave displacement is low-frequency, doesn't need more
+const SEGMENTS = 176;        // B-35: was 48 (14.6u per vertex); the steeper coast is narrower than that, so per-vertex depth interpolation painted a pale foam blob over the shore. 4u per vertex now.
 const RECENTER_DIST = 48;    // re-centre once the player's drifted this far from the last snap point
 const SNAP = 16;             // snap the new centre to a grid so the recentre itself is imperceptible, not just "close enough"
 

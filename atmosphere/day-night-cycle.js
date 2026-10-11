@@ -176,6 +176,22 @@ export function updateAtmosphere(delta) {
         wU.uSkyColor.value.copy(topC);
     }
 
+    // B-35: sky dome, clouds, stars, moon and the sun/moon shadow frustum were
+    // all fixed at the world origin; after the 4x scale-up the spawn is ~1200u
+    // out, right at the dome edge (black sky, no sun shadows). Follow the camera
+    // (x/z only). Done AFTER the water-glint directions above are read.
+    {
+        const cx = state.camera.position.x, cz = state.camera.position.z;
+        if (state.skyMesh) state.skyMesh.position.set(cx, 0, cz);
+        if (state.cloudMesh) state.cloudMesh.position.set(cx, 0, cz);
+        if (state.starMesh) state.starMesh.position.set(cx, 0, cz);
+        if (state.moonSprite) { state.moonSprite.position.x += cx; state.moonSprite.position.z += cz; }
+        for (const L of [state.sunLight, state.moonLight]) {
+            L.position.x += cx; L.position.z += cz;
+            L.target.position.set(cx, 0, cz); L.target.updateMatrixWorld();
+        }
+    }
+
     // Update puddle shader uniforms and opacity based on rain intensity
     if (state.puddleMaterial && state.puddleMaterial.userData && state.puddleMaterial.userData.shader) {
         state.puddleMaterial.userData.shader.uniforms.uTime.value = ts;

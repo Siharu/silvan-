@@ -92,7 +92,7 @@ export const state = {
     dustMesh: null, dustMat: null, starMesh: null, starMat: null,
     grassMesh: null, grassMat: null,
     grassMidMesh: null, grassMidMat: null, // mid-ring crossed-card tufts (audit 5.2)
-    moonSprite: null, cloudMesh: null, cloudMat: null,
+    moonSprite: null, skyMesh: null, cloudMesh: null, cloudMat: null,
     puddleMesh: null, puddleMaterial: null,
     algaeMesh: null, // shoreline algae clumps — environment/algae.js, static (no per-frame update needed)
     waterMesh: null, waterMaterial: null,

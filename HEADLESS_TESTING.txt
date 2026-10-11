@@ -65,7 +65,11 @@ GOTCHAS (each one cost time already)
 7. Console errors named ERR_TUNNEL_CONNECTION_FAILED are Google Fonts being
    blocked by the sandbox. Ignore them. The page then uses fallback fonts,
    so text widths in screenshots differ slightly from a real phone.
-8. The shared game state is not on window, so you can't read the player
+8. With ?debug=1 the state IS on window.silvanDebug.state (position, rain,
+   gameTime, camera, waterMesh, scene...). tools/e2e/live-views.mjs uses it to
+   force sea/inland views and rain, and to count scene triangles.
+   (Older note: the shared game state is not on window without ?debug=1)
+   The shared game state is not on window, so you can't read the player
    position or the dog's state directly. To test those, add a temporary
    debug hook (e.g. window.__state = state in main.js), test, then REMOVE it.
 9. A class or style change you want to time (like the touch-controls "idle"

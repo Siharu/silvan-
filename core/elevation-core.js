@@ -121,6 +121,21 @@ function rawElevation(x, z) {
         elevation += n2(x * OCT_DUNE, z * OCT_DUNE) * 0.4;
     }
 
+    // B-35: coast steepener. The island's height curve is a function of
+    // dist = r / (WORLD_SIZE*0.45), so the 4x scale-up stretched the shore 4x
+    // horizontally: a flat shelf hundreds of units wide just above/below the
+    // waterline (brown mud to the horizon, ocean far away, no grass near the
+    // sea). Multiply the slope through the shoreline band: heights around the
+    // waterline (WATER_LINE) are pushed away from it by COAST_K, fading out
+    // by ~5 so inland terrain keeps its shape.
+    const WATER_LINE = 1.6, COAST_K = 4.0;
+    if (elevation < 5.0) {
+        // below the waterline drop twice as hard again, so the seabed doesn't leave a
+        // pale knee-deep sandbar (shallow-water colour + foam) off the beach
+        const k = elevation < WATER_LINE ? COAST_K * 2 : COAST_K;
+        elevation += (k - 1) * (elevation - WATER_LINE) * (1 - smoothstep(elevation, 2.5, 5.0));
+    }
+
     return Math.max(-5, elevation);
 }
 
