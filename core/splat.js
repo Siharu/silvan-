@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { WORLD_SIZE } from './state.js';
 import { noise } from './utils.js';
 import { heightAt, slopeAt } from './heightmap.js';
+import { getSpawn } from './spawn.js';
 
 export const SPLAT_RES = 1024;                 // 1 texel = 1 world unit at WORLD_SIZE 1024
 const HALF = WORLD_SIZE / 2;
@@ -22,8 +23,7 @@ export function isSplatReady() { return data !== null; }
 const sstep = THREE.MathUtils.smoothstep;
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
-// Trail graph, by POI id. 'spawn' is the player start (200, 0).
-const SPAWN = { id: 'spawn', x: 200, z: 0 };
+// Trail graph, by POI id. 'spawn' is the player start (core/spawn.js).
 const TRAIL_EDGES = [
     ['spawn', 'chrysalis'], ['spawn', 'radio_tower'], ['spawn', 'ruined_cabin'],
     ['radio_tower', 'chrysalis'],
@@ -71,7 +71,7 @@ function stampSegment(path, p, q, halfW, feather) {
 }
 
 export async function bakeSplat(pois, onProgress) {
-    const byId = { spawn: SPAWN };
+    const byId = { spawn: { id: 'spawn', ...getSpawn() } };
     for (const p of pois) byId[p.id] = p;
 
     // 1. Path layer: trails + a dirt pad under each built POI.

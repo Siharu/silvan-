@@ -22,6 +22,7 @@ import { updatePlayer } from './player-controller.js';
 import { updateRest } from './rest.js';
 import { bakeHeightmap, heightAt } from './heightmap.js';
 import { bakeSplat } from './splat.js';
+import { initSpawn } from './spawn.js';
 import { applyQuality, noteGrassBuilt, updateShadowFollow, updateAdaptiveRes } from './render-quality.js';
 import { setupViewport } from './viewport.js';
 import { initDebug, debugFrame } from './debug.js';
@@ -180,17 +181,21 @@ async function init(continueSave) {
     createSky();
     await nextFrame();
 
+    // B-34: spawn derived from the cabin's beach, before anything that uses it
+    const cabinForSpawn = POIS.find((p) => p.id === 'ruined_cabin');
+    const SP = cabinForSpawn ? initSpawn(cabinForSpawn.x, cabinForSpawn.z) : initSpawn(1, 0);
+
     setLoadingProgress(8, 'measuring the ground');
     await bakeHeightmap((f) => setLoadingProgress(8 + f * 8, 'measuring the ground'));
     await bakeSplat(POIS, (f) => setLoadingProgress(16 + f * 4, 'marking the trails'));
 
     setLoadingProgress(20, 'raising the hearth');
-    createTerrainChunks(200, 0);
+    createTerrainChunks(SP.x, SP.z);
     await nextFrame();
 
     setLoadingProgress(35, 'filling the shallows');
     createLake();
-    updateLake(200, 0); // ocean ring (B-20): centre on the known spawn point, same reasoning as createTerrainChunks(200,0) above
+    updateLake(SP.x, SP.z); // ocean ring (B-20): centre on the known spawn point, same reasoning as createTerrainChunks(200,0) above
     await nextFrame();
 
     setLoadingProgress(55, 'growing the undergrowth');
@@ -228,18 +233,18 @@ async function init(continueSave) {
     // picked up by the existing build loop and the existing
     // updatePOIInteraction() prompt/caption system for free — see
     // scene-shore.js's header comment for why this reuses pois.js instead
-    // of a second system. (200, 0) matches the player spawn set below.
-    POIS.push(...createShoreNarrativeProps(200, 0));
+    // of a second system. SP (core/spawn.js) matches the player spawn set below.
+    POIS.push(...createShoreNarrativeProps(SP.x, SP.z));
     await createPOIs(); // async: broken_shell.glb loads over the network
     createSerpentsCoilEvent(); // after POIS exists — reads the serpents_coil entry's (x,z) for placement
     await nextFrame();
 
     applyQuality(state.qualityKey); // tier: pixel ratio, shadows, bloom, particle budgets
 
-    // (200, 0) sits on stable lowland well clear of the central crater/peak
-    // and the surrounding ocean — world origin (0,0) is now partway up
-    // The Serpent's Coil massif under the island terrain.
-    state.player.position.set(200, heightAt(200, 0) + state.player.height, 0);
+    // Spawn = the beach below the Ruined Cabin, facing inland (core/spawn.js, B-34).
+    state.player.position.set(SP.x, heightAt(SP.x, SP.z) + state.player.height, SP.z);
+    state.player.rotation.y = SP.yaw;
+    if (state.camera) state.camera.quaternion.setFromEuler(state.player.rotation);
 
     // First Dog (Act I Scene 1-2, environment/npc-dog.js) — spawns near the
     // shore wake-up point, leads toward the Ruined Cabin POI's own
@@ -247,7 +252,7 @@ async function init(continueSave) {
     // repositioned.
     {
         const cabinPOI = POIS.find((p) => p.id === 'ruined_cabin');
-        if (cabinPOI) initShoreDog(200, 0, cabinPOI.x, cabinPOI.z);
+        if (cabinPOI) initShoreDog(SP.x, SP.z, cabinPOI.x, cabinPOI.z);
     }
 
     // B-18: Regain overrides the fresh-game spawn above, not the other way

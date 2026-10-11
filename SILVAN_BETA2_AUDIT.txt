@@ -1203,6 +1203,20 @@ B-33  [MINOR] [FIXED]  Tutorial card too big on phones and covered by the
   wide with smaller type, placed below the plaque (portrait) or beside it
   (landscape).
 
+B-34  [MAJOR] [FIXED]  Player spawned on the volcano after the 4x world scale-up.
+  Spawn was hard-coded (200, 0), lowland at WORLD_SIZE 800. At 3200 the
+  island is 4x wider but the height profile is unchanged, so (200, 0) is at
+  elevation ~65 (grass stops at 36, water is 1.6): bare rock, no grass. This
+  was first misdiagnosed as the grass shore-fade; that was wrong. Fix:
+  core/spawn.js derives the spawn from the Ruined Cabin, walking seaward to
+  the beach (1 unit above water) and facing inland. main.js, splat trail
+  graph, ocean ring, shore props and dog all use it. Tested headless: loads,
+  no errors, no UI overlap. NOT verified: how the ground colour looks on a
+  real phone (the headless shot shows dark brown, not obviously sand).
+  STILL OPEN from the scale-up: coast strip is ~250-500u wide so grass fades
+  far from shore; crater constants (grass/splat/forest/terrain magma) assume
+  the 800 world; SPLAT_RES 1024 = 3.1u/texel so 3.2u trails are sub-texel.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------
