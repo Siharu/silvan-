@@ -1299,6 +1299,30 @@ B-39  [MINOR] [ADDED, branch Version-0.0.05]  "World feels empty": ambient life 
   Not built yet (from the research): glowing/lit far landmarks, terrain that
   hides and reveals points of interest, animals on the ground, wind in the trees.
 
+B-40  [MAJOR] [FIXED, branch Version-0.0.05]  "Trees not visible, too sharp/rough, soil weird."
+  Headless screenshots showed: near trees as black silhouettes, faceted ground,
+  jagged edges, and sand-coloured "soil" all the way up the island.
+  a) Canopy lighting: leaf quads had random normals and are double-sided, so
+     faces turned from the sun rendered black. Now AGGREGATE NORMALS (Peterson &
+     Lee; the stylised-foliage trick used by BotW/Genshin-style canopies): each
+     leaf's normal is 85% "away from the crown centre, slightly up", so a crown
+     shades as one soft sphere. Leaf base 0x244a1f -> 0x3f7a2c, trunk 0x28201a ->
+     0x4b3b2d.
+  b) Terrain flatShading true -> false (every triangle was a visible facet).
+  c) FXAA pass after the output pass on ALL tiers (MSAA only exists on
+     medium/high and does nothing for alpha-tested leaves and grass blades).
+  d) Hemisphere ambient 0.55 -> 0.85 with a warmer ground colour: shadows were
+     crushed to black by ACES tone mapping.
+  e) Soil: bare ground above the beach is now dark forest loam with large soft
+     colour drift + pebble speckle, instead of dry sand continuing up the hill.
+  f) SPLAT_RES 1024 -> 2048 (3.1u -> 1.56u per texel): the 3.2u trails were
+     narrower than a texel and rendered as a wide smear. Bake cost is ~4x on that
+     step: NOT measured on a phone; if the loading screen got noticeably longer,
+     lower it to 1536.
+  Headless: trees are leafy green with soft shading, ground is smooth, no
+  errors. NOT verified: real GPU look, load time on a phone, FXAA softness vs.
+  the "sharp" feeling you described (it may now be slightly softer; tell me).
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

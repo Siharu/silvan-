@@ -84,7 +84,7 @@ export function generateFractalForest() {
             pines++;
         } else {
             // DECIDUOUS / MAPLE (6 seeded variants); autumn tint in the maple biome
-            _leaf.setHex(0x244a1f);
+            _leaf.setHex(0x3f7a2c); // B-40: was 0x244a1f (near-black green once lit)
             if (biomeVal > 0.68) {
                 const autumn = [0x992211, 0xaa4411, 0xbb8811, 0xcc3311];
                 _leaf.setHex(autumn[Math.floor(rand() * autumn.length)]);

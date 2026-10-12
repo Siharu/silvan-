@@ -77,7 +77,7 @@ function addGeo(acc, geo, matrix, color) {
     else for (let i = 0; i < pos.count; i++) emit(i);
 }
 
-const baseTrunkColor = new THREE.Color(0x28201a);
+const baseTrunkColor = new THREE.Color(0x4b3b2d); // B-40: was 0x28201a, trunks read as black
 
 function buildVariant(seed) {
     const rand = mulberry32(seed);
@@ -115,6 +115,26 @@ function buildVariant(seed) {
         }
     }
     growBranch(new THREE.Matrix4(), 0, BASE_LEN, BASE_RAD);
+    // B-40: AGGREGATE NORMALS (Peterson & Lee, "Simplified tree lighting using aggregate normals"; the
+    // stylised-foliage trick behind BotW/Genshin canopies). A single leaf quad's own normal points in a random
+    // direction, and double-sided quads facing away from the sun render black: the canopy looked like black
+    // confetti. Blend each leaf's normal 85% toward "away from the canopy centre" (+ a little up) so the whole
+    // crown shades as one soft sphere: lit on the sun side, gently darker underneath, never black.
+    {
+        const P = leaves.p, N = leaves.n;
+        let cx = 0, cy = 0, cz = 0; const n = P.length / 3;
+        for (let i = 0; i < P.length; i += 3) { cx += P[i]; cy += P[i + 1]; cz += P[i + 2]; }
+        cx /= n; cy /= n; cz /= n;
+        for (let i = 0; i < P.length; i += 3) {
+            let ax = P[i] - cx, ay = P[i + 1] - cy + 1.5, az = P[i + 2] - cz;
+            const l = Math.hypot(ax, ay, az) || 1; ax /= l; ay /= l; az /= l;
+            let nx = N[i], ny = N[i + 1], nz = N[i + 2];
+            if (nx * ax + ny * ay + nz * az < 0) { nx = -nx; ny = -ny; nz = -nz; }
+            const mx = ax * 0.85 + nx * 0.15, my = ay * 0.85 + ny * 0.15, mz = az * 0.85 + nz * 0.15;
+            const ml = Math.hypot(mx, my, mz) || 1;
+            N[i] = mx / ml; N[i + 1] = my / ml; N[i + 2] = mz / ml;
+        }
+    }
     return { wood: wood.build(), leaves: leaves.build() };
 }
 

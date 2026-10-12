@@ -8,6 +8,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { updatePines, updatePineLOD } from '../environment/pine-tree.js';
 import { updateDeciduousLOD, updateDeciduousSway } from '../environment/deciduous-tree.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 // Reflector removed — real-time mirror reflections were the source of the star-blob
 // and grazing-angle stripe artifacts. Water now fakes its reflectivity via fresnel
 // + sky tint + a sun/moon glint in the shader below instead.
@@ -152,10 +154,14 @@ async function init(continueSave) {
     state.composer = new EffectComposer(state.renderer, _rt);
     state.composer.addPass(renderScene);
     state.composer.addPass(state.bloomPass);
-    state.composer.addPass(new OutputPass()); // B-01: tone mapping + sRGB happen here, LAST
+    state.composer.addPass(new OutputPass()); // B-01: tone mapping + sRGB happen here
+    // B-40: FXAA after the output pass (it wants display-referred colour). MSAA only exists on the medium/high tiers and
+    // does nothing for alpha-tested leaves/grass blades, so every tier looked jagged and "too sharp"; FXAA is ~free and covers all of it.
+    state.fxaaPass = new ShaderPass(FXAAShader);
+    state.composer.addPass(state.fxaaPass);
 
     // Ambient retuned after OutputPass (B-01) — the old 1.15 compensated for missing output stage
-    const hemiLight = new THREE.HemisphereLight(0x94a3c2, 0x223318, 0.55);
+    const hemiLight = new THREE.HemisphereLight(0xa9b8d4, 0x3a3a22, 0.85);
     state.scene.add(hemiLight);
     state.hemiLight = hemiLight;
 
@@ -320,6 +326,7 @@ async function startGame(continueSave = false) {
     if (shouldShowTouchControls()) showGameplayUI();
 }
 
+const _fxSize = new THREE.Vector2();
 function animate(time) {
     requestAnimationFrame(animate);
     const delta = Math.min(time - state.lastTime, 100); state.lastTime = time;
@@ -342,6 +349,7 @@ function animate(time) {
         updateTutorial(delta / 1000);
         updateRest(delta / 1000);
     }
+    if (state.fxaaPass && state.renderer) { const sz = state.renderer.getDrawingBufferSize(_fxSize); state.fxaaPass.material.uniforms.resolution.value.set(1 / sz.x, 1 / sz.y); }
     updatePlayer(delta / 1000);
     // B-38: tree LOD around the player (full mesh near, impostor far, nothing past the fog)
     if (state.camera) { updatePineLOD(state.camera.position.x, state.camera.position.z); updateDeciduousLOD(state.camera.position.x, state.camera.position.z); }

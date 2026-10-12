@@ -10,7 +10,7 @@ import { noise } from './utils.js';
 import { heightAt, slopeAt } from './heightmap.js';
 import { getSpawn } from './spawn.js';
 
-export const SPLAT_RES = 1024;                 // 1 texel = 1 world unit at WORLD_SIZE 1024
+export const SPLAT_RES = 2048;                 // B-40: was 1024 = 3.1u/texel at WORLD_SIZE 3200, wider than the 3.2u trails (blurred into a huge brown smear). 1.56u/texel now.
 const HALF = WORLD_SIZE / 2;
 const STEP = WORLD_SIZE / SPLAT_RES;
 export const CRATER = { x: 0, z: -12 };        // matches getElevation()'s pit centre

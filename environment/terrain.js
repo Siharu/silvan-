@@ -33,6 +33,8 @@ const PALETTE = {
     oceanBed:   0x1b2a33,
     wetSand:    0x5b5240,
     drySand:    0xa89c76,
+    loamA:      0x46372a,   // B-40: inland bare ground = dark forest loam, not beach sand
+    loamB:      0x5c4a35,
     grassA:     0x3f5f2c,
     grassB:     0x59703a,
     rockA:      0x5d5f60,
@@ -57,7 +59,7 @@ const FRAG_PARS = `
     uniform float uWorld;
     uniform vec2 uCrater;
     uniform float uTime;
-    uniform vec3 uCOcean, uCWet, uCSand, uCGrassA, uCGrassB, uCRockA, uCRockB, uCSlate, uCPeak, uCAsh, uCPath, uCMagma;
+    uniform vec3 uCOcean, uCWet, uCSand, uCLoamA, uCLoamB, uCGrassA, uCGrassB, uCRockA, uCRockB, uCSlate, uCPeak, uCAsh, uCPath, uCMagma;
     varying vec3 vWPos;
     float tHash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
     float tNoise(vec2 p) {
@@ -82,6 +84,11 @@ const FRAG_COLOR = `
         // base ground by height: seabed -> wet sand -> dry sand
         vec3 col = mix(uCOcean, uCWet, smoothstep(-0.6, 1.4, h));
         col = mix(col, uCSand, smoothstep(1.7, 3.2, h)); // B-37: was 1.6..4.4, authored for the gentle pre-steepener coast; the beach is now narrow so it must turn sand-coloured sooner
+        // B-40: above the beach the bare ground is loam (leaf litter / soil) with large soft colour drift + fine pebble speckle,
+        // instead of continuing as dry sand all the way up the island (the "weird soil").
+        vec3 loam = mix(uCLoamA, uCLoamB, smoothstep(0.25, 0.75, nMacro + nMid * 0.5 - 0.15));
+        loam *= 0.9 + 0.2 * tNoise(vWPos.xz * 2.3);
+        col = mix(col, loam, smoothstep(3.4, 5.6, h));
         col *= 1.0 + grain * 0.22;
 
         // grass ground colour (the "ground-colour trick": blades only add parallax on top)
@@ -187,7 +194,7 @@ function buildMaterial() {
     const mat = new THREE.MeshStandardMaterial({
         roughness: 0.92,
         metalness: 0.0,
-        flatShading: true,
+        flatShading: false, // B-40: was true: every triangle of the ground read as a hard facet ("rough / too sharp")
         side: THREE.DoubleSide, // skirts' winding isn't hand-verified; DoubleSide guarantees they never vanish from one angle
     });
     mat.onBeforeCompile = (shader) => {
@@ -199,6 +206,8 @@ function buildMaterial() {
         shader.uniforms.uCOcean = c(PALETTE.oceanBed);
         shader.uniforms.uCWet = c(PALETTE.wetSand);
         shader.uniforms.uCSand = c(PALETTE.drySand);
+        shader.uniforms.uCLoamA = c(PALETTE.loamA);
+        shader.uniforms.uCLoamB = c(PALETTE.loamB);
         shader.uniforms.uCGrassA = c(PALETTE.grassA);
         shader.uniforms.uCGrassB = c(PALETTE.grassB);
         shader.uniforms.uCRockA = c(PALETTE.rockA);
