@@ -1323,6 +1323,26 @@ B-40  [MAJOR] [FIXED, branch Version-0.0.05]  "Trees not visible, too sharp/roug
   errors. NOT verified: real GPU look, load time on a phone, FXAA softness vs.
   the "sharp" feeling you described (it may now be slightly softer; tell me).
 
+B-41  [MINOR] [FIXED, branch Version-0.0.05]  "Pine in the back looks weird; HUD boxes too big; interact box plain."
+  a) Far pines (beyond PINE_NEAR_RADIUS 65) draw as a shared impostor. It was two
+     smooth cones in flat bright green, so it looked cartoonish beside the ragged
+     full-detail pines. Now five stacked tiers with ragged skirts and a dark-base
+     to light-tip vertex ramp (environment/pine-tree.js buildPineImpostor), ~100
+     tris instead of ~50. Still one instanced draw call for all far pines.
+  b) HUD plaque, hints and objective were fixed rem sizes (2.1rem clock at a 20px
+     root) and the .touch-active font-size shrink never reached them (children
+     used rem, not em). Now clamp()/vmin sizing, thinner border, max 48vw. The
+     old .touch-active / tablet / compact-h overrides on .hud-layer were removed
+     so they no longer fight it. Measured plaque on 780x360, 412x780, 360x640:
+     97x69px each (was roughly 250x135 in the 1100x520 screenshot).
+  c) Interact prompt (the centre "A Familiar Cloth" box): translucent water-glass
+     pane (tinted gradient, 6px backdrop blur, rim light, slow caustic shimmer,
+     soft fade-in). Smaller text. Respects prefers-reduced-motion.
+  Headless (software GL, real fonts): no errors, no overflow at 412x780,
+  360x640, 780x360, HUD does not overlap joystick/buttons. NOT verified: how the
+  backdrop blur performs on a real phone GPU (if the prompt causes a frame dip,
+  drop backdrop-filter and keep the gradient), real-GPU look of the new impostor.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

@@ -217,12 +217,41 @@ let variants = null;
 const nearWood = [], nearNeedles = [];
 let impostor = null, impostorCap = 0, lodLastPx = null, lodLastPz = null;
 export const PINE_NEAR_RADIUS = 65, PINE_FAR_RADIUS = 520, PINE_LOD_HYSTERESIS = 10;
+// B-41: the far impostor was two perfectly smooth, evenly lit cones in a flat bright green,
+// which read as a cartoon tree next to the ragged full-detail pines. Now five stacked, slightly
+// ragged tiers with a dark-base -> lighter-tip vertex ramp (same idea as the tuft AO ramp in
+// makeTuft) so it matches the real pine's tone and broken silhouette at distance.
 function buildPineImpostor() {
     const parts = [];
-    const add = (g, y, col) => { g.translate(0, y, 0); const n = g.attributes.position.count; const c = new Float32Array(n * 3); for (let i = 0; i < n; i++) c.set([col.r, col.g, col.b], i * 3); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); parts.push(g.toNonIndexed()); };
-    add(new THREE.CylinderGeometry(0.7, 1.15, 9, 5, 1), 4.5, new THREE.Color(0x3a2e22));
-    add(new THREE.ConeGeometry(6.5, 13, 7, 1), 12, new THREE.Color(1, 1, 1));
-    add(new THREE.ConeGeometry(4.5, 11, 7, 1), 19, new THREE.Color(1, 1, 1));
+    const rand = mulberry32(0x7e11);
+    const trunkCol = new THREE.Color(0x3a2e22);
+    {
+        const g = new THREE.CylinderGeometry(0.7, 1.15, 9, 5, 1);
+        g.translate(0, 4.5, 0);
+        const n = g.attributes.position.count; const c = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) c.set([trunkCol.r, trunkCol.g, trunkCol.b], i * 3);
+        g.setAttribute('color', new THREE.BufferAttribute(c, 3)); parts.push(g.toNonIndexed());
+    }
+    // [base radius, height, centre y] — wide drooping skirts at the bottom, narrow tip on top
+    const TIERS = [[6.8, 7.5, 9.8], [5.8, 7.2, 13.2], [4.8, 6.8, 16.4], [3.7, 6.2, 19.3], [2.5, 5.6, 22.0]];
+    for (const [r, h, y] of TIERS) {
+        const g = new THREE.ConeGeometry(r, h, 8, 1);
+        const pa = g.attributes.position;
+        for (let i = 0; i < pa.count; i++) {
+            const py = pa.getY(i);
+            if (py < 0) {                                   // ragged skirt: wobble the base ring only (apex stays put)
+                const k = 1 + (rand() - 0.5) * 0.28;
+                pa.setX(i, pa.getX(i) * k); pa.setZ(i, pa.getZ(i) * k);
+                pa.setY(i, py + (rand() - 0.5) * 0.9);
+            }
+        }
+        g.computeVertexNormals();
+        const n = pa.count; const c = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { const t = (pa.getY(i) + h / 2) / h; const v = 0.5 + 0.5 * t; c.set([v, v, v], i * 3); }   // 0.5 at the skirt, 1.0 at the tip
+        g.translate(0, y, 0);
+        g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+        parts.push(g.toNonIndexed());
+    }
     let total = 0; for (const g of parts) total += g.attributes.position.count;
     const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
     let o = 0; for (const g of parts) { pos.set(g.attributes.position.array, o); nor.set(g.attributes.normal.array, o); col.set(g.attributes.color.array, o); o += g.attributes.position.array.length; }

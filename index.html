@@ -88,46 +88,51 @@
             backdrop-filter: blur(12px);
             transition: opacity 1.5s ease;
         }
+        /* B-41: HUD boxes were fixed rem sizes (2.1rem clock etc. at a 20px root), so they
+           stayed huge on small/landscape screens — and the .touch-active font-size
+           shrink never reached them because every child used rem, not em. Sizes now
+           scale with the smaller viewport side (vmin) between a floor and a cap. */
         .hud-layer {
             position: absolute;
-            top: 1.6rem;
-            left: 1.6rem;
+            top: clamp(0.5rem, 2.4vmin, 1.1rem);
+            left: clamp(0.5rem, 2.4vmin, 1.1rem);
             z-index: 10;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 0.9rem;
+            gap: clamp(0.3rem, 1.4vmin, 0.6rem);
             transition: opacity 0.5s ease;
             font-family: var(--font-body);
         }
         .hud-plaque {
             background: var(--ink);
             color: var(--ash);
-            padding: 0.45rem 0.9rem 0.5rem;
-            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
-                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
-                        0 0 0 6px rgba(0,0,0,0.45);
-            min-width: 8.2rem;
+            padding: clamp(0.2rem, 0.9vmin, 0.35rem) clamp(0.4rem, 1.7vmin, 0.65rem) clamp(0.22rem, 1vmin, 0.4rem);
+            box-shadow: 0 -2px 0 0 var(--bark-edge), 0 2px 0 0 var(--bark-edge),
+                        -2px 0 0 0 var(--bark-edge), 2px 0 0 0 var(--bark-edge),
+                        0 0 0 4px rgba(0,0,0,0.4);
+            min-width: clamp(4.6rem, 20vmin, 6.2rem);
+            max-width: 48vw;
         }
         .hud-day {
             font-family: var(--font-display);
-            font-size: 0.8rem;
+            font-size: clamp(0.5rem, 1.9vmin, 0.65rem);
             color: var(--ember);
             letter-spacing: 0.04em;
         }
         .hud-time {
-            font-size: 2.1rem;
+            font-size: clamp(1.05rem, 4.6vmin, 1.5rem);
             line-height: 0.95;
-            margin: 0.1rem 0 0.25rem;
+            margin: 0.08rem 0 0.15rem;
         }
         .hud-weather {
             display: flex;
             align-items: center;
-            gap: 0.45rem;
-            font-size: 1.15rem;
+            gap: 0.35rem;
+            font-size: clamp(0.7rem, 2.6vmin, 0.9rem);
             color: var(--ash-dim);
         }
-        .hud-weather svg { width: 16px; height: 16px; shape-rendering: crispEdges; display: none; }
+        .hud-weather svg { width: 0.85em; height: 0.85em; shape-rendering: crispEdges; display: none; }
         .hud-weather[data-weather="clear"] .wi-sun,
         .hud-weather[data-weather="clear-night"] .wi-moon,
         .hud-weather[data-weather="light"] .wi-rain,
@@ -151,17 +156,17 @@
             border-top: 1px solid rgba(230, 220, 198, 0.18);
             font-family: var(--font-body);
             font-style: italic;
-            font-size: 1rem;
+            font-size: clamp(0.72rem, 2.4vmin, 0.9rem);
             line-height: 1.3;
             color: var(--ash);
-            max-width: 14rem;
+            max-width: min(12rem, 44vw);
         }
         .hud-objective.hidden { display: none; }
         .hud-hints {
             display: flex;
             flex-direction: column;
-            gap: 0.15rem;
-            font-size: 1.05rem;
+            gap: 0.1rem;
+            font-size: clamp(0.72rem, 2.4vmin, 0.9rem);
             color: var(--ash-dim);
             text-shadow: 0 2px 0 rgba(0,0,0,0.8);
         }
@@ -278,12 +283,8 @@
         .touch-active .crosshair {
             display: none;
         }
-        .touch-active .hud-layer {
-            font-size: 0.68rem;
-            gap: 0.5rem;
-            top: 1.2rem;
-            left: 1.2rem;
-        }
+        /* (B-41: .touch-active .hud-layer font-size/gap/top/left overrides removed —
+           the HUD's own clamp()/vmin sizing now handles phone vs tablet.) */
         .touch-active #hud-rest-hint {
             display: none; /* 'HOLD G' is a keyboard hint — touch has the Rest button */
         }
@@ -302,22 +303,11 @@
            Restore it there — tablet still gets the other touch-active
            rules above (no crosshair, rest/pause hints hidden, prompt
            cleared of the joystick). */
-        html[data-device="tablet"].touch-active .hud-layer {
-            font-size: 0.9rem;
-            gap: 0.75rem;
-        }
         /* Short viewports (landscape phones, small windows): the HUD
            plaque's own column (kicker + 2.1rem clock + weather row + hint
            lines) and the tutorial card stacked below it can run past the
            bottom of a ~360-430px-tall screen. Tighten the column and pull
            the tutorial card up to compensate. */
-        html[data-compact-h] .hud-layer {
-            gap: 0.4rem;
-            top: 0.7rem;
-            left: 0.7rem;
-        }
-        html[data-compact-h] .hud-plaque { padding: 0.3rem 0.6rem 0.35rem; min-width: 6.5rem; }
-        html[data-compact-h] .hud-time { font-size: 1.5rem; margin: 0.05rem 0 0.15rem; }
         html[data-compact-h] .tutorial-card { top: 0.7rem; width: min(22rem, 86vw); padding: 0.5rem 0.8rem 0.45rem; }
         html[data-compact-h] .tut-text { font-size: 1.1rem; }
         /* Phone landscape's taller joystick zone (68% of screen height,
@@ -1234,20 +1224,63 @@
             z-index: 6;
             pointer-events: none;
             font-family: var(--font-display);
-            font-size: 1rem;
+            font-size: clamp(0.72rem, 2.6vmin, 0.9rem);
             text-align: center;
             white-space: nowrap;
-            padding: 0.5rem 1.2rem 0.55rem;
-            background: var(--ink);
-            color: var(--ash);
-            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
-                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
-                        0 0 0 6px rgba(0,0,0,0.45);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: calc(100vw - 2rem);
+            padding: clamp(0.3rem, 1.2vmin, 0.45rem) clamp(0.8rem, 3vmin, 1.1rem) clamp(0.32rem, 1.3vmin, 0.5rem);
+            /* B-41: was a solid ink box with a pixel border. Now a see-through water-glass
+               pane: tinted translucent gradient, blurred backdrop, a bright rim light along
+               the top edge, and a slow drifting caustic shimmer (::before) so it reads as a
+               thin sheet of water rather than a UI box. */
+            color: #eef6f2;
+            text-shadow: 0 1px 2px rgba(0, 20, 30, 0.65);
+            background: linear-gradient(160deg, rgba(120, 190, 205, 0.20), rgba(20, 50, 64, 0.30) 60%, rgba(10, 28, 38, 0.38));
+            -webkit-backdrop-filter: blur(6px) saturate(1.5);
+            backdrop-filter: blur(6px) saturate(1.5);
+            border: 1px solid rgba(200, 238, 246, 0.38);
+            border-radius: 0.9rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45),
+                        inset 0 -10px 18px rgba(90, 170, 195, 0.14),
+                        0 6px 18px rgba(0, 20, 30, 0.28);
             opacity: 0;
-            transition: opacity 0.2s steps(3);
+            transform: translateX(-50%) translateY(6px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .interact-prompt::before {
+            content: '';
+            position: absolute;
+            inset: -40%;
+            z-index: -1;
+            pointer-events: none;
+            background: radial-gradient(ellipse at 30% 40%, rgba(255, 255, 255, 0.22), transparent 42%),
+                        radial-gradient(ellipse at 72% 62%, rgba(160, 225, 240, 0.18), transparent 46%);
+            animation: prompt-caustic 6s ease-in-out infinite alternate;
+        }
+        .interact-prompt::after {
+            content: '';
+            position: absolute;
+            left: 8%;
+            right: 8%;
+            top: 2px;
+            height: 38%;
+            z-index: -1;
+            pointer-events: none;
+            border-radius: 0.8rem 0.8rem 50% 50%;
+            background: linear-gradient(rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0));
+        }
+        @keyframes prompt-caustic {
+            from { transform: translate(-6%, -3%) scale(1); }
+            to   { transform: translate(6%, 3%) scale(1.08); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .interact-prompt::before { animation: none; }
         }
         .interact-prompt.visible {
             opacity: 1;
+            transform: translateX(-50%) translateY(0);
         }
         /* B-36: VN-style dialogue box. Was 30px text in a centred 38rem box with a
            1.15 line-height: on a phone it was ~12 characters wide per line and a
