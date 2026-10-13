@@ -2239,6 +2239,98 @@
             animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important;
         }
         /* ===== /silvan-ui-v2 ===== */
+
+        /* ===== silvan-rotate-prompt =============================================
+           "Turn your phone" layer (core/rotate-prompt.js). Shown only on a phone held
+           in portrait and not yet dismissed. z-index 90: over the game UI, touch
+           controls (12) and pause (20), under the loading screen (100). Sizes are rem so
+           the Interface-size setting scales it; reduce-motion (global rule above) leaves
+           the phone drawn already turned sideways. */
+        .rotate-prompt {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 90;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            padding: 1.5rem 1.2rem;
+            box-sizing: border-box;
+            text-align: center;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none; -webkit-user-select: none;
+            color: var(--ash);
+            background:
+                radial-gradient(ellipse at 50% 58%, rgba(240, 165, 69, 0.16), transparent 62%),
+                radial-gradient(ellipse at 50% 120%, rgba(107, 79, 51, 0.35), transparent 60%),
+                var(--ink);
+            overflow: hidden;
+        }
+        html[data-device="phone"][data-orientation="portrait"]:not([data-rotate-dismissed]) .rotate-prompt { display: flex; }
+        .rotate-prompt:focus-visible { outline: 2px solid var(--ember); outline-offset: -6px; }
+        .rp-stage { position: relative; width: 12rem; height: 12rem; margin-bottom: 0.4rem; }
+        /* the phone: same stepped bark-edge border as every other Silvan box */
+        .rp-phone {
+            position: absolute; left: 50%; top: 50%;
+            width: 4.2rem; height: 7.4rem; margin: -3.7rem 0 0 -2.1rem;
+            background: var(--ink);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge),
+                        -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge),
+                        0 0 0 6px rgba(0, 0, 0, 0.45), 0 0 2.2rem rgba(240, 165, 69, 0.28);
+            transform-origin: 50% 50%;
+            animation: rp-turn 3.4s cubic-bezier(.6, .05, .3, 1) infinite alternate both;
+        }
+        .rp-screen {
+            position: absolute; inset: 0.32rem;
+            background: linear-gradient(to top, #f0a545 0%, #b5602a 22%, #3b2c1e 52%, #141a2a 100%);
+            overflow: hidden;
+        }
+        /* little pixel hearth-sparks on the screen + a notch on the "top" so the turn reads */
+        .rp-screen::before { content: ''; position: absolute; top: 0; left: 50%; width: 1.1rem; height: 0.28rem; margin-left: -0.55rem; background: var(--ink); }
+        .rp-screen::after {
+            content: ''; position: absolute; left: 50%; bottom: 0.9rem; width: 3px; height: 3px;
+            background: #ffe3a8;
+            box-shadow: -0.7rem -0.8rem 0 #ffe3a8, 0.6rem -1.5rem 0 #ffcf80, -0.2rem -2.3rem 0 #ffe3a8, 0.9rem -3rem 0 #ffcf80, -0.9rem -3.4rem 0 #ffe3a8;
+            animation: rp-spark 1.6s steps(4) infinite;
+        }
+        @keyframes rp-turn {
+            0%, 22% { transform: rotate(0deg); }
+            58%, 100% { transform: rotate(-90deg); }
+        }
+        @keyframes rp-spark { 0%, 100% { opacity: 0.55; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
+        /* two stepped (dashed, square-capped) arc arrows, like the classic hint, in ember */
+        .rp-arrows { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; shape-rendering: crispEdges; }
+        .rp-arrows path { fill: none; stroke: var(--ember); stroke-width: 5; stroke-linecap: square; stroke-dasharray: 7 6; }
+        .rp-arrows polygon { fill: var(--ember); }
+        .rp-arrows g { animation: rp-arrow 3.4s ease-in-out infinite alternate both; }
+        .rp-arrows g + g { animation-delay: 0.15s; }
+        @keyframes rp-arrow { 0%, 20% { opacity: 0.25; } 55%, 100% { opacity: 1; } }
+        .rp-fly { position: absolute; width: 4px; height: 4px; background: #ffe3a8; box-shadow: 0 0 8px 2px rgba(255, 207, 128, 0.55); animation: rp-fly 4.5s ease-in-out infinite; }
+        .rp-fly.f1 { left: 6%; top: 70%; }
+        .rp-fly.f2 { left: 88%; top: 24%; animation-delay: -1.7s; animation-duration: 5.4s; }
+        .rp-fly.f3 { left: 76%; top: 86%; animation-delay: -3s; animation-duration: 6s; }
+        @keyframes rp-fly { 0%, 100% { transform: translate(0, 0); opacity: 0.2; } 30% { opacity: 1; } 50% { transform: translate(0.9rem, -1.1rem); opacity: 0.9; } 75% { transform: translate(-0.5rem, -0.4rem); opacity: 0.4; } }
+        .rp-title { font-family: var(--font-display); font-size: 1.7rem; line-height: 1.1; color: var(--ember); letter-spacing: 0.03em; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.6); }
+        .rp-sub { font-family: var(--font-body); font-size: 1.25rem; line-height: 1.2; color: var(--ash-dim); max-width: 17rem; }
+        .rp-tap {
+            font-family: var(--font-display); font-size: 1rem; letter-spacing: 0.06em; color: var(--ash);
+            margin-top: 0.3rem; padding: 0.55rem 1.3rem 0.6rem; background: var(--bark);
+            box-shadow: 0 -3px 0 0 var(--bark-edge), 0 3px 0 0 var(--bark-edge), -3px 0 0 0 var(--bark-edge), 3px 0 0 0 var(--bark-edge), 0 0 0 6px rgba(0, 0, 0, 0.45);
+            animation: rp-pulse 1.8s steps(2) infinite;
+        }
+        .rotate-prompt:active .rp-tap { background: var(--bark-edge); }
+        @keyframes rp-pulse { 0%, 100% { color: var(--ash); } 50% { color: var(--ember); } }
+        .rp-skip {
+            margin-top: 0.7rem; padding: 0.4rem 0.8rem; background: none; border: 0; cursor: pointer;
+            font-family: var(--font-body); font-size: 1.05rem; color: var(--ash-dim); opacity: 0.8;
+            text-decoration: underline; text-underline-offset: 3px; -webkit-tap-highlight-color: transparent;
+        }
+        .rp-skip:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+        .rotate-prompt[data-failed] .rp-tap { display: none; } /* tapping did nothing here, so stop offering it */
+        /* ===== /silvan-rotate-prompt ===== */
     </style>
 
 </head>
@@ -2818,6 +2910,24 @@
             <div class="pause-btn-divider"></div>
             <button id="pause-quit-btn" class="pause-btn pause-btn-danger"><span class="pause-btn-icon">⏻</span>Quit to Title</button>
         </div>
+    </div>
+
+    <!-- "Turn your phone" layer: shown by CSS only on a phone held in portrait; core/rotate-prompt.js
+         handles the tap (fullscreen + landscape lock) and "continue in portrait". Last in the body so it
+         stacks above everything except the loading screen. -->
+    <div id="rotate-prompt" class="rotate-prompt" role="button" tabindex="0" aria-label="Tap to rotate your phone to landscape">
+        <div class="rp-stage" aria-hidden="true">
+            <svg class="rp-arrows" viewBox="0 0 192 192">
+                <g><path d="M138 30 A 76 76 0 0 1 172 78"/><polygon points="160,78 184,78 172,98"/></g>
+                <g><path d="M54 162 A 76 76 0 0 1 20 114"/><polygon points="32,114 8,114 20,94"/></g>
+            </svg>
+            <div class="rp-phone"><div class="rp-screen"></div></div>
+            <i class="rp-fly f1"></i><i class="rp-fly f2"></i><i class="rp-fly f3"></i>
+        </div>
+        <div class="rp-title">Turn your phone</div>
+        <div class="rp-sub" id="rp-sub">Silvan is best played sideways.</div>
+        <div class="rp-tap">tap to rotate</div>
+        <button id="rp-skip" class="rp-skip" type="button">continue in portrait</button>
     </div>
 
     <script type="module" src="./core/main.js"></script>

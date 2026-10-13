@@ -5,6 +5,7 @@ const OUT = process.env.OUT, URL_ = process.env.URL || 'http://127.0.0.1:4173/?d
 const base='/opt/pw-browsers/'; const dir=readdirSync(base).filter(d=>/^chromium-\d+$/.test(d)).sort().pop();
 const browser = await chromium.launch({ executablePath:`${base}${dir}/chrome-linux/chrome`, args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--no-sandbox'] });
 const ctx = await browser.newContext({ viewport:{width:780,height:360}, deviceScaleFactor:1, isMobile:true, hasTouch:true });
+await ctx.addInitScript(() => { try { sessionStorage.setItem('silvan-rotate-dismissed', '1'); } catch (e) {} }); // B-43: portrait "Turn your phone" overlay
 const page = await ctx.newPage(); const errs=[];
 page.on('pageerror',e=>errs.push(e.message.slice(0,300)));
 page.on('console',m=>{ if(m.type()==='error'&&!/ERR_TUNNEL|Failed to load/.test(m.text())) errs.push(m.text().slice(0,300)); });

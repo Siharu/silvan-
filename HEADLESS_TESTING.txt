@@ -86,6 +86,15 @@ GOTCHAS (each one cost time already)
     the 567px-wide title block was found in minutes.
 
 
+11. PORTRAIT PHONE RUNS SHOW A "TURN YOUR PHONE" OVERLAY (B-43) that covers every tap
+    target. tools/e2e/*.mjs pre-dismiss it with
+      ctx.addInitScript(() => sessionStorage.setItem('silvan-rotate-dismissed','1'))
+    Do the same in any new portrait test script. To test the overlay itself, don't set it. The
+    fullscreen/orientation-lock calls can't really rotate headless: stub Element.prototype.requestFullscreen
+    and screen.orientation.lock in addInitScript (documentElement doesn't exist yet at that point) and
+    assert they were called; page.setViewportSize() swaps the viewport to simulate the rotation.
+
+
 WHAT IS STILL NOT TESTABLE FROM THE CONTAINER
 ---------------------------------------------
   - How it FEELS: joystick sensitivity, camera look speed, frame rate on a

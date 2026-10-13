@@ -1367,6 +1367,26 @@ B-42  [MAJOR] [ADDED + FIXED, branch Version-0.0.05]  Dialogue system + Interfac
   whether reduce-motion defaulting to the phone's OS setting surprises you (if text
   appears instantly, that is why: Interface tab -> Reduce motion).
 
+B-43  [MINOR] [ADDED, branch Version-0.0.05]  "Turn your phone" overlay, Silvan style, tap = auto-rotate.
+  core/rotate-prompt.js + #rotate-prompt markup + "silvan-rotate-prompt" CSS block in index.html.
+  Shown by CSS only when data-device=phone AND data-orientation=portrait AND not dismissed (z-index 90:
+  over game UI/touch controls/pause, under the loading screen). Animated: pixel bark-edge phone turns
+  portrait -> landscape on a loop, ember arc arrows, drifting fireflies, pulsing "tap to rotate".
+  Tapping it calls requestFullscreen() then screen.orientation.lock('landscape') (needs a real tap).
+  "continue in portrait" dismisses it for the browser session (sessionStorage 'silvan-rotate-dismissed').
+  If the lock is unavailable it says so ("This browser can't rotate for you. Turn your phone sideways.")
+  and hides the tap button. Reduce motion leaves the phone drawn already sideways.
+  LIMIT: iPhone Safari/Chrome have no orientation lock or page fullscreen, so on iPhone the tap can only
+  show that message; Android Chrome is where auto-rotate can work. Tablets/desktop never see it.
+  tools/e2e/phone-test.mjs and live-views.mjs now pre-dismiss it (it would cover every tap target on a
+  portrait run); a portrait test that wants the overlay must not set that key.
+  Headless (software GL, real fonts): shows at 412x780 / 360x640, covers the screen, phone sweeps 0 -> -90 deg,
+  hidden on 780x360 phone and 834x1112 tablet, skip persists across reload, no console errors. With the
+  fullscreen/lock APIs STUBBED: tap calls fullscreen then lock('landscape'); rejected lock and an
+  iPhone-like no-API case both show the fallback message; changing the viewport to landscape hides it.
+  NOT verified: a real phone actually rotating (headless can't), Android fullscreen permission prompts, the
+  look/feel of the animation on a real GPU.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

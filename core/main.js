@@ -23,6 +23,7 @@ import { startTutorial, updateTutorial } from './tutorial.js';
 import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCounter } from './settings.js';
 import { setupDialogue, updateDialogue } from './dialogue.js';
 import { setupUiSettings } from './ui-settings.js';
+import { setupRotatePrompt } from './rotate-prompt.js';
 import { updatePlayer } from './player-controller.js';
 import { updateRest } from './rest.js';
 import { bakeHeightmap, heightAt } from './heightmap.js';
@@ -394,6 +395,7 @@ window.addEventListener('DOMContentLoaded', () => {
     wireSettingsButtons();
     wireCameraAudioSettings();
     setupUiSettings();
+    setupRotatePrompt();
     setupDialogue();
     wireSaveButtons();
     wirePauseMenu();
