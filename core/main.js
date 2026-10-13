@@ -21,6 +21,8 @@ import { setupInput, onWindowResize, wireTitleScreen, wireTitleMenu, wirePauseMe
 import { initTouchControls } from './touch-controls.js';
 import { startTutorial, updateTutorial } from './tutorial.js';
 import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCounter } from './settings.js';
+import { setupDialogue, updateDialogue } from './dialogue.js';
+import { setupUiSettings } from './ui-settings.js';
 import { updatePlayer } from './player-controller.js';
 import { updateRest } from './rest.js';
 import { bakeHeightmap, heightAt } from './heightmap.js';
@@ -335,6 +337,7 @@ function animate(time) {
     // use to gate POI prompts and ambient audio. updatePlayer already no-ops
     // via isPlaying; grass keeps animating off wall-clock time since it's
     // purely cosmetic and imperceptible while the pause menu covers it.
+    updateDialogue(delta / 1000); // before updatePlayer: a frozen conversation clears movement keys first
     if (state.isPlaying) {
         updateAtmosphere(delta);
         updateLeaningPalms(delta * state.timeMultiplier);
@@ -390,6 +393,8 @@ window.addEventListener('DOMContentLoaded', () => {
     wireTitleMenu();
     wireSettingsButtons();
     wireCameraAudioSettings();
+    setupUiSettings();
+    setupDialogue();
     wireSaveButtons();
     wirePauseMenu();
     initTouchControls();

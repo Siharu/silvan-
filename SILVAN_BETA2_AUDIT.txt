@@ -1343,6 +1343,30 @@ B-41  [MINOR] [FIXED, branch Version-0.0.05]  "Pine in the back looks weird; HUD
   backdrop blur performs on a real phone GPU (if the prompt causes a frame dip,
   drop backdrop-filter and keep the gradient), real-GPU look of the new impostor.
 
+B-42  [MAJOR] [ADDED + FIXED, branch Version-0.0.05]  Dialogue system + Interface settings (from the other Claude's package).
+  a) Added core/dialogue.js (typewriter, speaker tab, choices, tap/E/Enter to advance,
+     number keys / arrows for choices, freeze option) and core/ui-settings.js (auto UI
+     scale, "Interface" tab in title + pause Settings: interface size, dialogue text size,
+     text speed, reduce motion; slider value readouts; pause-menu keyboard nav). Landmark
+     examine text now goes through showDialogue(). Patch applied cleanly to this branch
+     (git apply --check: no rejects), vite build passes. Package author used B-39; renumbered.
+     Also fixes (from the package): pause menu clipped off-screen with Settings open
+     (.pause-layer now scrolls), title Settings tab content cut off (now scrolls under a
+     fixed tab strip).
+  b) FOUND WHILE TESTING, NOT IN THE PACKAGE: on touch devices the dialogue box and its
+     choices could not be tapped. .touch-controls (z-index 12) has a full-height look
+     zone on top of .cutscene-caption (z-index 8); elementFromPoint at a choice button
+     returned .touch-look-zone, whose touchstart preventDefault()s. Fix: visible caption is
+     z-index 13, so only its own footprint intercepts taps; look/joystick still work around it.
+  c) The B-41 glass interact prompt sat behind the dialogue box when choices were open;
+     now hidden while #cutscene-caption.visible.
+  Headless (software GL, real fonts), 412x780, 360x640, 780x360: Interface tab renders,
+  dialogue line + 3 choices fit, tapping choice 2 advances to the "next" line (Kat),
+  no overflow, no console errors, HUD does not overlap the box.
+  NOT verified: real-phone feel (touch comfort, text speeds), typing blip audio, real GPU,
+  whether reduce-motion defaulting to the phone's OS setting surprises you (if text
+  appears instantly, that is why: Interface tab -> Reduce motion).
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

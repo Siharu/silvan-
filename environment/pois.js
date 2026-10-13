@@ -5,7 +5,7 @@
 import { state, WORLD_SIZE } from '../core/state.js';
 import { heightAt as getElevation } from '../core/heightmap.js';
 import { markDiscovered, showDiscoveryToast, showNarrativeToast } from '../core/journal.js';
-import { playBlip } from '../core/blip.js';
+import { showDialogue, closeDialogue, isDialogueActive, dialogueOwner } from '../core/dialogue.js';
 import { writeLocalSave } from '../core/save-system.js';
 import { createRuinedCabin } from './poi-ruined-cabin.js';
 import { createChrysalis } from './poi-chrysalis.js';
@@ -121,27 +121,20 @@ export function updatePOIs(delta) {
 }
 
 let ePressedLastFrame = false;
-let captionTimer = 0;
-let typing = false, typeFull = '', typeProgress = 0, typeShown = 0, typeSeed = 0, captionOwner = null, lastPromptName = null;
-const TYPE_CHARS_PER_SEC = 42;
+let lastPromptName = null;
 const INTERACT_RANGE_MARGIN = 6; // extra distance beyond each POI's own radius before the prompt appears
 const CAPTION_SECONDS = 5;
 
-// Cached once instead of getElementById() x4 every frame (Phase 3 #20).
-let promptEl = null, captionEl = null, captionSpeakerEl = null, captionTextEl = null;
+let promptEl = null;
 
 // Called every frame from main.js's animate() with delta in seconds.
-// Deliberately simple (proximity check + a description in the existing
-// cutscene-caption box) rather than real branching dialogue — enough for
-// each POI to read as content, not a placeholder for the dialogue system
-// PLAN.md defers to a later phase.
+// Proximity check + the interact prompt; the description itself is shown
+// by core/dialogue.js (typewriter, scaling, text-speed setting, tap/E to
+// advance). Walking out of range closes a POI's own dialogue.
 export function updatePOIInteraction(delta) {
     if (!promptEl) promptEl = document.getElementById('interact-prompt');
-    if (!captionEl) captionEl = document.getElementById('cutscene-caption');
-    if (!captionSpeakerEl) captionSpeakerEl = document.getElementById('cutscene-speaker');
-    if (!captionTextEl) captionTextEl = document.getElementById('cutscene-text');
-    const prompt = promptEl, caption = captionEl, captionSpeaker = captionSpeakerEl, captionText = captionTextEl;
-    if (!prompt || !caption || !state.player || !state.isPlaying) return;
+    const prompt = promptEl;
+    if (!prompt || !state.player || !state.isPlaying) return;
 
     let nearest = null;
     let nearestDist = Infinity;
@@ -156,62 +149,38 @@ export function updatePOIInteraction(delta) {
         }
     }
 
-    // Typewriter reveal: text types out, E while typing completes it, E
-    // once complete (or the timer running out) closes the box.
-    if (typing) {
-        typeProgress += delta * TYPE_CHARS_PER_SEC;
-        const shown = Math.min(typeFull.length, Math.floor(typeProgress));
-        if (shown !== typeShown) {
-            if (shown % 2 === 0 && typeFull[shown - 1] !== ' ') playBlip(typeSeed);
-            typeShown = shown;
-            captionText.textContent = typeFull.slice(0, shown);
-        }
-        if (shown >= typeFull.length) { typing = false; captionText.classList.remove('typing'); captionTimer = CAPTION_SECONDS; }
-    } else if (captionTimer > 0) {
-        captionTimer -= delta;
-        if (captionTimer <= 0) caption.classList.remove('visible');
-    }
-
-    const pressed = state.keys.e && !ePressedLastFrame;
+    // updateDialogue() already ran this frame; if it used this E press to
+    // advance/close a box, don't also treat it as "open the POI again".
+    const pressed = state.keys.e && !ePressedLastFrame && !state.dialogueConsumedE;
     if (nearest) {
         if (lastPromptName !== nearest.name) {
             prompt.innerHTML = `<span class="keycap">E</span>${nearest.name}`;
             lastPromptName = nearest.name;
         }
         prompt.classList.add('visible');
-        if (pressed) {
-            if (typing) {
-                typeProgress = typeFull.length; // finish the line instantly
-            } else if (caption.classList.contains('visible') && captionOwner === nearest.id) {
-                caption.classList.remove('visible'); captionTimer = 0;
-            } else {
-                captionOwner = nearest.id;
-                state.examineCount = (state.examineCount || 0) + 1; // tutorial detects the first examine from this
-                captionSpeaker.textContent = nearest.name;
-                typeFull = nearest.desc; typeProgress = 0; typeShown = 0; typing = true;
-                typeSeed = nearest.name.length;
-                captionText.textContent = '';
-                captionText.classList.add('typing');
-                caption.classList.add('visible');
-                if (markDiscovered(nearest)) {
-                    // Narrative story props (shore_cloth/shore_stick, spliced in by
-                    // environment/scene-shore.js) aren't landmarks — same filter as
-                    // journal.js's renderObjectives, so this toast's "X of Y found"
-                    // count and the pause-menu count never disagree.
-                    if (nearest.narrative) {
-                        showNarrativeToast(nearest.name); // B-36: the full desc is already in the dialogue box; the toast just names the find
-                    } else {
-                        const landmarkTotal = POIS.filter((p) => !p.narrative).length;
-                        showDiscoveryToast(nearest, landmarkTotal);
-                    }
-                    writeLocalSave();
-                } // B-18: autosave on discovery
-            }
+        if (pressed && !isDialogueActive()) {
+            state.examineCount = (state.examineCount || 0) + 1; // tutorial detects the first examine from this
+            showDialogue(state, [{ speaker: nearest.name, text: nearest.desc }], null,
+                { owner: 'poi:' + nearest.id, autoClose: CAPTION_SECONDS, seed: nearest.name.length });
+            if (markDiscovered(nearest)) {
+                // Narrative story props (shore_cloth/shore_stick, spliced in by
+                // environment/scene-shore.js) aren't landmarks — same filter as
+                // journal.js's renderObjectives, so this toast's "X of Y found"
+                // count and the pause-menu count never disagree.
+                if (nearest.narrative) {
+                    showNarrativeToast(nearest.name); // B-36: the full desc is already in the dialogue box; the toast just names the find
+                } else {
+                    const landmarkTotal = POIS.filter((p) => !p.narrative).length;
+                    showDiscoveryToast(nearest, landmarkTotal);
+                }
+                writeLocalSave();
+            } // B-18: autosave on discovery
         }
     } else {
         lastPromptName = null;
         prompt.classList.remove('visible');
-        if (typing || caption.classList.contains('visible')) { typing = false; captionText.classList.remove('typing'); caption.classList.remove('visible'); captionTimer = 0; }
+        const owner = dialogueOwner();
+        if (typeof owner === 'string' && owner.startsWith('poi:')) closeDialogue();
     }
     ePressedLastFrame = state.keys.e;
 }

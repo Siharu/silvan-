@@ -119,7 +119,7 @@ export function updatePlayer(delta) {
     }
     const gY = Math.max(getElevation(state.player.position.x, state.player.position.z), state.effectiveWaterLevel);
     if (state.player.isGrounded) {
-        const b = state.player.velocity.lengthSq() > 0 ? Math.sin(performance.now()*0.012*(state.keys.shift ? 1.35 : 1))*(state.keys.shift ? 0.15 : 0.1) : 0;
+        const b = state.reduceMotion ? 0 : state.player.velocity.lengthSq() > 0 ? Math.sin(performance.now()*0.012*(state.keys.shift ? 1.35 : 1))*(state.keys.shift ? 0.15 : 0.1) : 0;
         const easing = state.player.velocity.lengthSq() > 0 ? 12.0 : 8.0;
         state.player.position.y += (gY + state.player.height + b - state.player.position.y) * (1.0 - Math.exp(-easing * delta));
     } else {
@@ -137,7 +137,7 @@ export function updatePlayer(delta) {
     }
     // Sprint FOV kick + landing dip, both eased so they read as weight, not snaps.
     const moving = state.player.velocity.lengthSq() > 0;
-    const targetKick = (state.keys.shift && moving) ? SPRINT_FOV_KICK : 0;
+    const targetKick = (!state.reduceMotion && state.keys.shift && moving) ? SPRINT_FOV_KICK : 0;
     fovKick += (targetKick - fovKick) * (1.0 - Math.exp(-6.0 * delta));
     const wantFov = (state.baseFov || 75) + fovKick;
     if (Math.abs(state.camera.fov - wantFov) > 0.01) { state.camera.fov = wantFov; state.camera.updateProjectionMatrix(); }

@@ -1282,6 +1282,12 @@
             opacity: 1;
             transform: translateX(-50%) translateY(0);
         }
+        /* B-42: the dialogue box (and its choices) occupies the same band; pois.js keeps
+           re-adding .visible every frame while the player is near the POI, so hide it by CSS. */
+        html:has(#cutscene-caption.visible) .interact-prompt.visible {
+            opacity: 0;
+            transform: translateX(-50%) translateY(6px);
+        }
         /* B-36: VN-style dialogue box. Was 30px text in a centred 38rem box with a
            1.15 line-height: on a phone it was ~12 characters wide per line and a
            huge slab. Visual-novel convention (Ren'Py defaults, UI guides): a
@@ -2147,6 +2153,92 @@
             0%, 100% { opacity: 0.45; }
             50% { opacity: 1; }
         }
+    
+        /* ===== silvan-ui-v2 =====================================================
+           Dialogue box scaling/choices, Interface settings tab, menu focus +
+           touch targets, reduce-motion. Appended last so it overrides the
+           older rules above without editing them. Sizes are rem, and
+           core/ui-settings.js scales <html>'s font size (auto-fit x the
+           player's Interface size), so everything here scales together.
+           --dlg-scale is the separate Dialogue text size setting. */
+        :root { --dlg-scale: 1; }
+        [hidden] { display: none !important; }
+
+        /* Dialogue box: tap/click to advance, gentle rise-in, text sized by setting */
+        .cutscene-caption { transform: translate(-50%, 0.6rem); transition: opacity 0.25s steps(4), transform 0.25s ease-out; }
+        /* z-index 13: .touch-controls is z-index 12 with a full-height look zone, which sat on top of the
+           dialogue box (8) and swallowed every tap on it, so on a phone neither the box nor its choices
+           could be tapped. Only the box's own footprint is raised, so look/joystick still work around it. */
+        .cutscene-caption.visible { transform: translate(-50%, 0); pointer-events: auto; cursor: pointer; z-index: 13; }
+        .cutscene-caption .cutscene-text {
+            font-size: calc(1.15rem * var(--dlg-scale));
+            min-height: calc(4.2rem * var(--dlg-scale));
+            max-height: calc(var(--app-vh, 1vh) * 36);
+            overflow-y: auto;
+            overflow-wrap: anywhere;
+            text-wrap: pretty;
+        }
+        html[data-device="phone"] .cutscene-caption .cutscene-text { font-size: calc(1.05rem * var(--dlg-scale)); min-height: calc(3.9rem * var(--dlg-scale)); }
+        html[data-device="phone"][data-orientation="landscape"] .cutscene-caption .cutscene-text { font-size: calc(0.9rem * var(--dlg-scale)); min-height: calc(3.5rem * var(--dlg-scale)); }
+        .cutscene-text .rest { visibility: hidden; }
+        /* typing caret follows the revealed text, not the hidden remainder */
+        .cutscene-caption .cutscene-text.typing::after { content: none; }
+        .cutscene-caption .cutscene-text.typing > span:first-child::after {
+            content: ''; display: inline-block; width: 0.5em; height: 0.8em; margin-left: 2px;
+            background: var(--ember); animation: caret 0.5s steps(1) infinite;
+        }
+        .cutscene-caption .cutscene-choice-btn {
+            display: flex; align-items: center; gap: 0.7rem; width: 100%; min-height: 2.6rem;
+            text-align: left; font-family: var(--font-body); line-height: 1.2;
+            font-size: calc(1.05rem * var(--dlg-scale)); padding: 0.45rem 0.8rem;
+        }
+        .cutscene-caption .cutscene-choice-btn .keycap { flex: none; }
+        .cutscene-caption .cutscene-choice-btn:hover,
+        .cutscene-caption .cutscene-choice-btn.is-sel { background: rgba(70, 60, 35, 0.9); border-color: rgba(255, 220, 150, 0.6); }
+        @media (pointer: coarse) {
+            .cutscene-caption .cutscene-choice-btn { min-height: 2.9rem; }
+            .cutscene-caption .cutscene-choice-btn .keycap { display: none; }
+        }
+        html[data-device="phone"][data-orientation="landscape"] .cutscene-caption .cutscene-choice-btn { min-height: 2.3rem; padding: 0.3rem 0.7rem; }
+
+        /* Menus: visible keyboard focus, comfortable touch targets, live slider values */
+        .pause-btn:focus-visible, .tab-btn:focus-visible, .quality-toggle-btn:focus-visible,
+        .cutscene-choice-btn:focus-visible, .pause-settings input:focus-visible {
+            outline: 2px solid rgba(200, 222, 255, 0.9); outline-offset: 2px;
+            box-shadow: 0 0 18px rgba(150, 190, 255, 0.35);
+        }
+        @media (pointer: coarse) {
+            .pause-btn { min-height: 3rem; }
+            .tab-btn { min-height: 2.75rem; }
+            .quality-toggle-btn { min-height: 2.6rem; }
+        }
+        .tabs-header { overflow-x: auto; scrollbar-width: none; }
+        .tabs-header::-webkit-scrollbar { display: none; }
+        .tab-btn { flex: 1 0 auto; }
+        @media (max-width: 380px) { .tab-btn { font-size: 0.85rem; padding-inline: 0.2rem; letter-spacing: 0; } }
+        .range-readout { float: right; letter-spacing: 0.06em; color: #9fb0c9; }
+        .ui-note { margin: 0.35rem 0 0; font-size: 0.6rem; letter-spacing: 0.05em; color: #6f7d92; text-align: left; }
+
+        /* Pause menu: scroll instead of clipping when an open section is taller than the screen */
+        .pause-layer.visible {
+            align-items: flex-start; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box;
+            padding: max(1rem, env(safe-area-inset-top, 0px)) 0 max(1rem, env(safe-area-inset-bottom, 0px));
+        }
+        .pause-layer .pause-panel { margin: auto; }
+        /* Title Settings: tab content scrolls under a fixed tab strip. .tabs-panel is overflow:hidden,
+           which used to cut a tab off with no way to scroll whenever it was taller than the panel cap. */
+        .title-panel.tabs-panel .tabs-header { flex: none; }
+        .title-panel.tabs-panel .tab-panel { min-height: 0; overflow-y: auto; }
+        /* Interface tab rows: four equal columns so a row never wraps into an orphan button */
+        .quality-toggle-row:has(> [data-seg]) { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; width: 100%; }
+        .quality-toggle-row > [data-seg] { padding-inline: 0.2rem; }
+        html[data-device="phone"] .tab-btn { padding-inline: 0.3rem; letter-spacing: 0.02em; }
+
+        /* Reduce motion (setting, defaults to the OS preference) */
+        html[data-reduce-motion] *, html[data-reduce-motion] *::before, html[data-reduce-motion] *::after {
+            animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important;
+        }
+        /* ===== /silvan-ui-v2 ===== */
     </style>
 
 </head>
@@ -2260,6 +2352,7 @@
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
+                    <button class="tab-btn" data-tab="interface" type="button">Interface</button>
                     <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
@@ -2317,6 +2410,38 @@
                 <div class="tab-panel" data-tab-panel="audio">
                     <label style="margin-top: 0;" for="title-volume-slider">Master Volume</label>
                     <input type="range" id="title-volume-slider" min="0" max="1" step="0.01" value="1">
+                </div>
+
+                <div class="tab-panel" data-tab-panel="interface">
+                    <label style="margin-top: 0;">Interface size <span class="quality-reload-note">(auto-fits your screen)</span></label>
+                    <div class="quality-toggle-row">
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="0.85" type="button">Small</button>
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="1" type="button">Normal</button>
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="1.15" type="button">Large</button>
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="1.3" type="button">Huge</button>
+                    </div>
+                    <label>Dialogue text size</label>
+                    <div class="quality-toggle-row">
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="0.9" type="button">Small</button>
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="1" type="button">Normal</button>
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="1.2" type="button">Large</button>
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="1.4" type="button">Huge</button>
+                    </div>
+                    <label>Text speed</label>
+                    <div class="quality-toggle-row">
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="slow" type="button">Slow</button>
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="normal" type="button">Normal</button>
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="fast" type="button">Fast</button>
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="instant" type="button">Instant</button>
+                    </div>
+                    <label class="settings-checkbox-row" style="margin-top: 0.9rem;">
+                        <input type="checkbox" data-seg="reduceMotion">
+                        Reduce motion
+                    </label>
+                    <p class="ui-note">Stops the floating menu, head-bob, sprint zoom and typewriter text.</p>
+                    <div class="quality-toggle-row" style="margin-top: 0.9rem;">
+                        <button class="quality-toggle-btn" data-ui-reset type="button">Reset interface</button>
+                    </div>
                 </div>
 
                 <!-- B-18: wired by core/save-system.js's wireSaveButtons().
@@ -2589,6 +2714,7 @@
                     <button class="tab-btn active" data-tab="graphics" type="button">Graphics</button>
                     <button class="tab-btn" data-tab="camera" type="button">Camera</button>
                     <button class="tab-btn" data-tab="audio" type="button">Audio</button>
+                    <button class="tab-btn" data-tab="interface" type="button">Interface</button>
                     <button class="tab-btn" data-tab="save" type="button">Save</button>
                 </div>
 
@@ -2633,6 +2759,38 @@
                 <div class="tab-panel" data-tab-panel="audio">
                     <label style="margin-top: 0;" for="pause-volume-slider">Master Volume</label>
                     <input type="range" id="pause-volume-slider" min="0" max="1" step="0.01" value="1">
+                </div>
+
+                <div class="tab-panel" data-tab-panel="interface">
+                    <label style="margin-top: 0;">Interface size <span class="quality-reload-note">(auto-fits your screen)</span></label>
+                    <div class="quality-toggle-row">
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="0.85" type="button">Small</button>
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="1" type="button">Normal</button>
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="1.15" type="button">Large</button>
+                        <button class="quality-toggle-btn" data-seg="uiSize" data-value="1.3" type="button">Huge</button>
+                    </div>
+                    <label>Dialogue text size</label>
+                    <div class="quality-toggle-row">
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="0.9" type="button">Small</button>
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="1" type="button">Normal</button>
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="1.2" type="button">Large</button>
+                        <button class="quality-toggle-btn" data-seg="dlgText" data-value="1.4" type="button">Huge</button>
+                    </div>
+                    <label>Text speed</label>
+                    <div class="quality-toggle-row">
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="slow" type="button">Slow</button>
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="normal" type="button">Normal</button>
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="fast" type="button">Fast</button>
+                        <button class="quality-toggle-btn" data-seg="textSpeed" data-value="instant" type="button">Instant</button>
+                    </div>
+                    <label class="settings-checkbox-row" style="margin-top: 0.9rem;">
+                        <input type="checkbox" data-seg="reduceMotion">
+                        Reduce motion
+                    </label>
+                    <p class="ui-note">Stops the floating menu, head-bob, sprint zoom and typewriter text.</p>
+                    <div class="quality-toggle-row" style="margin-top: 0.9rem;">
+                        <button class="quality-toggle-btn" data-ui-reset type="button">Reset interface</button>
+                    </div>
                 </div>
 
                 <!-- B-18: wired by core/save-system.js's wireSaveButtons() —

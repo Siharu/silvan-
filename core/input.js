@@ -235,7 +235,8 @@ export function setupInput() {
         // pointer lock (and holding it spammed rejected requests). Pointer-lock
         // loss already opens the pause overlay, so Resume is the Resume button
         // or Enter (a valid gesture key).
-        if (e.code === 'Enter' && !e.repeat && pauseLayer.classList.contains('visible')) lockPointer();
+        const onOtherPauseControl = document.activeElement && pauseLayer.contains(document.activeElement) && document.activeElement.id !== 'pause-resume-btn'; // keyboard focus on Settings etc: let Enter press THAT button instead of resuming
+        if (e.code === 'Enter' && !e.repeat && pauseLayer.classList.contains('visible') && !onOtherPauseControl) lockPointer();
     });
     window.addEventListener('keyup', (e) => {
         if(state.keys[e.code.toLowerCase().replace('key', '')] !== undefined) state.keys[e.code.toLowerCase().replace('key', '')] = false;
