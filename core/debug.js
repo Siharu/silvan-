@@ -12,6 +12,7 @@ import { heightAt, slopeAt } from './heightmap.js';
 import { POIS } from '../environment/pois.js';
 import { WORLD_SEED } from './rng.js';
 import { setAdaptiveRes, getResScale } from './render-quality.js';
+import { platform, gpuInfo, suggestQuality } from './platform.js';
 
 export const DEBUG = typeof location !== 'undefined' && new URLSearchParams(location.search).get('debug') === '1';
 
@@ -109,7 +110,7 @@ export function initDebug() {
     overlay = document.createElement('pre');
     overlay.style.cssText = 'position:fixed;top:6px;left:6px;z-index:99999;margin:0;padding:6px 8px;background:rgba(0,0,0,.65);color:#9f9;font:11px/1.35 monospace;pointer-events:none;display:none;white-space:pre';
     document.body.appendChild(overlay);
-    window.silvanDebug = { state, frameStats, startTour };
+    window.silvanDebug = { state, frameStats, startTour, platform, gpuInfo, suggestQuality };
     console.info('[debug] ?debug=1 active: F3 overlay | F4 perf tour | F5 adaptive res | 1-9 POI | T time | R rain | V noclip');
     window.addEventListener('keydown', (e) => {
         if (e.repeat) return;

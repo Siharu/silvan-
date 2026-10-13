@@ -17,7 +17,9 @@ const executablePath = `${base}${dir}/chrome-linux/chrome`;
 const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
 // B-43: portrait phones get a "Turn your phone" overlay that covers everything; dismiss it for the test run.
-await ctx.addInitScript(() => { try { sessionStorage.setItem('silvan-rotate-dismissed', '1'); } catch (e) {} });
+// B-44: with no saved choice the game now starts on the device's suggested quality, and headless
+// (SwiftShader) is "software renderer" -> 'low'. Pin 'medium' so runs stay comparable to older screenshots.
+await ctx.addInitScript(() => { try { sessionStorage.setItem('silvan-rotate-dismissed', '1'); if (!localStorage.getItem('silvan-quality')) localStorage.setItem('silvan-quality', 'medium'); } catch (e) {} });
 const page = await ctx.newPage();
 // Real pixel fonts: Google Fonts is blocked in the sandbox, so text widths in screenshots are wrong (the
 // fallback monospace is ~50% wider than VT323). If FONTS_DIR points at a folder with

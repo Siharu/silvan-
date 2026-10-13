@@ -24,6 +24,7 @@ import { loadQuality, wireSettingsButtons, wireCameraAudioSettings, updateFpsCou
 import { setupDialogue, updateDialogue } from './dialogue.js';
 import { setupUiSettings } from './ui-settings.js';
 import { setupRotatePrompt } from './rotate-prompt.js';
+import { wireDeviceInfo } from './platform.js';
 import { updatePlayer } from './player-controller.js';
 import { updateRest } from './rest.js';
 import { bakeHeightmap, heightAt } from './heightmap.js';
@@ -396,6 +397,7 @@ window.addEventListener('DOMContentLoaded', () => {
     wireCameraAudioSettings();
     setupUiSettings();
     setupRotatePrompt();
+    wireDeviceInfo();
     setupDialogue();
     wireSaveButtons();
     wirePauseMenu();

@@ -1387,6 +1387,43 @@ B-43  [MINOR] [ADDED, branch Version-0.0.05]  "Turn your phone" overlay, Silvan 
   NOT verified: a real phone actually rotating (headless can't), Android fullscreen permission prompts, the
   look/feel of the animation on a real GPU.
 
+B-44  [MAJOR] [ADDED + FIXED, branch Version-0.0.05]  Device/runtime detection system + a UI-size regression from B-42.
+  a) ADDED core/platform.js. Pure detect(env) (tested in Node with fake devices) + collectEnv() (the only
+     code touching window). Reports os, browser, engine, runtime, native/installed, touch/mouse, and
+     canAutoRotate. runtime tells apart: plain browser tab, installed web app (pwa), Android TWA, someone
+     else's in-app browser (webview), and OUR OWN shells: capacitor/cordova (apk/ipa), electron/tauri (exe).
+     Writes html data-os / data-browser / data-engine / data-runtime / data-input / data-auto-rotate.
+     core/viewport.js still owns data-device / data-orientation (layout class); not duplicated here.
+     Also: gpuInfo() (lazy WebGL probe, flags software renderers), suggestQuality(), requestLandscape()
+     (web fullscreen + orientation lock, or the Capacitor ScreenOrientation plugin if the app has it),
+     describe() -> "Android 14 . Chrome 129 . in browser . touch". window.silvanDebug.platform with ?debug=1.
+  b) Used by: the rotate overlay (B-43) now knows UP FRONT whether auto-rotate is possible, so an iPhone gets
+     the honest "turn it yourself" message immediately instead of a tap button that cannot work; first-run
+     quality: with no saved choice the game starts on suggestQuality() (only ever 'low' or 'medium', never
+     auto-'high'; software GL / <=2 GB memory / Android with <=4 cores -> low; a saved choice always wins and
+     the hint is not saved); a "Device: ..." line at the bottom of the Interface tab so you can check on a real phone.
+  c) REGRESSION FIXED (mine, from merging B-42): core/ui-settings.js set <html> font-size to scale*100% = 16px,
+     but the stylesheet's own base is `html, body { font-size: 20px }` (125%). So since B-42 EVERY rem-sized
+     element (title, menus, HUD, touch buttons, dialogue) was 20% smaller than before on phones and 720p
+     windows, and phone-test.mjs FAILed "rest/jump overlaps dialogue" (the dialogue box sat lower). Now
+     font-size = scale*125%, so Normal == the original 20px. Auto-fit recalibrated to that base (1.0 up to
+     1080p, max 1.12), growth cap now uses the measured 780px title stack (641px at 16px, 779px at 20px)
+     instead of 660. B-42's menu/dialogue layouts had been verified at the wrong size; re-verified below.
+     Side effect: the B-41 HUD plaque measures 97x69 again (it had shrunk to 82x58).
+  Tested (headless, real fonts): 35 synthetic devices in Node (Pixel/Samsung/Firefox/Edge, iPhone Safari/Chrome,
+  iPad-as-Mac, Windows/Mac/Linux/ChromeOS, Electron, Tauri, Capacitor with/without plugin on Android+iOS,
+  Cordova, in-app webviews, TWA, PWA, iframe without fullscreen, empty env) all pass; 12 real-browser checks
+  (data attributes, Interface tab device line, iPhone overlay message, fake Capacitor shell tap calls
+  ScreenOrientation.lock('landscape'), Windows/Electron attributes, quality hint vs saved choice) pass; full
+  game start via the production build: no errors, no overlaps among the 9 UI boxes; root font is 20px at
+  412x780, 1280x720, 1920x1080; dialogue + 3 choices fit and tap works at 412x780, 360x640, 780x360.
+  NOT verified: any real phone/PC/apk/exe. Detection is user-agent + feature tests (best effort; browsers
+  freeze and spoof UAs). The capacitor/cordova/electron/tauri branches follow those frameworks' documented
+  globals but have never run inside a real apk/exe. For an apk, setting android:screenOrientation=
+  "sensorLandscape" in AndroidManifest.xml is simpler and more reliable than the plugin route.
+  Quality: heuristic, not measured on devices. Headless now defaults to 'low' (software GL); tools/e2e scripts
+  pin 'medium' so screenshots stay comparable.
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

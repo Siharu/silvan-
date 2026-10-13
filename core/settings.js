@@ -4,6 +4,7 @@
 // a save-system module (core/save-system.js doesn't exist — see PLAN.md's
 // deferred list; this is display/performance preference, not game state).
 import { state } from './state.js';
+import { suggestQuality } from './platform.js';
 
 const QUALITY_KEY = 'silvan-quality';
 const FPS_KEY = 'silvan-show-fps';
@@ -16,7 +17,9 @@ export { QUALITY_PRESETS };
 // so state.quality exists by the time anything reads it.
 export function loadQuality() {
     const stored = localStorage.getItem(QUALITY_KEY);
-    const key = QUALITY_PRESETS[stored] ? stored : 'medium';
+    // No saved choice yet: start on the device's suggested tier (core/platform.js; only ever 'low' or
+    // 'medium'). It is not saved, so it never overrides a later choice and improves with the heuristic.
+    const key = QUALITY_PRESETS[stored] ? stored : (QUALITY_PRESETS[suggestQuality().key] ? suggestQuality().key : 'medium');
     state.quality = QUALITY_PRESETS[key];
     state.qualityKey = key;
     return key;

@@ -93,6 +93,12 @@ GOTCHAS (each one cost time already)
     fullscreen/orientation-lock calls can't really rotate headless: stub Element.prototype.requestFullscreen
     and screen.orientation.lock in addInitScript (documentElement doesn't exist yet at that point) and
     assert they were called; page.setViewportSize() swaps the viewport to simulate the rotation.
+12. QUALITY DEFAULT FOLLOWS THE DEVICE (B-44). With no saved 'silvan-quality', software GL (all of our headless
+    runs) now starts on 'low', not 'medium'. tools/e2e/*.mjs pin 'medium' in their init script; do the same in
+    any new script whose screenshots you will compare with older ones.
+13. core/platform.js detect(env) is pure: import it in plain Node and feed it fake UA/feature objects (see the
+    B-44 matrix idea) to test device logic without a browser. Browser-side, override the UA with
+    newContext({ userAgent }) and stub APIs/globals (window.Capacitor, screen.orientation) in addInitScript.
 
 
 WHAT IS STILL NOT TESTABLE FROM THE CONTAINER
