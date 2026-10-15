@@ -1424,6 +1424,51 @@ B-44  [MAJOR] [ADDED + FIXED, branch Version-0.0.05]  Device/runtime detection s
   Quality: heuristic, not measured on devices. Headless now defaults to 'low' (software GL); tools/e2e scripts
   pin 'medium' so screenshots stay comparable.
 
+B-45  [MINOR] [FIXED, branch Version-0.0.05]  Pinch-zoom/long-press/tap-flash still reachable on the game
+  surface; phone screen could auto-lock mid-session.
+  Against an external mobile-layout reference the owner supplied (13 Oct 2026 "Mobile-First Browser Game
+  Layout" doc), most of it already matched this codebase (the --app-vh viewport-tracking trick in index.html
+  is a hand-rolled equivalent of the doc's svh/dvh approach and arguably more robust since it's driven by an
+  actual visualViewport listener rather than browser-throttled CSS units; devicePixelRatio is already capped
+  per-tier at 0.85-1.25, well under the doc's "cap at 2"; safe-area insets are already threaded through every
+  touch control and HUD element; audio/pointer-lock already gate on the Remember click's user gesture). Four
+  real gaps found and fixed:
+  a) `<body>/<html>` had no `touch-action` and no `-webkit-touch-callout`/global `-webkit-tap-highlight-color`.
+     iOS Safari ignores the existing `user-scalable=no` meta tag (confirmed in the doc's own browser-support
+     notes), so a pinch on open water or sky — anywhere not already covered by a per-control touch-action:none
+     rule — could still zoom the page; a long press could trigger iOS's copy/save-image menu; and any tap
+     outside the explicitly tap-highlight-excluded buttons could flash gray. Added touch-action: none to
+     html/body and #canvas-container, plus -webkit-touch-callout: none and a blanket -webkit-tap-highlight-color
+     to the existing html/body rule. Does not affect the settings/pause panels' own scrolling (.ui-layer sets
+     its own overflow-y: auto, which is a separate element from the html/body/canvas-container this targets).
+  b) Added overscroll-behavior: none to html/body — a swipe that reached the page edge (e.g. an aggressive
+     joystick drag near the screen edge) could previously trigger the OS rubber-band bounce.
+  c) ADDED core/wake-lock.js (Screen Wake Lock API, feature-detected, no-ops where unsupported — iPhone Safari
+     only from 16.4, needs https/localhost). Requested from showGameplayUI() (covers the actual play-start
+     gesture — Remember, Regain, and re-locking the pointer/tapping resume out of the pause overlay — not just
+     the very first entry) and re-requested on visibilitychange if still mid-play, since the OS force-releases
+     it the instant the tab hides regardless of what the game does. This matters more here than in a fast
+     action game: standing still to read a POI caption or watch the sky is normal play, not idling, and the
+     phone has no way to tell those apart from inactivity on its own.
+  d) NOT changed: the doc's "step quality down but never back up mid-session" guidance vs. this project's
+     existing updateAdaptiveRes() (core/render-quality.js), which already steps both down (after ~2s over
+     budget) AND back up (after ~5s comfortably under) — flagging the difference rather than changing it,
+     since adaptiveRes is opt-in (state.adaptiveRes, off unless a caller turns it on) and reversible quality
+     dips reading as "a glitch" vs. "the game staying smooth" is a judgment call for the owner, not something
+     to silently change while fixing unrelated touch/wake-lock bugs.
+  Tested (headless, real fonts, production build via `npx vite build` + `vite preview`): full run of
+  tools/e2e/phone-test.mjs at 412x780 (portrait) and 780x360 (landscape) — no console/page errors either run,
+  no viewport overflow, no overlaps among the 9 UI boxes, joystick drag-and-release still registers correctly
+  (confirms touch-action: none on the new ancestors doesn't swallow the pointer-capture-based joystick/look-
+  pad/button handlers already in core/touch-controls.js, which each set their own touch-action: none and were
+  already relying on e.preventDefault() in their touch handlers).
+  NOT verified: any real phone. Wake Lock specifically can't be exercised headless in any meaningful way
+  (SwiftShader/software GL has no real display to keep "on"; the request()/release() calls were only checked
+  for not throwing and not blocking the gameplay-start path) — confirm on a real Android/iOS 16.4+ phone that
+  requesting it doesn't introduce a frame hitch at play-start, and that the screen actually stays lit on a
+  phone with aggressive battery-saver settings (Wake Lock can be silently denied there; see core/wake-lock.js's
+  comments for why that's treated as a no-op rather than surfaced to the player).
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------

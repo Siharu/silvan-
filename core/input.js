@@ -6,6 +6,7 @@ import { renderObjectives } from './journal.js';
 import { startTutorial } from './tutorial.js';
 import { POIS } from '../environment/pois.js';
 import { writeLocalSave, listSaveSlots, setActiveSlot } from './save-system.js';
+import { requestWakeLock, setupWakeLockLifecycle } from './wake-lock.js';
 
 // Split out of what used to be one setupInput() so the Remember click can
 // kick off the loading-screen/init() flow (main.js's startGame()) without
@@ -171,6 +172,7 @@ export function showGameplayUI() {
     // state.dayAmbientAudio etc. exist yet) would try to resume Howl
     // instances that haven't been created.
     if (state.hasStarted) enterGame();
+    requestWakeLock(); // keep the phone screen on while actually playing (no-ops where unsupported)
 }
 
 export function pauseGame() {
@@ -208,6 +210,14 @@ export function setupInput() {
     document.addEventListener('visibilitychange', () => {
         if (document.hidden && state.isPlaying) pauseGame();
     });
+    // The OS force-releases the Wake Lock on hide regardless of what we do,
+    // so it needs re-requesting on return too — not just on the explicit
+    // resume gestures (showGameplayUI) that already call requestWakeLock().
+    // The visibilitychange listener above runs first (registered first) and
+    // sets state.isPlaying false on the way out, so this only re-acquires
+    // for the case that actually matters: a brief hide (e.g. a quick swipe
+    // down for notifications) that never reached pauseGame()/isPlaying=false.
+    setupWakeLockLifecycle(() => state.isPlaying);
 
     const pauseLayer = document.getElementById('pause-layer');
 
