@@ -6,6 +6,6 @@
   "build-verified only". A script is in `tools/e2e/phone-test.mjs`.
 - The owner usually plays on a phone. Check phone viewports (412x780,
   360x640, 780x360) after any UI or layout change.
-- Bugs are logged in `SILVAN_BETA2_AUDIT.txt` (latest: B-44). Use the next free
+- Bugs are logged in `SILVAN_BETA2_AUDIT.txt` (latest: B-46). Use the next free
   number; do not reuse IDs.
 - Say plainly what was tested and what wasn't (feel, real fonts, audio).

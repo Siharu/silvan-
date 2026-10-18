@@ -143,33 +143,99 @@ const NEAR_RADIUS_DECID = 65;
 const FAR_RADIUS_DECID = 520;   // beyond this the fog has swallowed the tree: draw nothing
 const LOD_HYSTERESIS_DECID = 10;
 
-function buildImpostorGeometry() {
-    const trunk = new THREE.CylinderGeometry(0.5, 0.9, 5.5, 5, 1);
-    trunk.translate(0, 2.75, 0);
-    const canopy = new THREE.SphereGeometry(3.4, 7, 5);
-    canopy.translate(0, 6.2, 0);
-    const woodCol = new THREE.Color(0x3a2e22), leafCol = new THREE.Color(0xffffff); // leafCol stays white so instance tint (biome colour) reads true at distance
-    const pa = trunk.attributes.position, pb = canopy.attributes.position;
-    const positions = new Float32Array((pa.count + pb.count) * 3);
-    positions.set(pa.array, 0); positions.set(pb.array, pa.array.length);
-    const normals = new Float32Array((pa.count + pb.count) * 3);
-    normals.set(trunk.attributes.normal.array, 0); normals.set(canopy.attributes.normal.array, trunk.attributes.normal.array.length);
-    const colors = new Float32Array((pa.count + pb.count) * 3);
-    for (let i = 0; i < pa.count; i++) colors.set([woodCol.r, woodCol.g, woodCol.b], i * 3);
-    for (let i = 0; i < pb.count; i++) colors.set([leafCol.r, leafCol.g, leafCol.b], (pa.count + i) * 3);
-    const ia = trunk.index.array, ib = canopy.index.array;
-    const indices = new Uint32Array(ia.length + ib.length);
-    indices.set(ia, 0);
-    for (let i = 0; i < ib.length; i++) indices[ia.length + i] = ib[i] + pa.count;
+// B-46: the far impostor was a 3.4u sphere on a 5.5u stick (~9.6u tall). The real trees measure
+// ~22-30u tall with a ~15u crown radius, so at the 65u swap every tree shrank to a third of its size
+// and read as a lollipop. This one is built to the real tree's measured envelope: a tall bare-ish
+// trunk, then a wide lumpy crown made of several displaced blobs. Normals are "aggregate" normals
+// (away from the crown centre, same trick as the near canopy in buildVariant) so it shades as one
+// soft mass, and vertex colour darkens the underside. Three seeded shapes so the far forest is not
+// one clone repeated. ~300 tris each.
+const IMPOSTOR_SHAPES = 3;
+const CROWN_CENTRE = new THREE.Vector3(0, 17.5, 0);
+function impNoise(x, y, z, o) {
+    return Math.sin(x * 0.9 + o) * Math.sin(y * 1.1 + o * 1.7) * Math.sin(z * 0.8 - o * 0.6) * 0.6
+         + Math.sin(x * 2.1 - z * 1.7 + o * 2.3) * Math.sin(y * 1.9 + x * 1.3) * 0.4;
+}
+function buildImpostorGeometry(seed) {
+    const rand = mulberry32(seed);
+    const P = [], N = [], C = [], L = [];   // L = 1 for crown vertices (take the biome tint), 0 for trunk
+    const woodCol = new THREE.Color(0x4b3b2d);
+    {   // trunk: tapered, runs well up into the crown so the gap under it is never see-through
+        const g = new THREE.CylinderGeometry(0.55, 1.0, 17, 6, 1).toNonIndexed();
+        g.translate(0, 8.5, 0);
+        const pa = g.attributes.position, na = g.attributes.normal;
+        for (let i = 0; i < pa.count; i++) {
+            P.push(pa.getX(i), pa.getY(i), pa.getZ(i)); N.push(na.getX(i), na.getY(i), na.getZ(i));
+            C.push(woodCol.r, woodCol.g, woodCol.b); L.push(0);
+        }
+    }
+    // blobs: [cx, cy, cz, rx, ry, rz, icosa detail]; first three are fixed (broad base, body, top), the rest scatter
+    const blobs = [
+        [0, 12.8, 0, 9.5 + rand() * 1.5, 4.2, 9.5 + rand() * 1.5, 1],
+        [0, 18.0, 0, 11.5 + rand() * 1.5, 8.5, 11.5 + rand() * 1.5, 1],
+        [(rand() - 0.5) * 2, 24.6, (rand() - 0.5) * 2, 6.8 + rand(), 5.2, 6.8 + rand(), 1],
+    ];
+    const nSat = 3;
+    const a0 = rand() * Math.PI * 2;
+    for (let i = 0; i < nSat; i++) {
+        const a = a0 + (i / nSat) * Math.PI * 2 + (rand() - 0.5) * 0.9;
+        const r = 7.5 + rand() * 2.5, y = 13.5 + rand() * 8;
+        blobs.push([Math.cos(a) * r, y, Math.sin(a) * r, 5.2 + rand() * 1.4, 4.2 + rand(), 5.2 + rand() * 1.4, 0]);
+    }
+    const noiseOff = rand() * 40;
+    const v = new THREE.Vector3(), out = new THREE.Vector3(), agg = new THREE.Vector3();
+    for (const [cx, cy, cz, rx, ry, rz, det] of blobs) {
+        const g = new THREE.IcosahedronGeometry(1, det);          // non-indexed: 3 verts per tri
+        const pa = g.attributes.position;
+        for (let i = 0; i < pa.count; i++) {
+            out.set(pa.getX(i), pa.getY(i), pa.getZ(i)).normalize();   // blob-local outward direction
+            v.set(cx + out.x * rx, cy + out.y * ry, cz + out.z * rz);
+            const k = 1 + 0.17 * impNoise(v.x, v.y, v.z, noiseOff);     // lumpy, deterministic per position so shared verts stay welded
+            v.set(cx + out.x * rx * k, cy + out.y * ry * k, cz + out.z * rz * k);
+            // aggregate normal: mostly "away from the crown centre" (+ a little up), a little blob form
+            agg.copy(v).sub(CROWN_CENTRE); agg.y += 1.5; agg.normalize();
+            const nx = agg.x * 0.65 + out.x * 0.35, ny = agg.y * 0.65 + out.y * 0.35, nz = agg.z * 0.65 + out.z * 0.35;
+            const nl = Math.hypot(nx, ny, nz) || 1;
+            // brightness: dark underside / lower crown, lighter top, mild mottling; instance tint multiplies this
+            const t = THREE.MathUtils.clamp((v.y - 8) / 22, 0, 1);
+            let b = 0.58 + 0.52 * t + 0.07 * impNoise(v.x * 1.7, v.y * 1.7, v.z * 1.7, noiseOff + 9);
+            if (out.y < 0) b *= 0.86 + 0.14 * (1 + out.y);
+            P.push(v.x, v.y, v.z); N.push(nx / nl, ny / nl, nz / nl); C.push(b, b, b); L.push(1);
+        }
+    }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    g.setIndex(new THREE.BufferAttribute(indices, 1));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3));
+    g.setAttribute('aLeaf', new THREE.Float32BufferAttribute(L, 1));
+    g.computeBoundingSphere();
     return g;
 }
 
-let impostorMesh = null, impostorCapacity = 0;
+// Impostor material: trunk must NOT take the biome tint (instanceColor multiplies every vertex by default),
+// and a little world-space mottling breaks up the flat look of an unlit-ish low-poly mass at range.
+function makeImpostorMaterial() {
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
+    m.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nattribute float aLeaf;\nvarying float vLeaf;\nvarying vec3 vImpPos;')
+            .replace('#include <color_vertex>', `#include <color_vertex>
+            #ifdef USE_INSTANCING_COLOR
+            vColor.xyz = mix(vColor.xyz / max(instanceColor.xyz, vec3(1e-4)), vColor.xyz, aLeaf);
+            #endif
+            vLeaf = aLeaf;`)
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvImpPos = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;');
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nvarying float vLeaf;\nvarying vec3 vImpPos;')
+            .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `vec4 diffuseColor = vec4( diffuse, opacity );
+            float impM1 = sin(vImpPos.x * 1.3 + vImpPos.y * 0.6) * sin(vImpPos.z * 1.1 - vImpPos.y * 0.8);
+            float impM2 = sin(vImpPos.x * 3.1 + vImpPos.z * 2.7) * sin(vImpPos.y * 2.9 + vImpPos.x * 1.7);
+            diffuseColor.rgb *= 1.0 + vLeaf * (0.10 * impM1 + 0.06 * impM2);`);
+    };
+    return m;
+}
+
+const impostorMeshes = [];   // one InstancedMesh per far shape (variant v uses shape v % IMPOSTOR_SHAPES)
 let variants = null;
 const buckets = []; // per variant: { m: Matrix4[], c: number[] } — c is the per-tree leaf tint (biome colour)
 const nearWood = [], nearLeaves = [];
@@ -246,22 +312,25 @@ export function finishDeciduous(leafTexture) {
         const lf = make(variants[v].leaves, leafMat, false, true); lf.count = 0; nearLeaves.push(lf);
     }
 
-    impostorCapacity = buckets.reduce((s, b) => s + b.m.length, 0);
-    if (impostorCapacity > 0) {
-        const impostorMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
-        impostorMesh = new THREE.InstancedMesh(buildImpostorGeometry(), impostorMat, impostorCapacity);
-        impostorMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(impostorCapacity * 3), 3);
-        impostorMesh.count = 0;
-        impostorMesh.castShadow = false;
-        impostorMesh.receiveShadow = true;
-        lodLastPx = null;
-        impostorMesh.frustumCulled = false; // buffer contents keep changing as the player moves; see pine-tree.js's identical note
-        state.scene.add(impostorMesh);
+    const impostorMat = makeImpostorMaterial();
+    for (let g = 0; g < IMPOSTOR_SHAPES; g++) {
+        let cap = 0;
+        for (let v = g; v < DECID_VARIANTS; v += IMPOSTOR_SHAPES) cap += buckets[v].m.length;
+        if (cap <= 0) { impostorMeshes.push(null); continue; }
+        const im = new THREE.InstancedMesh(buildImpostorGeometry(0x1d3a + g * 7717), impostorMat, cap);
+        im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
+        im.count = 0;
+        im.castShadow = false;
+        im.receiveShadow = true;
+        im.frustumCulled = false; // buffer contents keep changing as the player moves; see pine-tree.js's identical note
+        state.scene.add(im);
+        impostorMeshes.push(im);
     }
+    lodLastPx = null;
 }
 
 export function updateDeciduousLOD(px, pz) {
-    if (!impostorMesh) return;
+    if (!impostorMeshes.length) return;
     if (lodLastPx !== null) {
         const moved = Math.hypot(px - lodLastPx, pz - lodLastPz);
         if (moved < LOD_HYSTERESIS_DECID) return;
@@ -269,10 +338,11 @@ export function updateDeciduousLOD(px, pz) {
     lodLastPx = px; lodLastPz = pz;
 
     const r2 = NEAR_RADIUS_DECID * NEAR_RADIUS_DECID, f2 = FAR_RADIUS_DECID * FAR_RADIUS_DECID;
-    let farI = 0;
+    const farI = new Array(IMPOSTOR_SHAPES).fill(0);
     for (let v = 0; v < DECID_VARIANTS; v++) {
         const b = buckets[v];
         const wood = nearWood[v], leaf = nearLeaves[v];
+        const imp = impostorMeshes[v % IMPOSTOR_SHAPES], gi = v % IMPOSTOR_SHAPES;
         if (!wood) continue;
         let nearI = 0;
         for (let i = 0; i < b.m.length; i++) {
@@ -284,18 +354,21 @@ export function updateDeciduousLOD(px, pz) {
                 leaf.instanceColor.setXYZ(nearI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
                 nearI++;
             } else if (dx * dx + dz * dz <= f2) {
-                impostorMesh.setMatrixAt(farI, m);
-                impostorMesh.instanceColor.setXYZ(farI, b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
-                farI++;
+                imp.setMatrixAt(farI[gi], m);
+                imp.instanceColor.setXYZ(farI[gi], b.c[i * 3], b.c[i * 3 + 1], b.c[i * 3 + 2]);
+                farI[gi]++;
             }
         }
         wood.count = nearI; leaf.count = nearI;
         wood.instanceMatrix.needsUpdate = true; leaf.instanceMatrix.needsUpdate = true;
         leaf.instanceColor.needsUpdate = true;
     }
-    impostorMesh.count = farI;
-    impostorMesh.instanceMatrix.needsUpdate = true;
-    impostorMesh.instanceColor.needsUpdate = true;
+    for (let g = 0; g < IMPOSTOR_SHAPES; g++) {
+        const im = impostorMeshes[g]; if (!im) continue;
+        im.count = farI[g];
+        im.instanceMatrix.needsUpdate = true;
+        im.instanceColor.needsUpdate = true;
+    }
 }
 
 export function updateDeciduousSway(dt) { uTime.value += dt; }

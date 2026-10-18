@@ -1469,6 +1469,64 @@ B-45  [MINOR] [FIXED, branch Version-0.0.05]  Pinch-zoom/long-press/tap-flash st
   phone with aggressive battery-saver settings (Wake Lock can be silently denied there; see core/wake-lock.js's
   comments for why that's treated as a no-op rather than surfaced to the player).
 
+B-46  [MAJOR] [FIXED, branch Version-0.0.05]  Deciduous/maple trees had no LOD at all (B-24 audit 6.4
+  follow-up): every tree's growBranch() wrote straight into shared global buffers (THREE InstancedMesh
+  built from thousands of per-branch/per-leaf matrices, every tree a unique one-off shape baked into
+  shared draw calls), so the whole deciduous forest was only ever 3 draw calls total but with zero
+  distance-based detail reduction — the opposite of what pine-tree.js already did. Rewritten to the
+  same two-tier treatment pines got:
+  a) DECID_VARIANTS (6) seeded tree shapes, each grown once via the original recursive growBranch()
+     and merged into two BufferGeometries (wood, leaves) instead of accumulating into shared global
+     buffers. One InstancedMesh pair (wood + leaf) per variant => 12 near-tier draw calls total instead
+     of thousands of unique trees, with per-tree biome colour (green/autumn) riding on instanceColor so
+     trees sharing a shape variant still look distinct.
+  b) A shared low-poly impostor (IMPOSTOR_SHAPES=3, ~300 tris each: tapered trunk + lumpy icosahedron
+     blob crown, aggregate normals so the crown shades as one soft mass instead of per-leaf noise)
+     swaps in past NEAR_RADIUS_DECID=65u, exactly mirroring pine's updatePineLOD. Culled entirely past
+     FAR_RADIUS_DECID=520u. LOD_HYSTERESIS_DECID=10u gates the recompute so it doesn't re-bucket every
+     frame on small camera jitter.
+  c) Known regressions from earlier passes at this file, fixed here: B-38 (UVs dropped from the Acc
+     geometry accumulator -> every leaf quad sampled texel (0,0) of the alpha-tested leaf texture ->
+     all leaves discarded -> "bare trees"); B-40 (trunk colour 0x28201a read as black; AGGREGATE
+     NORMALS added per Peterson & Lee's "simplified tree lighting using aggregate normals" — the same
+     stylised-foliage trick behind BotW/Genshin canopies — since a leaf quad's own random-direction
+     normal made the canopy read as black confetti under double-sided shading); B-46 itself (the far
+     impostor was a 3.4u sphere on a 5.5u stick vs the real trees' measured ~22-30u height/~15u crown
+     radius, so every tree shrank to a third of its size and read as a lollipop at the LOD swap
+     distance — impostor geometry rebuilt to the real envelope).
+  d) finishDeciduous()'s exported function signatures (beginDeciduous, pickDeciduousVariant,
+     addDeciduous, finishDeciduous, updateDeciduousLOD) are unchanged from what forest.js already
+     calls, so this is a drop-in replacement; no forest.js changes needed.
+  Tested:
+  - tools/e2e/deciduous-lod-unit.mjs (NEW, pure Node, no browser/GPU): imports the real
+    environment/deciduous-tree.js module directly (THREE.BufferGeometry/InstancedMesh/Scene need no
+    WebGL context) and drives it with a synthetic ring of trees at distances deliberately straddling
+    both LOD boundaries (10/40/64/66/100/300/519/521/600/1000u). Confirms: every near-tier instance is
+    within NEAR_RADIUS_DECID, every impostor instance is within (NEAR_RADIUS_DECID, FAR_RADIUS_DECID],
+    trees beyond FAR_RADIUS_DECID are drawn nowhere, exact per-tier counts match the known distances,
+    a tree that was near-tier at the origin correctly becomes empty/impostor from 2000u away, and
+    querying back at the origin after that jump repopulates the near tier (LOD doesn't get stuck past
+    a large camera jump). All assertions pass.
+  - tools/e2e/deciduous-lod-test.mjs (NEW): live-render smoke test via headless Chromium
+    (software GL) — boots the actual game, confirms 6 deciduous leaf-mesh variants and 3 impostor
+    shapes exist in the live scene (matching DECID_VARIANTS/IMPOSTOR_SHAPES exactly) with nonzero
+    instances drawn at spawn, zero page/console errors. `npx vite build` also passes clean.
+  - Two bugs caught and fixed in the TEST SCRIPTS themselves during this work, not in deciduous-
+    tree.js: (1) an aggregate-instance-count version of the live test looked like it was failing
+    because the dense forest has trees in range almost anywhere reachable in-world, and separately
+    directly mutating window.silvanDebug.state.player.position had no effect on camera position on
+    readback (player-controller.js recomputes it from its own authoritative movement state every
+    frame) — replaced with the pure-Node unit test above, which sidesteps both problems by fully
+    controlling its own synthetic scene; (2) a scene-traversal classifier using "InstancedMesh with a
+    uv attribute + castShadow:true" to find deciduous wood meshes was also matching pine-tree.js's own
+    meshes and other forest geometry — narrowed to the leaf material's exact combination
+    (alphaTest>0 + DoubleSide + vertexColors + map), which is unique to finishDeciduous() in this
+    codebase.
+  NOT verified: real phone performance/framerate (12 near-tier + 3 impostor draw calls vs the old
+  thousands-of-unique-trees approach should be a clear win, but only headless SwiftShader was measured
+  here); visual appearance was not screenshot-compared against a prior build since there was no
+  previous working LOD version of this file to diff against (B-24's "before" state had no LOD at all).
+
 --------------------------------------------------------------------------------
 3. RENDER PIPELINE RECIPE (fixes B-01, B-02, B-06, B-07, B-14, B-15)
 --------------------------------------------------------------------------------
