@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#14101c">
+<title>SILVAN — Map 3: Ilmis Meadow</title>
+<style>
+:root{
+  color-scheme:dark;
+  --ink:#e9e0ee; --dim:#b3a6bd; --lav:#b9a3d9; --petal:#f0a9c4; --gold:#f2cf7a; --night:#14101c; --panel:#1b1526ee;
+  --dlg-scale:1; --ui-scale:1;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;touch-action:none;font:14px/1.45 ui-monospace,"SF Mono",Menlo,Consolas,monospace;color:var(--ink);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+canvas{width:100%;height:100%;display:block;image-rendering:pixelated}
+button{font:inherit;color:var(--ink);background:#000a;border:1px solid #fff4;padding:8px 12px;cursor:pointer;touch-action:manipulation}
+button:hover,button:focus-visible{border-color:var(--lav);outline:none}
+button.on{background:var(--ink);color:#000}
+[hidden]{display:none!important}
+.keycap{display:inline-block;min-width:1.5em;padding:0 .35em;margin-right:.5em;border:1px solid currentColor;border-radius:3px;text-align:center;font-size:.85em;opacity:.9}
+
+/* ---------- HUD ---------- */
+#h{position:fixed;left:max(10px,env(safe-area-inset-left));bottom:max(10px,env(safe-area-inset-bottom));background:#0009;padding:6px 8px;white-space:pre;pointer-events:none;font-size:11px}
+#z{position:fixed;left:0;right:0;top:20%;text-align:center;font-size:clamp(14px,4.4vw,22px);letter-spacing:.4em;text-shadow:0 0 8px #000;opacity:0;transition:opacity .8s;pointer-events:none;z-index:5}
+#z small{font-size:.55em;letter-spacing:.3em;opacity:.75}
+#tools{position:fixed;right:max(10px,env(safe-area-inset-right));top:max(10px,env(safe-area-inset-top));display:flex;gap:6px;z-index:6}
+#tools button{padding:7px 10px;font-size:12px}
+#clock{position:fixed;left:max(10px,env(safe-area-inset-left));top:max(10px,env(safe-area-inset-top));padding:5px 9px;background:#0007;font-size:12px;letter-spacing:.08em;pointer-events:none;z-index:5}
+#interact-prompt{position:fixed;left:50%;bottom:22%;transform:translateX(-50%);padding:8px 14px;background:#000b;border:1px solid #fff3;opacity:0;pointer-events:none;transition:opacity .2s;z-index:6;white-space:nowrap;font-size:15px}
+#interact-prompt.visible{opacity:1}
+html:has(#dlg.visible) #interact-prompt.visible{opacity:0}
+#toast{position:fixed;left:50%;top:max(54px,calc(env(safe-area-inset-top) + 44px));transform:translate(-50%,-8px);padding:10px 16px;background:var(--panel);border:1px solid var(--gold);color:var(--gold);opacity:0;transition:opacity .4s,transform .4s;pointer-events:none;z-index:8;text-align:center;max-width:92vw}
+#toast.visible{opacity:1;transform:translate(-50%,0)}
+#toast small{display:block;color:var(--dim);font-size:.8em}
+#hint{position:fixed;left:50%;top:34%;transform:translateX(-50%);max-width:min(30rem,90vw);padding:10px 14px;background:#000a;border-left:3px solid var(--lav);opacity:0;transition:opacity .5s;pointer-events:none;z-index:6;text-align:left}
+#hint.visible{opacity:1}
+#fade{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .6s;z-index:30}
+#fade.on{opacity:1;pointer-events:auto}
+
+/* touch controls */
+#touch{position:fixed;right:max(12px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));display:none;flex-direction:column;gap:10px;z-index:6;align-items:flex-end}
+#touch button{width:62px;height:62px;border-radius:50%;font-size:15px;background:#000a;border-color:#fff5}
+#touch button.act{border-color:var(--gold);color:var(--gold)}
+html[data-touch="1"] #touch{display:flex}
+html[data-touch="1"] #bf,html[data-touch="1"] #bb,html[data-touch="1"] #bw,html[data-touch="1"] #br{display:none}
+@media (max-width:560px){#bf,#bb,#bw,#br{display:none}}
+html[data-touch="1"] #interact-prompt{bottom:30%}
+
+/* ---------- dialogue box (Hearth-style VN box) ---------- */
+#dlg{position:fixed;left:50%;bottom:max(7%,calc(env(safe-area-inset-bottom) + 12px));transform:translate(-50%,.6rem);width:min(44rem,calc(100vw - 1.4rem));padding:.9rem 1.1rem 1.2rem;background:var(--panel);border:1px solid #fff3;border-top:2px solid var(--lav);box-shadow:0 6px 30px #000b;opacity:0;pointer-events:none;transition:opacity .25s steps(4),transform .25s ease-out;z-index:12}
+#dlg.visible{opacity:1;transform:translate(-50%,0);pointer-events:auto;cursor:pointer}
+#dlg-speaker{color:var(--petal);letter-spacing:.18em;text-transform:uppercase;font-size:calc(.78rem*var(--dlg-scale));margin-bottom:.4rem}
+#dlg-text{font-size:calc(1.12rem*var(--dlg-scale));line-height:1.5;min-height:calc(3.4rem*var(--dlg-scale));white-space:pre-wrap}
+#dlg-text .rest{visibility:hidden}
+#dlg-text.typing::after{content:'▌';color:var(--lav);animation:blink .7s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+#dlg-choices{display:flex;flex-direction:column;gap:.35rem;margin-top:.7rem;max-height:calc(100dvh - 11rem);overflow-y:auto;touch-action:pan-y}
+.choice-btn{text-align:left;padding:.55rem .75rem;font-size:calc(1rem*var(--dlg-scale));background:#0006}
+.choice-btn.is-sel,.choice-btn:hover{border-color:var(--petal);background:#2a1f3a}
+#dlg-hint{position:absolute;right:.9rem;bottom:.35rem;font-size:.8rem;color:var(--dim)}
+#dlg-hint::after{content:' \25BC';color:var(--petal);animation:blink .8s steps(1) infinite}
+
+/* ---------- title / loading ---------- */
+#title,#loading{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;
+  background:radial-gradient(ellipse at 50% 70%,#2a1d3acc,#0b0812f2 70%);transition:opacity 1.2s}
+#title.gone,#loading.gone{opacity:0;pointer-events:none}
+#title .kicker{letter-spacing:.5em;font-size:11px;color:var(--dim);margin-bottom:10px}
+#title h1{font-weight:400;font-size:clamp(28px,8vw,64px);letter-spacing:.22em;margin:0 0 6px;text-shadow:0 0 24px #b9a3d966}
+#title .sub{color:var(--lav);letter-spacing:.3em;font-size:clamp(11px,3vw,14px);margin-bottom:34px}
+#title .btns{display:flex;flex-direction:column;gap:10px;min-width:min(260px,80vw)}
+#title .btns button{padding:12px 18px;font-size:16px;letter-spacing:.2em;background:#1b1526cc}
+#title .foot{position:absolute;bottom:max(14px,env(safe-area-inset-bottom));font-size:11px;color:var(--dim);letter-spacing:.1em;max-width:90vw}
+#loading{background:#0b0812}
+#loading .bar{width:min(320px,70vw);height:4px;background:#ffffff1f;margin-top:16px}
+#loading .bar i{display:block;height:100%;width:0;background:var(--lav);transition:width .25s}
+#loading .msg{color:var(--dim);font-size:12px;letter-spacing:.2em;margin-top:10px;min-height:1.4em}
+
+/* ---------- pause menu ---------- */
+#menu{position:fixed;inset:0;z-index:20;background:#07050cd9;display:flex;align-items:center;justify-content:center;padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom))}
+#menu .panel{width:min(34rem,100%);max-height:100%;display:flex;flex-direction:column;background:var(--panel);border:1px solid #fff3;touch-action:pan-y}
+#menu .head{display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px 4px}
+#menu h2{margin:0;font-weight:400;letter-spacing:.3em;font-size:15px;color:var(--lav)}
+#menu .tabs{display:flex;gap:4px;padding:6px 12px 0;border-bottom:1px solid #fff2}
+#menu .tabs button{border:0;border-bottom:2px solid transparent;background:none;padding:8px 10px;color:var(--dim)}
+#menu .tabs button.on{background:none;color:var(--ink);border-bottom-color:var(--petal)}
+#menu .body{padding:12px 16px;overflow:auto;flex:1;min-height:12rem;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+#menu .foot{display:flex;gap:8px;padding:10px 16px 14px;border-top:1px solid #fff2;flex-wrap:wrap}
+#menu .foot button{flex:1;min-width:7rem}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #ffffff12}
+.row label{flex:1}
+.row input[type=range]{width:46%;accent-color:var(--petal);touch-action:pan-x}
+.row select{background:#000a;color:var(--ink);border:1px solid #fff4;padding:5px;font:inherit}
+.row input[type=checkbox]{width:20px;height:20px;accent-color:var(--petal)}
+.lm{padding:9px 0;border-bottom:1px solid #ffffff12}
+.lm b{font-weight:400;color:var(--gold)} .lm.lock b{color:var(--dim)}
+.lm p{margin:3px 0 0;color:var(--dim);font-size:.9em}
+.count{color:var(--dim);margin-bottom:6px}
+.keys{color:var(--dim);font-size:.9em;line-height:1.7}
+@media (max-height:480px){#dlg{bottom:8px;padding:.5rem .8rem .8rem}#dlg-text{min-height:2.6rem}#dlg-choices{max-height:calc(100dvh - 9rem)}.choice-btn{padding:.4rem .6rem}#hint{top:22%}#touch button{width:52px;height:52px}}
+@media (prefers-reduced-motion:reduce){#z,#toast,#fade{transition:none}}
+</style>
+</head>
+<body>
+
+<div id="clock" hidden></div>
+<div id="tools" hidden>
+  <button id="bf" title="Fly (F)">FLY</button><button id="br" title="Run (Shift)">RUN</button><button id="bb" title="Boost (B)">BOOST</button><button id="bw" title="Weather (X)">WEATHER</button><button id="bm" title="Menu (Esc)">MENU</button>
+</div>
+<div id="h"></div>
+<div id="z"></div>
+<div id="interact-prompt"></div>
+<div id="toast"></div>
+<div id="hint"></div>
+<div id="touch" hidden><button id="tb-act" class="act">E</button><button id="tb-run">RUN</button></div>
+
+<div id="dlg">
+  <div id="dlg-speaker" hidden></div>
+  <div id="dlg-text"></div>
+  <div id="dlg-choices" hidden></div>
+  <div id="dlg-hint" hidden></div>
+</div>
+
+<div id="menu" hidden>
+  <div class="panel">
+    <div class="head"><h2>ILMIS MEADOW</h2><span id="menu-time" style="color:var(--dim);font-size:12px"></span></div>
+    <div class="tabs"><button data-tab="journal" class="on">Journal</button><button data-tab="settings">Settings</button><button data-tab="controls">Controls</button></div>
+    <div class="body" id="menu-body"></div>
+    <div class="foot"><button id="m-resume">Resume</button><button id="m-save">Save</button><button id="m-title">Title</button></div>
+  </div>
+</div>
+
+<div id="title">
+  <div class="kicker">SILVAN · MAP 3</div>
+  <h1>ILMIS MEADOW</h1>
+  <div class="sub">A WHOLE WORLD OF GRASS, AND NOBODY IN IT</div>
+  <div class="btns">
+    <button id="t-continue" hidden>Continue</button>
+    <button id="t-start">Remember</button>
+  </div>
+  <div class="foot">Headphones recommended · WASD move · mouse look · E interact · Esc menu</div>
+</div>
+<div id="loading" class="gone" hidden><div style="letter-spacing:.4em">ILMIS</div><div class="bar"><i id="load-bar"></i></div><div class="msg" id="load-msg"></div></div>
+<div id="fade"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="dialogue.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

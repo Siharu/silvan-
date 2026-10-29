@@ -2099,3 +2099,11 @@ B-46  [MAJOR] [FIXED, branch Version-0.0.05]  Deciduous/maple trees had no LOD a
 ================================================================================
 END OF DOCUMENT
 ================================================================================
+
+B-47  [MINOR] [OPEN in core/dialogue.js - FIXED in ilmis-meadow/dialogue.js]  Ghost-tap on dialogue choices (found while
+  porting the dialogue system to Ilmis Meadow, headless phone viewport 412x780, 2026-10-29). Tapping the text box to
+  advance onto a line that has choices renders the choice buttons synchronously inside the pointerdown handler; the
+  browser's synthesized click on pointerup then lands on whichever choice is under the finger and picks it. In Ilmis
+  that fast-travelled the player by accident. Ilmis' copy ignores choice picks for 380 ms after the buttons appear
+  (D.pickAfter). Hearth's core/dialogue.js has the same pattern (pick() has no such guard) and was NOT changed here -
+  apply the same 380 ms guard in finishTyping()/pick() when next touching Hearth. Not verified on a real phone.
